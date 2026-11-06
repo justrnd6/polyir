@@ -1,0 +1,37 @@
+// LEFT-HANDED VERSUS RIGHT-HANDED z (Vulkan). The kernel `view`, the checks and the printed tables and pictures are in
+// shared/handed.poly; this file only builds the shader and launches it. What it shows:
+//   1. which way "larger z" points in each kind of room (nearer in a right-handed one, farther in a left-handed one);
+//   2. that the same room in the other system is the same numbers with z negated, and gives the identical picture;
+//   3. that mixing the systems up gives a MIRROR IMAGE (a letter F drawn as text).
+//
+//   polyir --emit-glsl handed-vulkan.poly       (one shader per kernel; tests/gpu.sh splits and compiles them)
+//   polyir handed-vulkan.poly --out handed-vulkan && ./handed-vulkan    (run in this folder)
+//
+// Exit 0 means everything matched. 10 no Vulkan GPU, 12 a launch failed or the shader is missing, 13 the GPU and CPU disagree,
+// 14 a fact about the two systems did not hold. Only a Vulkan version exists; the kernel is plain and would run on Metal too.
+import "../Vulkan.poly"
+import "shared/print.poly"
+import "shared/handed.poly"
+
+// The shader is view.spv: three storage buffers (the points, the camera, the results) and one push constant (the count).
+func makePipeline(ctx: i64, source: string, name: string) -> i64 {
+    return vulkanPipeline(ctx, name + ".spv", 3, 4)
+}
+
+func launchView(ctx: i64, pipeline: i64, points: ptr<float>, pointCount: i64, cam: ptr<float>) -> ptr<float> {
+    let push: i64 = words(2)
+    let slots: ptr<i32> = push.toPtr()
+    slots[0] = pointCount.toI32()
+    let buffers: ptr<i64> = calloc(3, 8).toPtr()
+    buffers[0] = vulkanBuffer(ctx, points.toI64(), pointCount * 12)
+    buffers[1] = vulkanBuffer(ctx, cam.toI64(), 64)
+    buffers[2] = vulkanEmptyBuffer(ctx, pointCount * 16)
+    if (vulkanDispatchBuffers(ctx, pipeline, pointCount, push, buffers, 3) == 0) { return calloc(pointCount * 4, 4).toPtr() }
+    return vulkanContents(buffers[2]).toPtr()
+}
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    return runAll(gpu)
+}

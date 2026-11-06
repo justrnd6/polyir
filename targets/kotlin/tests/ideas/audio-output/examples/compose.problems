@@ -1,0 +1,1 @@
+targets/kotlin/Kotlin.translate:100: `extern(name, params, result)` is unsupported: Kotlin cannot call a C function

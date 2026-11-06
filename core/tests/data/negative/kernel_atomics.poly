@@ -1,0 +1,10 @@
+kernel func a(index i: i32, writable c: ptr<float>) -> i32 { atomicAdd(c, 0, 1)
+  return 0 }
+kernel func b(index i: i32, writable c: ptr<i32>) -> i32 { atomicAddFloat(c, 0, 1.0)
+  return 0 }
+kernel func c(index i: i32, uniform c: ptr<i32>) -> i32 { atomicMin(c, 0, 1)
+  return 0 }
+kernel func e(index i: i32, writable c: ptr<i32>) -> i32 { let old: i32 = atomicAdd(c, 0, 1)
+  return old }
+kernel func f(index i: i32, writable c: ptr<i32>) -> i32 { atomicAdd(5, 0, 1)
+  return 0 }

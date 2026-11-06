@@ -1,0 +1,13 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HLet","name":"a","ty":{"k":"HInt","bits":8},"value":{"k":"HConstInt","value":300,"ty":{"k":"HInt","bits":64},"at":[2,15]},"at":[2,7]},{"k":"HLet","name":"b","ty":{"k":"HUInt","bits":8},"value":{"k":"HUnary","op":"Neg","operand":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[3,16]},"ty":{"k":"HInt","bits":64},"at":[3,16]},"at":[3,7]},{"k":"HLet","name":"c","ty":{"k":"HInt","bits":32},"value":{"k":"HConstInt","value":5000000000,"ty":{"k":"HInt","bits":64},"at":[4,16]},"at":[4,7]},{"k":"HLet","name":"d","ty":{"k":"HInt","bits":8},"value":{"k":"HBinary","op":"Add","left":{"k":"HLocal","name":"a","ty":{"k":"HInt","bits":8},"at":[5,15]},"right":{"k":"HConstInt","value":1000,"ty":{"k":"HInt","bits":64},"at":[5,19]},"ty":{"k":"HInt","bits":8},"at":[5,17]},"at":[5,7]},{"k":"HReturn","value":{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[6,10]},"at":[6,10]}],"isCoroutine":false,"at":[1,6]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  no `kernel func` found

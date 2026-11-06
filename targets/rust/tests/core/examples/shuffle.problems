@@ -1,0 +1,1 @@
+targets/rust/Rust.translate:429: `shuffle(object, lanes)` is unsupported: this Rust has no vector lanes to shuffle

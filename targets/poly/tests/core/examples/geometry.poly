@@ -1,0 +1,5 @@
+import "shapes.poly"
+
+func rectArea(w: i64, h: i64) -> i64 {
+  return area(Rect(width: w, height: h))
+}

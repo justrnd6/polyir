@@ -1,0 +1,75 @@
+import "../Vulkan.poly"
+import "shared/colour.poly"
+import "shared/picture.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func runKernel(gpu: i64, name: string, img: ptr<float>, opts: ptr<float>, w: i64, h: i64) -> ptr<float> {
+  let pipeline: i64 = vulkanPipeline(gpu, name + ".spv", 3, 4)
+  if (pipeline == 0) {
+    return 0.toPtr()
+  }
+  let push: i64 = words(2)
+  let slots: ptr<i32> = push.toPtr()
+  slots[0] = (w * h).toI32()
+  let buffers: ptr<i64> = calloc(4, 8).toPtr()
+  buffers[0] = vulkanBuffer(gpu, img.toI64(), w * h * 16)
+  buffers[1] = vulkanBuffer(gpu, opts.toI64(), 16)
+  buffers[2] = vulkanEmptyBuffer(gpu, w * h * 16)
+  if (buffers[0] == 0 || buffers[1] == 0 || buffers[2] == 0) {
+    return 0.toPtr()
+  }
+  if (vulkanDispatchBuffers(gpu, pipeline, w * h, push, buffers, 3) == 0) {
+    return 0.toPtr()
+  }
+  return vulkanContents(buffers[2]).toPtr()
+}
+
+func demo(gpu: i64, name: string, setting: float, file: string, img: ptr<float>, w: i64, h: i64) -> ptr<float> {
+  let opts: ptr<float> = settings(w, h, setting)
+  let result: ptr<float> = runKernel(gpu, name, img, opts, w, h)
+  if (result.toI64() == 0) {
+    return 0.toPtr()
+  }
+  if (agrees(name, result, img, opts, w * h) == 0) {
+    return 1.toPtr()
+  }
+  saveColorPicture(file, result, w, h)
+  return result
+}
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  let w: i64 = 160
+  let h: i64 = 120
+  let img: ptr<float> = testPicture(w, h)
+  saveColorPicture("colour-vulkan-1-source.ppm", img, w, h)
+  let results: ptr<i64> = calloc(8, 8).toPtr()
+  let code: i64 = runAll(gpu, img, w, h, results)
+  if (code != 0) {
+    return code
+  }
+  return properties(results, img, w, h, "colour-vulkan-scopes.pgm")
+}
+
+func runAll(gpu: i64, img: ptr<float>, w: i64, h: i64, results: ptr<i64>) -> i64 {
+  results[0] = demo(gpu, "luma", 0.0, "colour-vulkan-2-luma.ppm", img, w, h).toI64()
+  results[1] = demo(gpu, "hueOnly", 0.0, "colour-vulkan-3-hue-only.ppm", img, w, h).toI64()
+  results[2] = demo(gpu, "rotateHue", 1.0471976, "colour-vulkan-4-rotate-60.ppm", img, w, h).toI64()
+  results[3] = demo(gpu, "scaleColour", 0.0, "colour-vulkan-5-grey.ppm", img, w, h).toI64()
+  results[4] = demo(gpu, "chromaBlur", 4.0, "colour-vulkan-6-chroma-blur.ppm", img, w, h).toI64()
+  results[5] = demo(gpu, "lumaBlur", 4.0, "colour-vulkan-7-luma-blur.ppm", img, w, h).toI64()
+  results[6] = demo(gpu, "sharpenLuma", 1.5, "colour-vulkan-8-sharpen-luma.ppm", img, w, h).toI64()
+  results[7] = demo(gpu, "rotateHue", 6.2831853, "colour-vulkan-9-full-turn.ppm", img, w, h).toI64()
+  for (k = 0; k < 8; k = k + 1) {
+    if (results[k] == 0) {
+      return 12
+    }
+    if (results[k] == 1) {
+      return 13
+    }
+  }
+  return 0
+}

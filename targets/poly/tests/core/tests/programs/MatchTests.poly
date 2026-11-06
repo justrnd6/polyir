@@ -1,0 +1,333 @@
+func contains(s: string, part: string) -> bool {
+  return s.find(part, 0) >= 0
+}
+
+func startsWith(s: string, prefix: string) -> bool {
+  if (prefix.len() > s.len()) {
+    return false
+  }
+  return s.slice(0, prefix.len()) == prefix
+}
+
+func endsWith(s: string, suffix: string) -> bool {
+  if (suffix.len() > s.len()) {
+    return false
+  }
+  return s.slice(s.len() - suffix.len(), s.len()) == suffix
+}
+
+func join(parts: mutarray<string>, sep: string) -> string {
+  var out: string = ""
+  for (i = 0; i < parts.len(); i = i + 1) {
+    if (i > 0) {
+      out = out + sep
+    }
+    out = out + parts[i]
+  }
+  return out
+}
+
+func offText(got: string, want: string) -> double {
+  if (got == want) {
+    return 0.0
+  }
+  return 1.0
+}
+
+func sizeOf(n: i64) -> string {
+  var matchValue_16_12: string
+  switch (n) {
+    0 => {
+      matchValue_16_12 = "none"
+    }
+    1 | 2 | 3 => {
+      matchValue_16_12 = "a few"
+    }
+    -1 => {
+      matchValue_16_12 = "minus one"
+    }
+    else => {
+      matchValue_16_12 = "many"
+    }
+  }
+  return matchValue_16_12
+}
+
+func checkNumbers() -> double {
+  return offText(sizeOf(0) + sizeOf(2) + sizeOf(9) + sizeOf(-1), "nonea fewmanyminus one")
+}
+
+func signOf(n: i64) -> string {
+  var matchValue_30_16: string
+  if (n < 0) {
+    matchValue_30_16 = "negative"
+  } else if (n == 0) {
+    matchValue_30_16 = "zero"
+  } else if (n >= 100) {
+    matchValue_30_16 = "large"
+  } else {
+    matchValue_30_16 = "positive"
+  }
+  let sign: string = matchValue_30_16
+  return sign
+}
+
+func checkComparisons() -> double {
+  return offText(signOf(-3) + " " + signOf(0) + " " + signOf(150) + " " + signOf(5), "negative zero large positive")
+}
+
+func gradeOf(score: i64) -> string {
+  var matchValue_45_12: string
+  if (score == 100) {
+    matchValue_45_12 = "perfect"
+  } else if (score >= 90) {
+    let s: i64 = score
+    matchValue_45_12 = "A ${s}"
+  } else if (score >= 80) {
+    matchValue_45_12 = "B"
+  } else {
+    matchValue_45_12 = "C"
+  }
+  return matchValue_45_12
+}
+
+func checkGuardsOnTheSubject() -> double {
+  return offText(gradeOf(100) + gradeOf(93) + gradeOf(85) + gradeOf(10), "perfectA 93BC")
+}
+
+func yes(reply: string) -> bool {
+  var matchValue_60_12: bool
+  switch (reply) {
+    "y" | "yes" => {
+      matchValue_60_12 = true
+    }
+    "n" | "no" => {
+      matchValue_60_12 = false
+    }
+    else => {
+      matchValue_60_12 = false
+    }
+  }
+  return matchValue_60_12
+}
+
+func checkStrings() -> double {
+  return offText("${yes("y")} ${yes("yes")} ${yes("no")} ${yes("maybe")}", "true true false false")
+}
+
+func kindOf(path: string) -> string {
+  var matchValue_73_12: string
+  if (path == "Ninafile" || path == "Polyfile") {
+    matchValue_73_12 = "build"
+  } else if (endsWith(path, ".poly")) {
+    matchValue_73_12 = "polyir"
+  } else if (startsWith(path, "README")) {
+    matchValue_73_12 = "docs"
+  } else if (contains(path, "test") && !endsWith(path, ".md")) {
+    matchValue_73_12 = "a test"
+  } else if (endsWith(path, ".md")) {
+    let p: string = path
+    matchValue_73_12 = "markdown ${p}"
+  } else {
+    matchValue_73_12 = "other"
+  }
+  return matchValue_73_12
+}
+
+func checkConditions() -> double {
+  let kinds: mutarray<string> = [kindOf("Polyfile"), kindOf("a.poly"), kindOf("README.md"), kindOf("my_test.c"), kindOf("notes.md"), kindOf("x.c")]
+  return offText(join(kinds, ","), "build,polyir,docs,a test,markdown notes.md,other")
+}
+
+func word(ready: bool) -> string {
+  var matchValue_89_12: string
+  switch (ready) {
+    true => {
+      matchValue_89_12 = "go"
+    }
+    false => {
+      matchValue_89_12 = "wait"
+    }
+  }
+  return matchValue_89_12
+}
+
+func checkBooleans() -> double {
+  return offText(word(true) + word(false), "gowait")
+}
+
+func shown(found: optional<i64>) -> string {
+  var matchValue_102_12: string
+  if (found.isSome() && found.unwrap() > 100) {
+    let n: i64 = found.unwrap()
+    matchValue_102_12 = "big ${n}"
+  } else if (found.isSome()) {
+    let n: i64 = found.unwrap()
+    matchValue_102_12 = "found ${n}"
+  } else {
+    matchValue_102_12 = "nothing"
+  }
+  return matchValue_102_12
+}
+
+func checkOptionals() -> double {
+  return offText(shown(Some<i64>(500)) + ", " + shown(Some<i64>(5)) + ", " + shown(None<i64>()), "big 500, found 5, nothing")
+}
+
+func safeDivide(a: i64, b: i64) -> either<i64, string> {
+  if (b == 0) {
+    return eitherErr<i64, string>("divide by zero")
+  }
+  return eitherOk<i64, string>(a / b)
+}
+
+func message(a: i64, b: i64) -> string {
+  let match_122_12: either<i64, string> = safeDivide(a, b)
+  var matchValue_122_12: string
+  switch (match_122_12) {
+    Ok(q) => {
+      matchValue_122_12 = "quotient ${q}"
+    }
+    Err(why) => {
+      matchValue_122_12 = "error ${why}"
+    }
+  }
+  return matchValue_122_12
+}
+
+func checkEithers() -> double {
+  return offText(message(7, 2) + "; " + message(7, 0), "quotient 3; error divide by zero")
+}
+
+func textOf(shape: variant<i64, i64, string>) -> string {
+  var matchValue_133_12: string
+  switch (shape) {
+    variant(0, r) => {
+      matchValue_133_12 = "circle ${r}"
+    }
+    variant(1, s) => {
+      matchValue_133_12 = "square ${s}"
+    }
+    variant(2, name) => {
+      matchValue_133_12 = name
+    }
+  }
+  return matchValue_133_12
+}
+
+func checkVariants() -> double {
+  let circle: string = textOf(variant<i64, i64, string>(0, 2))
+  return offText(circle + ", " + textOf(variant<i64, i64, string>(1, 4)) + ", " + textOf(variant<i64, i64, string>(2, "blob")), "circle 2, square 4, blob")
+}
+
+func zeroOr(found: optional<i64>) -> string {
+  var matchValue_147_12: string
+  if (found.isSome() && found.unwrap() == 0) {
+    matchValue_147_12 = "zero"
+  } else if (found.isSome()) {
+    matchValue_147_12 = "other"
+  } else {
+    matchValue_147_12 = "none"
+  }
+  return matchValue_147_12
+}
+
+func checkPayloadPatterns() -> double {
+  return offText(zeroOr(Some<i64>(0)) + zeroOr(Some<i64>(3)) + zeroOr(None<i64>()), "zeroothernone")
+}
+
+func said(xs: array<i64>) -> string {
+  var matchValue_161_12: string
+  if (xs.len() == 0) {
+    matchValue_161_12 = "empty"
+  } else if (xs.len() == 1) {
+    let x: i64 = xs[0]
+    matchValue_161_12 = "just ${x}"
+  } else if (xs[0] == 0) {
+    matchValue_161_12 = "starts at zero"
+  } else {
+    let first: i64 = xs[0]
+    let rest: mutarray<i64> = drop(xs, 1)
+    matchValue_161_12 = "${first}, then ${rest.len()} more"
+  }
+  return matchValue_161_12
+}
+
+func checkLists() -> double {
+  let none: array<i64> = array<i64>()
+  return offText(said(none) + "; " + said([7]) + "; " + said([0, 1, 2]) + "; " + said([3, 4, 5]), "empty; just 7; starts at zero; 3, then 2 more")
+}
+
+func pairOf(xs: mutarray<i64>) -> string {
+  var matchValue_176_12: string
+  if (xs.len() == 2 && xs[0] == xs[1]) {
+    let a: i64 = xs[0]
+    matchValue_176_12 = "a pair of ${a}"
+  } else if (xs.len() == 2) {
+    let a: i64 = xs[0]
+    let b: i64 = xs[1]
+    matchValue_176_12 = "${a} and ${b}"
+  } else if (xs.len() >= 1 && xs[0] < 0) {
+    matchValue_176_12 = "starts below zero"
+  } else {
+    matchValue_176_12 = "something else"
+  }
+  return matchValue_176_12
+}
+
+func checkListGuards() -> double {
+  let same: mutarray<i64> = [4, 4]
+  let two: mutarray<i64> = [1, 2]
+  let low: mutarray<i64> = [-1, 2, 3]
+  return offText(pairOf(same) + "; " + pairOf(two) + "; " + pairOf(low) + "; " + pairOf([5]), "a pair of 4; 1 and 2; starts below zero; something else")
+}
+
+func command(c: string) -> string {
+  var said: string = ""
+  if (c == "quit" || c == "exit") {
+    return "bye"
+  } else if (startsWith(c, "say ")) {
+    said = c.slice(4, c.len())
+  } else if (c == "noop") {}
+  return said
+}
+
+func checkStatements() -> double {
+  return offText(command("say hi") + "|" + command("quit") + "|" + command("noop") + "|" + command("huh"), "hi|bye||")
+}
+
+func checkNested() -> double {
+  let a: i64 = 2
+  let b: i64 = 5
+  var matchValue_212_21: string
+  switch (a) {
+    1 => {
+      matchValue_212_21 = "one"
+    }
+    2 => {
+      var matchValue_212_49: string
+      switch (b) {
+        5 => {
+          matchValue_212_49 = "two-five"
+        }
+        else => {
+          matchValue_212_49 = "two"
+        }
+      }
+      matchValue_212_21 = matchValue_212_49
+    }
+    else => {
+      matchValue_212_21 = "many"
+    }
+  }
+  let text: string = str(matchValue_212_21)
+  return offText(text, "two-five")
+}
+
+func drop<T>(xs: array<T>, n: i64) -> mutarray<T> {
+  let out: mutarray<T> = mutarray<T>()
+  for (i = n; i < xs.len(); i = i + 1) {
+    out.push(xs[i])
+  }
+  return out
+}

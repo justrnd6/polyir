@@ -1,0 +1,38 @@
+// THE CAMERA FROM SCRATCH, on the GPU (Metal). A toy room (a tiled floor and three blocks, in metres) is seen through a virtual
+// film camera: the one kernel `project` (in shared/camera.poly) turns every corner of the room into a spot in the picture in four
+// plain steps, and the CPU joins the spots with lines. Three pictures show what a film crew would do with the camera: move it,
+// turn it, tilt it, lean it, zoom the lens, and the "dolly zoom".
+//
+//   polyir --emit-msl camera.poly > camera.metal
+//   polyir camera.poly --out camera && ./camera        (Apple Silicon; run in this folder)
+//
+// Saves camera-1-moves.pgm, camera-2-zoom.pgm and camera-3-dolly-zoom.pgm. Exit 0 means the GPU and the CPU agree on every corner
+// of every view, a worked example lands where the arithmetic by hand says, the turns (pan and tilt, section 14.14) look where the numbers say, and seven facts of common sense hold (straight ahead
+// is the middle of the picture, twice as far is half the offset, ...). 10 no GPU, 11 the Metal source is missing, 12 a launch
+// failed, 13 the GPU and CPU disagree, 14 a check failed. (camera-vulkan.poly is the same program for Vulkan.)
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/print.poly"
+import "shared/camera.poly"
+
+func makePipeline(ctx: i64, source: string, name: string) -> i64 {
+    return metalPipeline(ctx, source, name)
+}
+
+// Runs `project` for every point: three buffers (the points, the camera, the results) and one thread for each point.
+func launchProject(ctx: i64, pipeline: i64, points: ptr<float>, pointCount: i64, cam: ptr<float>) -> ptr<float> {
+    let buffers: ptr<i64> = calloc(3, 8).toPtr()
+    buffers[0] = metalBuffer(ctx, points.toI64(), pointCount * 12)
+    buffers[1] = metalBuffer(ctx, cam.toI64(), 64)
+    buffers[2] = metalEmptyBuffer(ctx, pointCount * 16)
+    if (metalDispatchBuffers(ctx, pipeline, pointCount, buffers, 3) == 0) { return calloc(pointCount * 4, 4).toPtr() }
+    return metalContents(buffers[2]).toPtr()
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("camera.metal")
+    if (source == "") { return 11 }
+    return runAll(device, source)
+}

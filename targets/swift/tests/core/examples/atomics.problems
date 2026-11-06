@@ -1,0 +1,6 @@
+targets/swift/Swift.translate:192: `extern(name, params, result)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's
+targets/swift/Swift.translate:418: `atomicLoad(object, order)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's
+targets/swift/Swift.translate:419: `atomicStore(object, value, order)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's
+targets/swift/Swift.translate:420: `atomicRmw(object, op, value, order)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's
+targets/swift/Swift.translate:421: `cmpxchg(object, expected, value, success, failure)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's
+targets/swift/Swift.translate:422: `fence(order)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's

@@ -1,0 +1,4 @@
+func sumBuf(buf: ptr<double>, len: i64) -> double {
+  for (i = 0, total = 0.0; i < len; i = i + 1, total = total + buf[i]) {}
+  return total
+}

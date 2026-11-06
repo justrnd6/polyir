@@ -1,0 +1,19 @@
+func f(n: i64) -> i64 {
+  var total: i64 = 0
+  var unused: i64 = 5
+  for (i = 0; i < n; i = i + 1) {
+    var inner: i64 = i
+    total = total + inner
+  }
+  if (n > 3) {
+    var a: i64 = 1
+    var b: i64 = 2
+    b = 3
+    return a + b
+  } else {
+    var c: i64 = 4
+    return c
+  }
+  return total + unused
+}
+func main() -> i64 { return f(4) }

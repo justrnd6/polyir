@@ -1,0 +1,304 @@
+import "../Audio.poly"
+import "../../audio/Biquad.poly"
+import "../../audio/Sound.poly"
+import "../../audio/Wave.poly"
+import "../../gpu/examples/shared/picture.poly"
+import "../../gpu/examples/shared/plot.poly"
+import "../../gpu/examples/shared/print.poly"
+extern func pow(x: double, y: double) -> double
+extern func calloc(count: i64, size: i64) -> i64
+extern func getenv(name: string) -> i64
+extern func log10(x: double) -> double
+
+func stereoMix() -> Sound {
+  let mix: Sound = soundNewChannels(4.0, 44100, 2)
+  let melody: Sound = soundNew(4.0, 44100)
+  melody.tone(0, 440.0, 0.4, 0.0, 4.0)
+  let bass: Sound = soundNew(4.0, 44100)
+  bass.tone(2, 100.0, 0.1, 0.0, 4.0)
+  let chord: Sound = soundNew(4.0, 44100)
+  chord.tone(0, 660.0, 0.3, 0.0, 4.0)
+  Sound_add(mix, melody.pan((0.0 - 0.6)), 0.0, 1.0)
+  Sound_add(mix, bass.pan(0.0), 0.0, 1.0)
+  Sound_add(mix, chord.pan(0.6), 0.0, 1.0)
+  return mix
+}
+
+func checkFile(mix: Sound) -> i64 {
+  if (mix.saveWav("studio-mix.wav") == 0) {
+    return 11
+  }
+  let back: Sound = soundLoadWav("studio-mix.wav")
+  if (back.count != mix.count || back.channels != 2 || back.rate != 44100) {
+    return 11
+  }
+  var worst: float = 0.0
+  for (k = 0; k < mix.count * 2; k = k + 1) {
+    var gap: float = back.samples[k] - mix.samples[k]
+    if (gap < 0.0) {
+      gap = (0.0 - gap)
+    }
+    if (gap > worst) {
+      worst = gap
+    }
+  }
+  say("studio-mix.wav: saved and read back, largest difference ")
+  sayDecimal(worst * 1000.0)
+  say(" thousandths")
+  newline()
+  if (worst > 0.001) {
+    return 11
+  }
+  return 0
+}
+
+func checkPan(mix: Sound) -> i64 {
+  let left: float = mix.channel(0).strength(440.0, 1.0, 2.0)
+  let right: float = mix.channel(1).strength(440.0, 1.0, 2.0)
+  say("the 440 Hz melody: left ")
+  sayDecimal(left)
+  say(", right ")
+  sayDecimal(right)
+  newline()
+  if (left < 0.37 || left > 0.39 || right < 0.115 || right > 0.133) {
+    return 12
+  }
+  let chordRight: float = mix.channel(1).strength(660.0, 1.0, 2.0)
+  if (chordRight < 0.27 || chordRight > 0.3) {
+    return 12
+  }
+  return 0
+}
+
+func checkResample(mix: Sound) -> i64 {
+  let up: Sound = mix.resample(48000)
+  let down: Sound = mix.resample(22050)
+  let before: float = mix.channel(0).strength(440.0, 1.0, 2.0)
+  let atUp: float = up.channel(0).strength(440.0, 1.0, 2.0)
+  let atDown: float = down.channel(0).strength(440.0, 1.0, 2.0)
+  say("resampled to 48,000 Hz: ")
+  sayNumber(up.count)
+  say(" frames, the 440 Hz melody still ")
+  sayDecimal(atUp)
+  say(" (was ")
+  sayDecimal(before)
+  say("); to 22,050 Hz: ")
+  sayNumber(down.count)
+  say(" frames, melody ")
+  sayDecimal(atDown)
+  newline()
+  if (up.count != 192000 || down.count != 88200 || up.channels != 2) {
+    return 13
+  }
+  if (atUp < before - 0.005 || atUp > before + 0.005 || atDown < before - 0.005 || atDown > before + 0.005) {
+    return 13
+  }
+  return 0
+}
+
+func checkAliasing() -> i64 {
+  let tone: Sound = soundNew(1.0, 8000)
+  for (i = 0; i < tone.count; i = i + 1) {
+    tone.samples[i] = sine((3000.0 * i.toFloat() / 8000.0))
+  }
+  let naive: Sound = soundNew(1.0, 4000)
+  for (i = 0; i < naive.count; i = i + 1) {
+    naive.samples[i] = tone.samples[i * 2]
+  }
+  let careful: Sound = tone.resample(4000)
+  let alias: float = naive.strength(1000.0, 0.25, 0.5)
+  let kept: float = careful.strength(1000.0, 0.25, 0.5)
+  say("3,000 Hz tone at 8,000 Hz down to 4,000 Hz: dropping every second sample gives a false 1,000 Hz tone of ")
+  sayDecimal(alias)
+  say("; resample gives ")
+  sayDecimal(kept)
+  newline()
+  if (alias < 0.99 || kept > 0.01) {
+    return 13
+  }
+  return 0
+}
+
+func applyEqualizer(s: Sound) -> i64 {
+  s.lowShelf(200.0, 6.0)
+  s.bell(1000.0, 1.0, (0.0 - 6.0))
+  s.highShelf(6000.0, 3.0)
+  return 0
+}
+
+func equalizerGain(hz: float) -> float {
+  let low: Biquad = biquadLowShelf(44100, 200.0, 6.0)
+  let middle: Biquad = biquadBell(44100, 1000.0, 1.0, (0.0 - 6.0))
+  let high: Biquad = biquadHighShelf(44100, 6000.0, 3.0)
+  return low.gain(hz, 44100) * middle.gain(hz, 44100) * high.gain(hz, 44100)
+}
+
+func measuredEqualizer(hz: float) -> float {
+  let tone: Sound = soundNew(1.0, 44100)
+  for (i = 0; i < tone.count; i = i + 1) {
+    tone.samples[i] = sine(hz * i.toFloat() / 44100.0)
+  }
+  applyEqualizer(tone)
+  return tone.strength(hz, 0.5, 0.5)
+}
+
+func checkEqualizer() -> i64 {
+  let tones: ptr<float> = calloc(8, 4).toPtr()
+  tones[0] = 50.0
+  tones[1] = 100.0
+  tones[2] = 200.0
+  tones[3] = 500.0
+  tones[4] = 1000.0
+  tones[5] = 2000.0
+  tones[6] = 6000.0
+  tones[7] = 12000.0
+  say("equalizer, tone by tone: predicted gain / measured gain")
+  newline()
+  var worst: float = 0.0
+  for (k = 0; k < 8; k = k + 1) {
+    let predicted: float = equalizerGain(tones[k])
+    let measured: float = measuredEqualizer(tones[k])
+    sayRight(tones[k].toI64(), 7)
+    say(" Hz   ")
+    sayDecimal(predicted)
+    say("   ")
+    sayDecimal(measured)
+    newline()
+    var gap: float = (measured - predicted) / predicted
+    if (gap < 0.0) {
+      gap = (0.0 - gap)
+    }
+    if (gap > worst) {
+      worst = gap
+    }
+  }
+  if (worst > 0.01) {
+    return 14
+  }
+  return drawEqualizer()
+}
+
+func frequencyAt(column: i64) -> float {
+  return pow(10.0, 1.30103 + 3.0 * column.toDouble() / 319.0).toFloat()
+}
+
+func markDecades(pic: ptr<float>, w: i64, h: i64) -> i64 {
+  for (d = 0; d < 3; d = d + 1) {
+    let column: i64 = ((0.69897 + d.toFloat()) / 3.0 * (w - 1).toFloat()).toI64()
+    for (y = 0; y < h; y = y + 1) {
+      if (pic[y * w + column] > 0.9) {
+        pic[y * w + column] = 0.8
+      }
+    }
+  }
+  return 0
+}
+
+func decibels(gain: float) -> float {
+  return (20.0 * log10(gain.toDouble() + 0.0000001)).toFloat()
+}
+
+func drawEqualizer() -> i64 {
+  let curve: ptr<float> = calloc(320, 4).toPtr()
+  for (x = 0; x < 320; x = x + 1) {
+    curve[x] = decibels(equalizerGain(frequencyAt(x)))
+  }
+  let pic: ptr<float> = calloc(320 * 96, 4).toPtr()
+  drawCurve(pic, 320, 96, curve, 320, (0.0 - 12.0), 12.0)
+  markDecades(pic, 320, 96)
+  savePicture("studio-eq.pgm", pic, 320, 96)
+  return 0
+}
+
+func checkHum() -> i64 {
+  let s: Sound = soundNew(2.0, 44100)
+  s.tone(0, 440.0, 0.5, 0.0, 2.0)
+  for (i = 0; i < s.count; i = i + 1) {
+    s.samples[i] = s.samples[i] + (0.3 * sine((50.0 * i.toFloat() / 44100.0)))
+  }
+  let humBefore: float = s.strength(50.0, 1.0, 1.0)
+  s.notch(50.0, 10.0)
+  let humAfter: float = s.strength(50.0, 1.0, 1.0)
+  let toneAfter: float = s.strength(440.0, 1.0, 1.0)
+  say("hum at 50 Hz: ")
+  sayDecimal(humBefore)
+  say(" before the notch, ")
+  sayDecimal(humAfter)
+  say(" after; the 440 Hz tone is ")
+  sayDecimal(toneAfter)
+  newline()
+  if (humAfter > 0.01 || toneAfter < 0.47 || toneAfter > 0.51) {
+    return 15
+  }
+  return drawHum()
+}
+
+func drawHum() -> i64 {
+  let notch: Biquad = biquadNotch(44100, 50.0, 10.0)
+  let curve: ptr<float> = calloc(320, 4).toPtr()
+  for (x = 0; x < 320; x = x + 1) {
+    curve[x] = decibels(notch.gain(frequencyAt(x), 44100))
+  }
+  let pic: ptr<float> = calloc(320 * 96, 4).toPtr()
+  drawCurve(pic, 320, 96, curve, 320, (0.0 - 40.0), 3.0)
+  markDecades(pic, 320, 96)
+  savePicture("studio-hum.pgm", pic, 320, 96)
+  return 0
+}
+
+func telephoneGain(hz: float) -> float {
+  let high: Biquad = biquadHighPass(44100, 300.0, 0.7071)
+  let low: Biquad = biquadLowPass(44100, 3400.0, 0.7071)
+  return high.gain(hz, 44100) * low.gain(hz, 44100)
+}
+
+func checkTelephone() -> i64 {
+  say("telephone gain at 100 Hz, 1,000 Hz and 8,000 Hz: ")
+  sayDecimal(telephoneGain(100.0))
+  say(", ")
+  sayDecimal(telephoneGain(1000.0))
+  say(", ")
+  sayDecimal(telephoneGain(8000.0))
+  newline()
+  if (telephoneGain(100.0) > 0.15 || telephoneGain(1000.0) < 0.95 || telephoneGain(8000.0) > 0.25) {
+    return 16
+  }
+  let curve: ptr<float> = calloc(320, 4).toPtr()
+  for (x = 0; x < 320; x = x + 1) {
+    curve[x] = decibels(telephoneGain(frequencyAt(x)))
+  }
+  let pic: ptr<float> = calloc(320 * 96, 4).toPtr()
+  drawCurve(pic, 320, 96, curve, 320, (0.0 - 40.0), 3.0)
+  markDecades(pic, 320, 96)
+  savePicture("studio-phone.pgm", pic, 320, 96)
+  return 0
+}
+
+func main() -> i64 {
+  let mix: Sound = stereoMix()
+  var code: i64 = checkFile(mix)
+  if (code == 0) {
+    code = checkPan(mix)
+  }
+  if (code == 0) {
+    code = checkResample(mix)
+  }
+  if (code == 0) {
+    code = checkAliasing()
+  }
+  if (code == 0) {
+    code = checkEqualizer()
+  }
+  if (code == 0) {
+    code = checkHum()
+  }
+  if (code == 0) {
+    code = checkTelephone()
+  }
+  if (code == 0 && getenv("POLYIR_PLAY") != 0) {
+    if (soundPlay(mix) != 0) {
+      code = 17
+    }
+  }
+  return code
+}

@@ -1,0 +1,27 @@
+// Calling into the JDK. The declarations are in targets/java/java.base.d.poly: host types with their members, and bridges that say how
+// a polyir value crosses (an `array<i64>` is copied into a `long[]`, an `optional<T>` is a nullable `T`). Bridges.java is the result.
+import "../../src/java/java.base.d.poly"
+
+func main() -> i64 {
+  var score: i64 = 0
+
+  let numbers: mutarray<i64> = mutarray<i64>()
+  push(numbers, 3)
+  push(numbers, 1)
+  push(numbers, 2)
+  let frozen: array<i64> = numbers.freeze()
+  if (Arrays.render(frozen) == "[3, 1, 2]") { score = score + 1 }
+
+  let missing: optional<string> = System.getenv("NO_SUCH_VARIABLE_FOR_THIS_EXAMPLE")
+  if (missing.isNone()) { score = score + 10 }
+
+  let list: ArrayList<i64> = ArrayList.new()
+  list.add(5)
+  list.add(7)
+  score = score + list.get(1) + list.size()
+
+  score = score + Math.maxLong(4, 9)
+  let words: array<string> = array<string>().with("a").with("b")
+  if (Strings.joinWith("-", words) == "a-b") { score = score + 100 }
+  return score
+}

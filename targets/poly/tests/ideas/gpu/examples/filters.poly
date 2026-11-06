@@ -1,0 +1,143 @@
+import "../../audio/Sound.poly"
+import "../../audio/Wave.poly"
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/plot.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func spectrumOf(device: i64, source: string, signal: ptr<float>, n: i64) -> ptr<float> {
+  let pipeline: i64 = metalPipeline(device, source, "dft")
+  if (pipeline == 0) {
+    return 0.toPtr()
+  }
+  let size: ptr<float> = calloc(2, 4).toPtr()
+  size[0] = n.toFloat()
+  let out: i64 = metalEmptyBuffer(device, n * 4)
+  if (metalDispatch(device, pipeline, n, metalBuffer(device, signal.toI64(), n * 4), metalBuffer(device, size.toI64(), 8), out, 0) == 0) {
+    return 0.toPtr()
+  }
+  return metalContents(out).toPtr()
+}
+
+func twoTones() -> Sound {
+  let s: Sound = soundNew(0.25, 8000)
+  let data: ptr<float> = s.samples
+  for (i = 0; i < 2000; i = i + 1) {
+    let t: float = i.toFloat() / 8000.0
+    data[i] = sine((200.0 * t)) + sine((1000.0 * t))
+  }
+  return s
+}
+
+func click() -> Sound {
+  let s: Sound = soundNew(0.25, 8000)
+  let data: ptr<float> = s.samples
+  data[0] = 1.0
+  return s
+}
+
+func near(a: float, b: float, tolerance: float) -> i64 {
+  var gap: float = a - b
+  if (gap < 0.0) {
+    gap = (0.0 - gap)
+  }
+  if (gap <= tolerance) {
+    return 1
+  }
+  return 0
+}
+
+func plotSpectrum(name: string, spectrum: ptr<float>, bins: i64, high: float) -> i64 {
+  let pic: ptr<float> = calloc(320 * 96, 4).toPtr()
+  drawStems(pic, 320, 96, spectrum, bins, 0.0, high)
+  return savePicture(name, pic, 320, 96)
+}
+
+func plotWave(name: string, wave: ptr<float>, n: i64, high: float) -> i64 {
+  let pic: ptr<float> = calloc(320 * 96, 4).toPtr()
+  drawWave(pic, 320, 96, wave, n, (0.0 - high), high)
+  return savePicture(name, pic, 320, 96)
+}
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let source: string = metalReadFile("filters.metal")
+  if (spectra(device, source) != 0) {
+    return 13
+  }
+  if (responses(device, source) != 0) {
+    return 13
+  }
+  echoAndReverb()
+  return 0
+}
+
+func spectra(device: i64, source: string) -> i64 {
+  let original: Sound = twoTones()
+  let low: Sound = twoTones()
+  low.lowPass(500.0)
+  let high: Sound = twoTones()
+  high.highPass(500.0)
+  let before: ptr<float> = spectrumOf(device, source, original.samples, 2000)
+  let afterLow: ptr<float> = spectrumOf(device, source, low.samples, 2000)
+  let afterHigh: ptr<float> = spectrumOf(device, source, high.samples, 2000)
+  if (before.toI64() == 0 || afterLow.toI64() == 0 || afterHigh.toI64() == 0) {
+    return 1
+  }
+  if (near(before[50], 1.0, 0.02) == 0 || near(before[250], 1.0, 0.02) == 0) {
+    return 1
+  }
+  if (near(afterLow[50], 0.903, 0.04) == 0 || near(afterLow[250], 0.399, 0.04) == 0) {
+    return 1
+  }
+  if (near(afterHigh[50], 0.359, 0.04) == 0 || near(afterHigh[250], 0.776, 0.04) == 0) {
+    return 1
+  }
+  plotSpectrum("filters-1-original.pgm", before, 300, 1.3)
+  plotSpectrum("filters-2-lowpass.pgm", afterLow, 300, 1.3)
+  plotSpectrum("filters-3-highpass.pgm", afterHigh, 300, 1.3)
+  return 0
+}
+
+func responses(device: i64, source: string) -> i64 {
+  let low: Sound = click()
+  low.lowPass(500.0)
+  let high: Sound = click()
+  high.highPass(500.0)
+  let lowSpectrum: ptr<float> = spectrumOf(device, source, low.samples, 2000)
+  let highSpectrum: ptr<float> = spectrumOf(device, source, high.samples, 2000)
+  if (lowSpectrum.toI64() == 0 || highSpectrum.toI64() == 0) {
+    return 1
+  }
+  for (k = 0; k < 1000; k = k + 1) {
+    lowSpectrum[k] = lowSpectrum[k] * 1000.0
+    highSpectrum[k] = highSpectrum[k] * 1000.0
+  }
+  if (near(lowSpectrum[0], 1.0, 0.02) == 0 || near(highSpectrum[0], 0.0, 0.02) == 0) {
+    return 1
+  }
+  if (near(lowSpectrum[125], 0.649, 0.03) == 0) {
+    return 1
+  }
+  plotSpectrum("filters-4-lowpass-response.pgm", lowSpectrum, 500, 1.1)
+  plotSpectrum("filters-5-highpass-response.pgm", highSpectrum, 500, 1.1)
+  return 0
+}
+
+func echoAndReverb() -> i64 {
+  let beep: Sound = soundNew(1.0, 8000)
+  beep.tone(0, 400.0, 0.8, 0.02, 0.06)
+  plotWave("filters-6-beep.pgm", beep.samples, 8000, 1.0)
+  let echoed: Sound = soundNew(1.0, 8000)
+  echoed.tone(0, 400.0, 0.8, 0.02, 0.06)
+  echoed.echo(0.25, 0.5)
+  plotWave("filters-7-echo.pgm", echoed.samples, 8000, 1.0)
+  let hall: Sound = soundNew(1.0, 8000)
+  hall.tone(0, 400.0, 0.8, 0.02, 0.06)
+  hall.reverb(0.8)
+  plotWave("filters-8-reverb.pgm", hall.samples, 8000, 1.0)
+  return 0
+}

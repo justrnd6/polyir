@@ -1,0 +1,31 @@
+# Objc
+source: polyir
+target: objc
+base: C
+style: indent 2, braces same-line, names keep, paths _, qualify full, modules flat, generics copies, locals unique, extension m, library h
+
+// A checked .poly file as one Objective-C file. Objective-C is C with classes and messages, so this page starts with every rule
+// of the C page (C.translate) and writes polyir's constructs in its C part: what polyir shares is a C struct, a closure a C
+// function with its environment, a throw a `longjmp`. That keeps every value out of reference counting, which C's memory and
+// containers here do not take part in. Headers come in by `#import`, each once.
+
+## declarations
+// An imported .poly file is a header, imported before this file's declarations.
+use.include(name, path, names)      := #import "{path}.h"
+use.include(name, path, names, program) := #import "{path}.m"
+
+## reserved
+// Objective-C's own words, beside C's.
+id self super nil Nil YES NO BOOL SEL IMP Class Protocol instancetype
+
+## imports
+// The headers, each imported once at the top when a rule or a support file that uses it is written.
+math := #import <math.h>
+pthread := #import <pthread.h>
+setjmp := #import <setjmp.h>
+stdatomic := #import <stdatomic.h>
+stdbool := #import <stdbool.h>
+stdint := #import <stdint.h>
+stdio := #import <stdio.h>
+stdlib := #import <stdlib.h>
+string := #import <string.h>

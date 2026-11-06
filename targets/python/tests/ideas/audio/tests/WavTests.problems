@@ -1,0 +1,1 @@
+targets/python/Python.translate:124: `extern(name, params, result)` is unsupported: Python cannot call a C function

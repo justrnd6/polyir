@@ -1,0 +1,106 @@
+// Interfaces: a set of method signatures that several structs can promise to provide, so one function can work on
+// any of them. `struct Square : Shape` says Square implements Shape; the compiler checks that Square has every Shape
+// method with the same parameter and return types. A value written with the interface's name (`s: Shape`) holds any
+// such struct, and `s.area()` calls the area of whichever struct it holds, through a table of the struct's methods
+// (a "vtable"). Converting a struct to an interface copies the struct to the heap, like every other box in polyir.
+
+interface Shape {
+  func area() -> i64
+  func scaled(k: i64) -> i64
+}
+
+interface Named {
+  func id() -> i64
+}
+
+// An interface method may take an interface value too.
+interface Combiner {
+  func combine(other: Shape) -> i64
+}
+
+// One struct can implement several interfaces.
+struct Square(side: i64) : Shape, Named {
+  func area() -> i64 {
+    return this.side * this.side
+  }
+  func scaled(k: i64) -> i64 {
+    return this.side * k
+  }
+  func id() -> i64 {
+    return 1
+  }
+}
+
+struct Rect(w: i64, h: i64) : Shape {
+  func area() -> i64 {
+    return this.w * this.h
+  }
+  func scaled(k: i64) -> i64 {
+    return this.w * k
+  }
+}
+
+struct Summer(base: i64) : Combiner {
+  func combine(other: Shape) -> i64 {
+    return this.base + other.area()
+  }
+}
+
+// An interface value can be a struct field.
+struct Holder(shape: Shape, tag: i64)
+
+func totalArea(s: Shape) -> i64 {
+  return s.area()
+}
+
+// A struct is converted to the interface where the interface is expected: at a call, a `let`, a `return`.
+func directCall() -> i64 {
+  return totalArea(Square(side: 3)) * 100 + totalArea(Rect(w: 4, h: 5))
+}
+
+func pick(which: i64) -> Shape {
+  if (which == 0) {
+    return Square(side: 6)
+  }
+  return Rect(w: 2, h: 7)
+}
+
+func chosen() -> i64 {
+  let a: Shape = pick(0)
+  let b: Shape = pick(1)
+  return a.area() * 1000 + b.area() + b.scaled(10)
+}
+
+// A mutarray of interface values holds different structs side by side.
+func sumAll() -> i64 {
+  let shapes: mutarray<Shape> = mutarray<Shape>()
+  shapes.push(Square(side: 2))
+  shapes.push(Rect(w: 3, h: 4))
+  push(shapes, Square(side: 5))
+  var total: i64 = 0
+  for (i = 0; i < len(shapes); i = i + 1) {
+    total = total + shapes[i].area()
+  }
+  return total
+}
+
+func viaField() -> i64 {
+  let h: Holder = Holder(shape: Rect(w: 5, h: 6), tag: 7)
+  return h.shape.area() * 10 + h.tag
+}
+
+func twoInterfaces() -> i64 {
+  let sq: Square = Square(side: 4)
+  let n: Named = sq
+  let s: Shape = sq
+  return n.id() * 1000 + s.area()
+}
+
+func interfaceArgument() -> i64 {
+  let c: Combiner = Summer(base: 100)
+  return c.combine(Rect(w: 3, h: 3))
+}
+
+func main() -> i64 {
+  return directCall() + chosen() + sumAll() + viaField() + twoInterfaces() + interfaceArgument()
+}

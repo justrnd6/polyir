@@ -1,0 +1,86 @@
+import "Check.poly"
+global made: i64 = 0
+
+coro func upTo(limit: i64) -> i64 {
+  for (i = 0; i < limit; i = i + 1) {
+    yield i
+  }
+}
+
+func counted(limit: i64) -> coro<i64> {
+  made = made + 1
+  return upTo(limit)
+}
+
+func checkSumsEveryValue() -> double {
+  var total: i64 = 0
+  let forGen_21_10: coro<i64> = upTo(5)
+  var forStep_21_10: variant<i64> = forGen_21_10.resume()
+  for (; forStep_21_10.isCase(0); ) {
+    let n: i64 = forStep_21_10.unwrapAt(0)
+    total = total + n
+    forStep_21_10 = forGen_21_10.resume()
+  }
+  return offInt(total, 10)
+}
+
+func checkEmptyCoroutineRunsNoTurns() -> double {
+  var turns: i64 = 0
+  let forGen_29_10: coro<i64> = upTo(0)
+  var forStep_29_10: variant<i64> = forGen_29_10.resume()
+  for (; forStep_29_10.isCase(0); ) {
+    let n: i64 = forStep_29_10.unwrapAt(0)
+    turns = turns + 1
+    forStep_29_10 = forGen_29_10.resume()
+  }
+  return offInt(turns, 0)
+}
+
+func firstAbove(limit: i64) -> i64 {
+  let forGen_36_10: coro<i64> = upTo(100)
+  var forStep_36_10: variant<i64> = forGen_36_10.resume()
+  for (; forStep_36_10.isCase(0); ) {
+    let n: i64 = forStep_36_10.unwrapAt(0)
+    if (n > limit) {
+      forGen_36_10.close()
+      return n
+    }
+    forStep_36_10 = forGen_36_10.resume()
+  }
+  return -1
+}
+
+func checkReturnLeavesMidway() -> double {
+  return offInt(firstAbove(6), 7)
+}
+
+func checkLoopsNest() -> double {
+  var total: i64 = 0
+  let forGen_50_10: coro<i64> = upTo(3)
+  var forStep_50_10: variant<i64> = forGen_50_10.resume()
+  for (; forStep_50_10.isCase(0); ) {
+    let a: i64 = forStep_50_10.unwrapAt(0)
+    let forGen_51_14: coro<i64> = upTo(2)
+    var forStep_51_14: variant<i64> = forGen_51_14.resume()
+    for (; forStep_51_14.isCase(0); ) {
+      let b: i64 = forStep_51_14.unwrapAt(0)
+      total = total + a * 10 + b
+      forStep_51_14 = forGen_51_14.resume()
+    }
+    forStep_50_10 = forGen_50_10.resume()
+  }
+  return offInt(total, 63)
+}
+
+func checkSourceIsEvaluatedOnce() -> double {
+  made = 0
+  var total: i64 = 0
+  let forGen_61_10: coro<i64> = counted(4)
+  var forStep_61_10: variant<i64> = forGen_61_10.resume()
+  for (; forStep_61_10.isCase(0); ) {
+    let n: i64 = forStep_61_10.unwrapAt(0)
+    total = total + n
+    forStep_61_10 = forGen_61_10.resume()
+  }
+  return offInt(made * 100 + total, 106)
+}

@@ -1,0 +1,40 @@
+// THE CLASSIC PROBLEMS OF GPU COMPUTING, on the GPU (Metal). Seven problems every GPU course meets: SAXPY, prefix sum,
+// matrix multiply, Game of Life, N-body gravity, a Monte Carlo estimate of pi, and a parallel sort. The kernels are in
+// shared/classics.poly (read the comment above each one first). For every problem the program runs the kernel on the GPU and
+// the same kernel one thread after another on the CPU, checks that the answers agree, and prints how long each took.
+//
+//   polyir --emit-msl classics.poly > classics.metal
+//   polyir classics.poly --out classics && ./classics        (Apple Silicon; run in this folder)
+//
+// Exit 0 means every answer matched and every check held (a glider moves, the identity matrix changes nothing, the forces
+// add up to zero, the estimate of pi is within 0.01, the sort result equals the CPU's). 10 no GPU, 11 the Metal source is
+// missing, 12 a kernel would not start, 13 the GPU and CPU disagree, 14 a property check failed. (classics-vulkan.poly is the
+// same program for Vulkan.)
+import "../Metal.poly"
+import "shared/print.poly"
+import "shared/classics.poly"
+
+// The kernel, ready to run on this GPU.
+func makePipeline(ctx: i64, source: string, name: string) -> i64 {
+    return metalPipeline(ctx, source, name)
+}
+
+// One launch: copy the three inputs into buffers, make an empty buffer for the results, run `outCount` threads, wait, and
+// return a pointer to the results. (If the GPU cannot run it, an array of zeros comes back, so the checks fail loudly.)
+func launch(ctx: i64, pipeline: i64, a: ptr<float>, aCount: i64, b: ptr<float>, bCount: i64, opts: ptr<float>, outCount: i64) -> ptr<float> {
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    buffers[0] = metalBuffer(ctx, a.toI64(), aCount * 4)
+    buffers[1] = metalBuffer(ctx, b.toI64(), bCount * 4)
+    buffers[2] = metalBuffer(ctx, opts.toI64(), 16)
+    buffers[3] = metalEmptyBuffer(ctx, outCount * 4)
+    if (metalDispatchBuffers(ctx, pipeline, outCount, buffers, 4) == 0) { return calloc(outCount, 4).toPtr() }
+    return metalContents(buffers[3]).toPtr()
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("classics.metal")
+    if (source == "") { return 11 }
+    return runAll(device, source)
+}

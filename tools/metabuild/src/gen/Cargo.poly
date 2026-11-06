@@ -1,0 +1,35 @@
+// The rust target as a Cargo project: build/cargo/Cargo.toml with the crates (and git crates) and src/main.rs, the
+// program polyir generates. Cargo resolves, downloads, verifies (Cargo.lock) and builds.
+import "../Project.poly"
+
+func cargoPlan(p: Project, target: string, out: Plan) -> void {
+  let dir: string = toolDir("cargo")
+  addFile(out, "${dir}/Cargo.toml", cargoToml(p))
+  out.steps.push(emitStep(p, target, "${dir}/src/main.rs"))
+  out.steps.push(step("build", target, ["cargo", "build", "--release", "--quiet", "--manifest-path", "${dir}/Cargo.toml"],
+    "install Rust with rustup (rustup.rs), not Homebrew"))
+  out.steps.push(step("run", target, ["${dir}/target/release/${programName(p)}"], ""))
+}
+
+func cargoToml(p: Project) -> string {
+  return """
+    [package]
+    name = "${programName(p)}"
+    version = "0.1.0"
+    edition = "2021"
+
+    [dependencies]
+    ${cargoDeps(p)}
+    """
+}
+
+func cargoDeps(p: Project) -> string {
+  let lines: mutarray<string>
+  for (d in depsFrom(p, "cargo")) {
+    lines.push("${d.name} = \"${d.version}\"")
+  }
+  for (d in depsFrom(p, "git")) {
+    lines.push("${d.name} = { git = \"${d.url}\", tag = \"${d.tag}\" }")
+  }
+  return lines.join("\n")
+}

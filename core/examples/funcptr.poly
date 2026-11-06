@@ -1,0 +1,59 @@
+// `ptr<func(Types) -> Type>` — function pointers / indirect calls. A
+// bare function NAME used as a value (not called) resolves to its own
+// address; calling THROUGH a local holding one of these dispatches an
+// indirect `call`, textually identical to a direct one.
+
+func doubleIt(x: i64) -> i64 {
+  return x * 2
+}
+
+func applyTwice(f: ptr<func(i64) -> i64>, x: i64) -> i64 {
+  let once: i64 = f(x)
+  return f(once)
+}
+
+func applyDoubleTwice(x: i64) -> i64 {
+  return applyTwice(doubleIt, x)
+}
+
+// A DIRECT call elsewhere in the same file, unchanged — confirms the
+// new `env`-before-`funcs` check in `lowerCall` didn't regress it.
+func directDoubleCheck(x: i64) -> i64 {
+  return doubleIt(x)
+}
+
+func addOne(x: i64) -> i64 {
+  return x + 1
+}
+
+// `applyTwice` only ever calls through a PARAMETER. A real `var` of
+// function-pointer type is a different case — the pointer VALUE
+// itself lives in a mutable slot, so calling THROUGH it needs the
+// SAME auto-load `var`'s scalar/container forms already rely on
+// (found and fixed getting this example working: `lowerIndirectCall`
+// was calling through the slot's own ADDRESS, not what's currently
+// stored in it). `fn` is reassigned conditionally — a function chosen
+// at runtime, not just one threaded through as an argument.
+func pickAndApply(x: i64, useAddOne: i64) -> i64 {
+  var fn: ptr<func(i64) -> i64> = doubleIt
+  if (useAddOne != 0) {
+    fn = addOne
+  }
+  return fn(x)
+}
+
+// The SAME `var` reassigned across a loop's own iterations, applying
+// whichever function is currently selected `n` times — generalizes
+// `applyTwice`'s fixed "twice" into "however many times," via an
+// ordinary mutable accumulator instead of a longer parameter chain.
+func applyNTimes(f: ptr<func(i64) -> i64>, x: i64, n: i64) -> i64 {
+  var acc: i64 = x
+  for (i = 0; i < n; i = i + 1) {
+    acc = f(acc)
+  }
+  return acc
+}
+
+func doubleFourTimes(x: i64) -> i64 {
+  return applyNTimes(doubleIt, x, 4)
+}

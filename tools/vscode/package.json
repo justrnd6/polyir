@@ -1,0 +1,260 @@
+{
+  "name": "polyir-lang",
+  "displayName": "polyir Language",
+  "description": "polyir (.poly) for VS Code: syntax highlighting (also for translate pages, .translate, and canons, .canon), run on any target (interpreter, JIT, native, wasm, Java, Kotlin, JS, TS, Python, Swift, C, C++, Objective-C, Rust) with \u25b6 Run code lenses, compile errors as diagnostics, Polyfile projects, and a live split-view of the compiled LLVM IR.",
+  "version": "0.4.0",
+  "publisher": "polyir",
+  "license": "SEE LICENSE IN ../../README.md",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:polyir",
+    "onLanguage:polyfile",
+    "workspaceContains:**/Polyfile"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "polyir",
+        "aliases": [
+          "polyir"
+        ],
+        "extensions": [
+          ".poly"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "llvm-ir",
+        "aliases": [
+          "LLVM IR"
+        ],
+        "configuration": "./llvm-ir-language-configuration.json"
+      },
+      {
+        "id": "polyfile",
+        "aliases": [
+          "Polyfile"
+        ],
+        "filenames": [
+          "Polyfile"
+        ],
+        "configuration": "./polyfile-language-configuration.json"
+      },
+      {
+        "id": "polyir-translate",
+        "aliases": [
+          "polyir translate page"
+        ],
+        "extensions": [
+          ".translate"
+        ],
+        "configuration": "./translate-language-configuration.json"
+      },
+      {
+        "id": "polyir-canon",
+        "aliases": [
+          "polyir canon"
+        ],
+        "extensions": [
+          ".canon"
+        ],
+        "configuration": "./canon-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "polyir",
+        "scopeName": "source.poly",
+        "path": "./syntaxes/polyir.tmLanguage.json"
+      },
+      {
+        "language": "llvm-ir",
+        "scopeName": "source.llvm-ir",
+        "path": "./syntaxes/llvm-ir.tmLanguage.json"
+      },
+      {
+        "language": "polyfile",
+        "scopeName": "source.polyfile",
+        "path": "./syntaxes/polyfile.tmLanguage.json"
+      },
+      {
+        "language": "polyir-translate",
+        "scopeName": "source.polyir-translate",
+        "path": "./syntaxes/translate.tmLanguage.json"
+      },
+      {
+        "language": "polyir-canon",
+        "scopeName": "source.polyir-canon",
+        "path": "./syntaxes/canon.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "polyir.showIRPreview",
+        "title": "polyir: Show Compiled LLVM IR",
+        "icon": "$(file-binary)"
+      },
+      {
+        "command": "polyir.run",
+        "title": "polyir: Run",
+        "icon": "$(play)"
+      },
+      {
+        "command": "polyir.runOnTarget",
+        "title": "polyir: Run on Target\u2026",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "polyir.runAll",
+        "title": "polyir: Run on All Targets"
+      },
+      {
+        "command": "polyir.showGenerated",
+        "title": "polyir: Show Generated Code to the Side\u2026",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "polyir.showRunOutput",
+        "title": "polyir: Show Run Output to the Side",
+        "icon": "$(output)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "polyir.run",
+          "when": "resourceLangId == polyir",
+          "group": "navigation@1"
+        },
+        {
+          "command": "polyir.showRunOutput",
+          "when": "resourceLangId == polyir",
+          "group": "navigation@2"
+        },
+        {
+          "command": "polyir.showGenerated",
+          "when": "resourceLangId == polyir",
+          "group": "navigation@3"
+        },
+        {
+          "command": "polyir.showIRPreview",
+          "when": "resourceLangId == polyir",
+          "group": "navigation@4"
+        },
+        {
+          "command": "polyir.runOnTarget",
+          "when": "resourceLangId == polyir",
+          "group": "1_run@1"
+        },
+        {
+          "command": "polyir.runAll",
+          "when": "resourceLangId == polyir",
+          "group": "1_run@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "polyir.run",
+          "when": "editorLangId == polyir"
+        },
+        {
+          "command": "polyir.runOnTarget",
+          "when": "editorLangId == polyir"
+        },
+        {
+          "command": "polyir.runAll",
+          "when": "editorLangId == polyir"
+        },
+        {
+          "command": "polyir.showIRPreview",
+          "when": "editorLangId == polyir"
+        },
+        {
+          "command": "polyir.showGenerated",
+          "when": "editorLangId == polyir"
+        },
+        {
+          "command": "polyir.showRunOutput",
+          "when": "editorLangId == polyir"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "polyir.showIRPreview",
+        "key": "ctrl+k ctrl+i",
+        "mac": "cmd+k cmd+i",
+        "when": "editorLangId == polyir"
+      },
+      {
+        "command": "polyir.run",
+        "key": "ctrl+f5",
+        "mac": "cmd+f5",
+        "when": "editorLangId == polyir"
+      },
+      {
+        "command": "polyir.showGenerated",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == polyir"
+      }
+    ],
+    "configuration": {
+      "title": "polyir",
+      "properties": {
+        "polyir.daemonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a `polyird` daemon binary, used by \"polyir: Show Compiled LLVM IR\" for a live, persistent preview when one is given or found. Without one (the default) the preview runs the plain CLI (`polyir.cliPath`) each time."
+        },
+        "polyir.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the `polyir-check` CLI. Empty (default) uses this repository's own build (build/polyir-check; the extension is tools/vscode), then `polyir-check` on PATH."
+        },
+        "polyir.defaultTarget": {
+          "type": "string",
+          "enum": [
+            "interp",
+            "jit",
+            "native",
+            "wasm",
+            "java",
+            "kotlin",
+            "js",
+            "ts",
+            "python",
+            "swift",
+            "c",
+            "cpp",
+            "objc",
+            "rust"
+          ],
+          "default": "interp",
+          "description": "The target \"polyir: Run\" and the \u25b6 Run lens use. `interp` needs no toolchain; the others need theirs installed (`polyir --run-targets` lists what is)."
+        },
+        "polyir.entry": {
+          "type": "string",
+          "default": "",
+          "description": "The function \"polyir: Run\" calls (empty: `main`, or the Polyfile's `entry`). The interp, jit and wasm targets take any function; the others run `main`."
+        },
+        "polyir.args": {
+          "type": "string",
+          "default": "",
+          "description": "Space-separated arguments for the entry function (interp, jit and wasm)."
+        },
+        "polyir.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check the file with `polyir --check` when it is opened or saved, and show the errors as diagnostics."
+        }
+      }
+    }
+  }
+}

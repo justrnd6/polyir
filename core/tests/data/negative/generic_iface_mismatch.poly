@@ -1,0 +1,15 @@
+interface Shape {
+  func area() -> f64
+}
+
+struct Box<T> : Shape {
+  var value: T
+  func area() -> T {
+    return this.value
+  }
+}
+
+func main() -> i64 {
+  let b: Box<i64> = Box { value: 5 }
+  return b.value
+}

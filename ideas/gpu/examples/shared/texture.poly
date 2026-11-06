@@ -1,0 +1,166 @@
+// TEXTURES ON THE GPU, written by hand so every step can be read.
+//
+// A texture is just an image the GPU can look things up in: a grid of numbers
+// (here, grey levels from 0 to 1) stored row after row in one array. A real GPU
+// has dedicated hardware that does the look-ups below very quickly; in polyir they
+// are ordinary kernels, which makes them a good way to learn what that hardware does.
+//
+// The vocabulary, in plain words:
+//   texel    one cell of the image (like a pixel, but of the texture)
+//   u, v     a position INSIDE the image as fractions: (0, 0) is one corner,
+//            (1, 1) the opposite corner, whatever the image's size
+//   sampling asking "what colour is the image at (u, v)?"
+//   filter   what to do when (u, v) falls between texel centres:
+//              nearest   take the closest texel (blocky when magnified)
+//              bilinear  blend the four nearest texels (smooth)
+//   wrap     what to do when (u, v) falls outside 0..1:
+//              0 clamp   stretch the edge texels outward
+//              1 repeat  tile the image again and again
+//              2 mirror  tile it, flipping every other copy
+//   mipmaps  shrunken copies of the image (half size, quarter size ...) kept ready,
+//            so a faraway surface can use a small copy instead of aliasing
+//
+// Every image here is square and stored as one array. A "pyramid" stores level 0
+// (the full image), then level 1 (half the width), and so on, one after another.
+extern func floorf(x: float) -> float
+
+// A texel number that may be outside the image, brought back inside (0 .. size-1).
+kernel func wrap(n: i32, size: i32, mode: i32) -> i32 {
+    if (mode == 0) {
+        if (n < 0) { return 0 }
+        if (n > size - 1) { return size - 1 }
+        return n
+    }
+    if (mode == 1) { return ((n % size) + size) % size }
+    let period: i32 = size * 2
+    let m: i32 = ((n % period) + period) % period
+    if (m >= size) { return period - 1 - m }
+    return m
+}
+
+// One texel: column x, row y of the image that starts at `offset` in `tex`.
+kernel func texel(uniform tex: ptr<float>, offset: i32, size: i32, x: i32, y: i32, mode: i32) -> float {
+    return tex[offset + wrap(y, size, mode) * size + wrap(x, size, mode)]
+}
+
+// Filter 1, NEAREST: scale (u, v) up to texel units and take the texel it lands in.
+kernel func nearest(uniform tex: ptr<float>, offset: i32, size: i32, u: float, v: float, mode: i32) -> float {
+    let x: i32 = floorf(u * size.toFloat()).toI32()
+    let y: i32 = floorf(v * size.toFloat()).toI32()
+    return texel(tex, offset, size, x, y, mode)
+}
+
+// Slide a fraction t of the way from a to b (t = 0 gives a, t = 1 gives b).
+kernel func lerp(a: float, b: float, t: float) -> float {
+    return a + (b - a) * t
+}
+
+// Filter 2, BILINEAR: texel CENTRES sit half a texel in, so first shift by 0.5.
+// Then the four texels around the spot are blended: along x twice, then along y.
+kernel func bilinear(uniform tex: ptr<float>, offset: i32, size: i32, u: float, v: float, mode: i32) -> float {
+    let sx: float = u * size.toFloat() - 0.5
+    let sy: float = v * size.toFloat() - 0.5
+    let x0: i32 = floorf(sx).toI32()
+    let y0: i32 = floorf(sy).toI32()
+    let fx: float = sx - x0.toFloat()
+    let fy: float = sy - y0.toFloat()
+    let top: float = lerp(texel(tex, offset, size, x0, y0, mode), texel(tex, offset, size, x0 + 1, y0, mode), fx)
+    let bottom: float = lerp(texel(tex, offset, size, x0, y0 + 1, mode), texel(tex, offset, size, x0 + 1, y0 + 1, mode), fx)
+    return lerp(top, bottom, fy)
+}
+
+// Where mip level `level` starts in the pyramid, and how wide it is. Level 0 is
+// `base` wide; each level after it is half as wide, and follows the one before.
+kernel func levelOffset(base: i32, level: i32) -> i32 {
+    var offset: i32 = 0
+    var size: i32 = base
+    for (k = 0; k < level; k = k + 1) {
+        offset = offset + size * size
+        size = size / 2
+    }
+    return offset
+}
+
+kernel func levelSize(base: i32, level: i32) -> i32 {
+    var size: i32 = base
+    for (k = 0; k < level; k = k + 1) {
+        size = size / 2
+    }
+    return size
+}
+
+// Filter 3, TRILINEAR MIPMAPPING: `level` is a fraction (1.5 means "halfway between
+// level 1 and level 2"). Sample the two nearest levels bilinearly and blend them.
+kernel func mipSample(uniform tex: ptr<float>, base: i32, levels: i32, u: float, v: float, level: float, mode: i32) -> float {
+    var lo: i32 = floorf(level).toI32()
+    if (lo < 0) { lo = 0 }
+    if (lo > levels - 1) { lo = levels - 1 }
+    var hi: i32 = lo + 1
+    if (hi > levels - 1) { hi = levels - 1 }
+    var amount: float = level - lo.toFloat()
+    if (amount < 0.0) { amount = 0.0 }
+    if (amount > 1.0) { amount = 1.0 }
+    let a: float = bilinear(tex, levelOffset(base, lo), levelSize(base, lo), u, v, mode)
+    let b: float = bilinear(tex, levelOffset(base, hi), levelSize(base, hi), u, v, mode)
+    return lerp(a, b, amount)
+}
+
+// ── the CPU side: making a texture and its mip pyramid ───────────────────────
+// How many floats a pyramid of `base` x `base` (a power of two) needs: all its levels added up.
+func pyramidSize(base: i64) -> i64 {
+    var total: i64 = 0
+    var size: i64 = base
+    for (k = 0; k < 16; k = k + 1) {
+        if (size >= 1) {
+            total = total + size * size
+            size = size / 2
+        }
+    }
+    return total
+}
+
+// A 32 x 32 test image: big squares of light and dark (each 4 texels wide), with a
+// thin dark line along every square's edge. Fine detail like this is what exposes the
+// problems of looking at a texture from far away.
+func fillBase(tex: ptr<float>, base: i64) -> i64 {
+    for (y = 0; y < base; y = y + 1) {
+        for (x = 0; x < base; x = x + 1) {
+            var level: float = 0.85
+            if (((x / 4) + (y / 4)) % 2 == 1) { level = 0.45 }
+            if (x % 4 == 0 || y % 4 == 0) { level = level * 0.6 }
+            tex[y * base + x] = level
+        }
+    }
+    return 0
+}
+
+// Level k+1 is level k with every 2 x 2 block of texels averaged into one.
+func buildPyramid(tex: ptr<float>, base: i64) -> i64 {
+    fillBase(tex, base)
+    var from: i64 = 0
+    var size: i64 = base
+    for (level = 0; level < 16; level = level + 1) {
+        if (size > 1) {
+            shrink(tex, from, size)
+            from = from + size * size
+            size = size / 2
+        }
+    }
+    return 0
+}
+
+// Averages the `size` x `size` image at `from` into the half-size image that follows it.
+func shrink(tex: ptr<float>, from: i64, size: i64) -> i64 {
+    let next: i64 = from + size * size
+    let half: i64 = size / 2
+    for (y = 0; y < half; y = y + 1) {
+        for (x = 0; x < half; x = x + 1) {
+            let a: float = tex[from + (2 * y) * size + 2 * x]
+            let b: float = tex[from + (2 * y) * size + 2 * x + 1]
+            let c: float = tex[from + (2 * y + 1) * size + 2 * x]
+            let d: float = tex[from + (2 * y + 1) * size + 2 * x + 1]
+            tex[next + y * half + x] = (a + b + c + d) * 0.25
+        }
+    }
+    return 0
+}

@@ -1,0 +1,83 @@
+// One program touching every construct docs/java-mapping.md talks about. Tour.java is the same program written the way the
+// mapping says a Java back end would emit it; run-check.sh builds both and compares their results.
+
+struct Pt(x: i64, y: i64);                      // immutable value        -> record
+
+struct Counter(var n: i64, name: string);       // has a `var` field      -> class (a reference)
+
+struct Box<T>(value: T);                        // generic                -> generic class/record
+
+interface Shape {
+  func area() -> i64
+}
+
+struct Sq(side: i64) : Shape {
+  func area() -> i64 { return this.side * this.side }
+}
+
+struct Rect(w: i64, h: i64) : Shape {
+  func area() -> i64 { return this.w * this.h }
+}
+
+func totalArea(shapes: mutarray<Shape>) -> i64 {
+  var sum: i64 = 0
+  for (i = 0; i < len(shapes); i = i + 1) {
+    sum = sum + shapes[i].area()
+  }
+  return sum
+}
+
+func risky(x: i64) -> i64 {
+  if (x < 0) {
+    throw 7
+  }
+  return x
+}
+
+func guarded(x: i64) -> i64 {
+  var out: i64 = 0
+  try {
+    out = risky(x)
+  } catch (code) {
+    out = code * 10
+  }
+  return out
+}
+
+func main() -> i64 {
+  var score: i64 = 0
+
+  let p: Pt = Pt(x: 3, y: 4)
+  let q: Pt = Pt(x: 3, y: 4)
+  if (p == q) { score = score + 1 }                 // structural equality: 1
+
+  let c: Counter = Counter(n: 5, name: "hits")
+  let d: Counter = c                                // a second name for the same object
+  d.n = d.n + 1
+  if (c === d) { score = score + c.n }              // identity, and the change is seen: +6
+
+  let shapes: mutarray<Shape> = mutarray<Shape>()
+  push(shapes, Sq(side: 3))
+  push(shapes, Rect(w: 2, h: 5))
+  score = score + totalArea(shapes)                 // 9 + 10 = +19
+
+  var calls: i64 = 0
+  let tick: closure() -> i64 = closure() -> i64 {   // captures the var `calls` by reference
+    calls = calls + 1
+    return calls
+  }
+  let first: i64 = tick()
+  let second: i64 = tick()
+  score = score + first + second + calls            // 1 + 2 + 2 = +5
+
+  let stock: mutmap<string, i64> = mutmap<string, i64>(8)
+  stock["apple"] = 3
+  stock["pear"] = 4
+  score = score + stock["apple"] * stock["pear"]    // +12
+
+  let b: Box<i64> = Box(value: 7)
+  score = score + b.value                           // +7
+
+  score = score + guarded(5) + guarded(0 - 1)       // 5 + 70 = +75
+  return score                                      // 1 + 6 + 19 + 5 + 12 + 7 + 75 = 125
+}

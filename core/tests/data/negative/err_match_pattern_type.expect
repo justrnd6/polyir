@@ -1,0 +1,32 @@
+$ --analyze
+exit 1
+check failed:
+  err_match_pattern_type.poly:2:23: the pattern does not fit the i64 it is matched against
+  err_match_pattern_type.poly:3:23: `Ok` and `Err` match an either, not a string
+  err_match_pattern_type.poly:4:23: a list pattern matches an array or a mutarray, not an i64
+  err_match_pattern_type.poly:5:24: `variant(0, …)` is not a case of array<i64>
+  err_match_pattern_type.poly:6:28: a guard (`if …`) is a bool, not an i64
+$ --analyze --strict
+exit 1
+check failed:
+  err_match_pattern_type.poly:2:23: the pattern does not fit the i64 it is matched against
+  err_match_pattern_type.poly:3:23: `Ok` and `Err` match an either, not a string
+  err_match_pattern_type.poly:4:23: a list pattern matches an array or a mutarray, not an i64
+  err_match_pattern_type.poly:5:24: `variant(0, …)` is not a case of array<i64>
+  err_match_pattern_type.poly:6:28: a guard (`if …`) is a bool, not an i64
+$ --emit-hir-json
+exit 1
+check failed:
+  err_match_pattern_type.poly:2:23: the pattern does not fit the i64 it is matched against
+  err_match_pattern_type.poly:3:23: `Ok` and `Err` match an either, not a string
+  err_match_pattern_type.poly:4:23: a list pattern matches an array or a mutarray, not an i64
+  err_match_pattern_type.poly:5:24: `variant(0, …)` is not a case of array<i64>
+  err_match_pattern_type.poly:6:28: a guard (`if …`) is a bool, not an i64
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_match_pattern_type.poly:2:23: the pattern does not fit the i64 it is matched against
+  err_match_pattern_type.poly:3:23: `Ok` and `Err` match an either, not a string
+  err_match_pattern_type.poly:4:23: a list pattern matches an array or a mutarray, not an i64
+  err_match_pattern_type.poly:5:24: `variant(0, …)` is not a case of array<i64>
+  err_match_pattern_type.poly:6:28: a guard (`if …`) is a bool, not an i64

@@ -1,0 +1,7 @@
+func run(f: closure(i64) -> i64) -> i64 { return f(1) }
+func main() -> i64 {
+  var a: i64 = 0
+  run(closure(x: i64) -> i64 { a = x
+    return x })
+  return a
+}

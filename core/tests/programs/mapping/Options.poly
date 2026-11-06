@@ -1,0 +1,41 @@
+// Values that may be absent: `optional<T>`, `Some<T>(x)`, `None<T>()`, and the three ways to read one. Options.java is its translation:
+// an `optional<T>` is a `java.util.Optional<T>`.
+
+struct Pt(x: i64, y: i64);
+
+struct Contact(name: string, nickname: optional<string>);
+
+func find(xs: mutarray<i64>, want: i64) -> optional<i64> {
+  for (i = 0; i < len(xs); i = i + 1) {
+    if (xs[i] == want) { return Some<i64>(i) }
+  }
+  return None<i64>()
+}
+
+func firstPoint(ok: i64) -> optional<Pt> {
+  if (ok == 1) { return Some<Pt>(Pt(x: 7, y: 8)) }
+  return None<Pt>()
+}
+
+func shown(c: Contact) -> string {
+  if (c.nickname.isSome()) { return c.nickname.unwrap() }
+  return c.name
+}
+
+func main() -> i64 {
+  let xs: mutarray<i64> = mutarray<i64>()
+  push(xs, 10)
+  push(xs, 20)
+  var score: i64 = 0
+  let hit: optional<i64> = find(xs, 20)
+  if (hit.isSome()) { score = score + hit.unwrap() }
+  if (find(xs, 99).isNone()) { score = score + 10 }
+  let p: optional<Pt> = firstPoint(1)
+  if (p.isSome()) { score = score + p.unwrap().x }
+  if (firstPoint(0).isNone()) { score = score + 100 }
+  let named: Contact = Contact(name: "ann", nickname: Some<string>("annie"))
+  let plain: Contact = Contact(name: "bo", nickname: None<string>())
+  if (shown(named) == "annie") { score = score + 1000 }
+  if (shown(plain) == "bo") { score = score + 2000 }
+  return score
+}

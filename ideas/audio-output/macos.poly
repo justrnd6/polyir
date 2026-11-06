@@ -1,0 +1,105 @@
+// Sound output on macOS: the system's AudioQueue (the AudioToolbox library), driven by a callback.
+// Like the Metal and Vulkan runtimes it is plain polyir calling a C interface through `extern func`,
+// so a program that imports it must be built natively (`polyir file --out name`); `--jit` refuses it.
+//
+// HOW IT WORKS. The queue is given three buffers. Each time the hardware has finished playing one,
+// the system calls `audioRefill` (on its own thread); `audioRefill` asks the program's fill function
+// for the next frames (through `streamFeed` in Stream.poly), writes them into the buffer that just
+// finished, and queues it again. When the fill function says the sound is over, nothing is queued
+// again; the last buffers play out and the main thread, which has been waiting, shuts the queue down.
+import "Stream.poly"
+
+extern func AudioQueueNewOutput(format: i64, callback: i64, user: i64, runLoop: i64, runLoopMode: i64,
+        flags: i64, out: i64) -> i32
+extern func AudioQueueAllocateBuffer(queue: i64, bytes: i64, out: i64) -> i32
+extern func AudioQueueEnqueueBuffer(queue: i64, buf: i64, packets: i64, descriptions: i64) -> i32
+extern func AudioQueueStart(queue: i64, startTime: i64) -> i32
+extern func AudioQueueStop(queue: i64, immediately: i64) -> i32
+extern func AudioQueueDispose(queue: i64, immediately: i64) -> i32
+extern func usleep(microseconds: i64) -> i32
+extern func calloc(count: i64, size: i64) -> i64
+
+// The description of the samples: 32-bit floats, `channels` of them per frame. The fields are the
+// ones of the system's AudioStreamBasicDescription: sample rate (a 64-bit float), format ('lpcm' =
+// linear PCM, plain samples), flags (9 = floats, packed), bytes per packet, frames per packet, bytes
+// per frame, channels, bits per channel.
+func audioFormat(rate: i64, channels: i64) -> i64 {
+    let block: i64 = calloc(5, 8)
+    let rateField: ptr<double> = block.toPtr()
+    rateField[0] = rate.toDouble()
+    let fields: ptr<i32> = block.toPtr()
+    fields[2] = 1819304813
+    fields[3] = 9
+    fields[4] = (4 * channels).toI32()
+    fields[5] = 1
+    fields[6] = (4 * channels).toI32()
+    fields[7] = channels.toI32()
+    fields[8] = 32
+    return block
+}
+
+// Called by the system each time a buffer has been played. `user` is the address of the Stream.
+// Refill the buffer from the program and queue it again, unless the sound is over.
+func audioRefill(user: i64, queue: i64, buf: i64) -> i64 {
+    let view: ptr<Stream> = user.toPtr()
+    let stream: Stream = view[0]
+    stream.progress[2] = stream.progress[2] - 1
+    if (streamFinished(stream)) { return 0 }
+    return audioFillAndQueue(stream, queue, buf)
+}
+
+// Fills one audio buffer (a record: capacity in bytes at byte 0, the address of the samples at byte 8,
+// the number of bytes filled at byte 16) from the stream and queues it. Returns the frames made.
+func audioFillAndQueue(stream: Stream, queue: i64, buf: i64) -> i64 {
+    let words: ptr<i64> = buf.toPtr()
+    let memory: ptr<float> = words[1].toPtr()
+    let made: i64 = streamFeed(stream, memory, streamBufferFrames())
+    if (made == 0) { return 0 }
+    let sizes: ptr<i32> = buf.toPtr()
+    sizes[4] = (made * stream.channels * 4).toI32()
+    stream.progress[2] = stream.progress[2] + 1
+    AudioQueueEnqueueBuffer(queue, buf, 0, 0)
+    return made
+}
+
+// Allocates one buffer on `queue`, fills and queues it; returns the buffer record's address (0 if refused).
+func audioPrime(stream: Stream, queue: i64) -> i64 {
+    let slot: ptr<i64> = calloc(1, 8).toPtr()
+    let status: i32 = AudioQueueAllocateBuffer(queue, streamBufferFrames() * stream.channels * 4, slot.toI64())
+    if (status != 0) { return 0 }
+    audioFillAndQueue(stream, queue, slot[0])
+    return slot[0]
+}
+
+// Plays a stream through the speakers and returns when it is over: 0 on success, or the system's error code.
+// (Every platform file defines this one function; `ideas/audio-output/Audio.poly` builds the rest on it.)
+func audioStreamRun(stream: Stream) -> i64 {
+    let queueSlot: ptr<i64> = calloc(1, 8).toPtr()
+    let streamSlot: ptr<Stream> = calloc(1, 64).toPtr()
+    streamSlot[0] = stream
+    let refill: ptr<func(i64, i64, i64) -> i64> = audioRefill
+    let format: i64 = audioFormat(stream.rate, stream.channels)
+    let status: i32 = AudioQueueNewOutput(format, refill.toI64(), streamSlot.toI64(), 0, 0, 0, queueSlot.toI64())
+    if (status != 0) { return status.toI64() }
+    return audioStreamStart(stream, queueSlot[0])
+}
+
+// Hands the queue its first buffers, starts it, waits for the end, and shuts it down.
+func audioStreamStart(stream: Stream, queue: i64) -> i64 {
+    for (k = 0; k < streamBufferCount(); k = k + 1) { audioPrime(stream, queue) }
+    let code: i64 = AudioQueueStart(queue, 0).toI64()
+    if (code == 0) { audioWait(stream) }
+    AudioQueueStop(queue, 1)
+    AudioQueueDispose(queue, 1)
+    return code
+}
+
+// Sleeps in short naps until the fill function has finished and every queued buffer has been played
+// (the callback counts them down). Gives up after an hour, which no sound here is.
+func audioWait(stream: Stream) -> i64 {
+    for (nap = 0; nap < 720000; nap = nap + 1) {
+        if (streamFinished(stream) && stream.progress[2] <= 0) { return 0 }
+        usleep(5000)
+    }
+    return 1
+}

@@ -1,0 +1,104 @@
+extern func fopen(path: string, mode: string) -> i64
+extern func fwrite(data: i64, size: i64, count: i64, file: i64) -> i64
+extern func fclose(file: i64) -> i64
+extern func calloc(count: i64, size: i64) -> i64
+
+func putNumber(bytes: ptr<i8>, at: i64, n: i64) -> i64 {
+  var pos: i64 = at
+  if (n >= 100) {
+    bytes[pos] = (48 + n / 100)
+    pos = pos + 1
+  }
+  if (n >= 10) {
+    bytes[pos] = (48 + n / 10 % 10)
+    pos = pos + 1
+  }
+  bytes[pos] = (48 + n % 10)
+  return pos + 1
+}
+
+func savePicture(path: string, brightness: ptr<float>, w: i64, h: i64) -> i64 {
+  let bytes: ptr<i8> = calloc(w * h + 32, 1).toPtr()
+  bytes[0] = 80
+  bytes[1] = 53
+  bytes[2] = 10
+  var at: i64 = putNumber(bytes, 3, w)
+  bytes[at] = 32
+  at = putNumber(bytes, at + 1, h)
+  bytes[at] = 10
+  bytes[at + 1] = 50
+  bytes[at + 2] = 53
+  bytes[at + 3] = 53
+  bytes[at + 4] = 10
+  at = at + 5
+  for (p = 0; p < w * h; p = p + 1) {
+    var level: float = brightness[p]
+    if (level < 0.0) {
+      level = 0.0
+    }
+    if (level > 1.0) {
+      level = 1.0
+    }
+    bytes[at + p] = (level * 255.0).toI32()
+  }
+  let file: i64 = fopen(path, "wb")
+  if (file == 0) {
+    return 0
+  }
+  fwrite(bytes.toI64(), 1, at + w * h, file)
+  fclose(file)
+  return 1
+}
+
+func fillScene(img: ptr<float>) -> i64 {
+  for (y = 0; y < 64; y = y + 1) {
+    for (x = 0; x < 64; x = x + 1) {
+      var level: float = (0.3 + 0.3 * x.toFloat() / 64.0)
+      let dx: float = x.toFloat() - 22.0
+      let dy: float = y.toFloat() - 24.0
+      if (dx * dx + dy * dy < 225.0) {
+        level = 0.95
+      }
+      if (x > 38 && x < 58 && y > 36 && y < 56) {
+        level = 0.1
+      }
+      img[y * 64 + x] = level
+    }
+  }
+  return 0
+}
+
+func saveColorPicture(path: string, pixels: ptr<float>, w: i64, h: i64) -> i64 {
+  let bytes: ptr<i8> = calloc(w * h * 3 + 32, 1).toPtr()
+  bytes[0] = 80
+  bytes[1] = 54
+  bytes[2] = 10
+  var at: i64 = putNumber(bytes, 3, w)
+  bytes[at] = 32
+  at = putNumber(bytes, at + 1, h)
+  bytes[at] = 10
+  bytes[at + 1] = 50
+  bytes[at + 2] = 53
+  bytes[at + 3] = 53
+  bytes[at + 4] = 10
+  at = at + 5
+  for (p = 0; p < w * h; p = p + 1) {
+    for (c = 0; c < 3; c = c + 1) {
+      var level: float = pixels[p * 4 + c]
+      if (level < 0.0) {
+        level = 0.0
+      }
+      if (level > 1.0) {
+        level = 1.0
+      }
+      bytes[at + p * 3 + c] = (level * 255.0).toI32()
+    }
+  }
+  let file: i64 = fopen(path, "wb")
+  if (file == 0) {
+    return 0
+  }
+  fwrite(bytes.toI64(), 1, at + w * h * 3, file)
+  fclose(file)
+  return 1
+}

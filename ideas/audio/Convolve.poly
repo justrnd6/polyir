@@ -1,0 +1,25 @@
+// CONVOLUTION AS A KERNEL: one thread per OUTPUT sample, each adding up the products that land
+// on it. This is the "gather" form of the sum (see `Sound.convolve` in Sound.poly, the
+// "scatter" form that spreads each input sample over the output): output[i] is the sum of
+// x[i - j] * h[j] over every j for which both x[i - j] and h[j] exist.
+//
+// A convolution of a sound of nx samples with a response of nh samples has nx + nh - 1 output
+// samples and costs nx * nh multiplications. Every output sample is independent of the others, so
+// this is a perfect GPU job: a second of CD sound with a one-second room response is almost two
+// billion multiply-adds, spread over 88,199 threads.
+//
+// p: 0 the number of samples in x   1 the number of samples in h
+kernel func convolveSample(index i: i32, uniform x: ptr<float>, uniform h: ptr<float>, uniform p: ptr<i32>) -> float {
+    let nx: i32 = p[0]
+    let nh: i32 = p[1]
+    // x[i - j] exists for j from i - (nx - 1) up to i, and h[j] for j from 0 up to nh - 1.
+    var first: i32 = i - (nx - 1)
+    if (first < 0) { first = 0 }
+    var last: i32 = i
+    if (last > nh - 1) { last = nh - 1 }
+    var sum: float = 0.0
+    for (j = first; j <= last; j = j + 1) {
+        sum = sum + x[i - j] * h[j]
+    }
+    return sum
+}

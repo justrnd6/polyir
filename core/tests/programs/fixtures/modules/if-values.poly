@@ -1,0 +1,14 @@
+func nothing() -> void {
+  return
+}
+
+func main() -> void {
+  let a: i64 = if (true) 1 else "x"
+  let b = if (true) 1 else "x"
+  let c = if (true) nothing() else nothing()
+  var i: i64 = 0
+  for (; i < (if (true) 3 else 4); ) {
+    i = i + 1
+  }
+  print(str(a + i))
+}

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "polyir canon",
+  "scopeName": "source.polyir-canon",
+  "comment": "A source's canon (core/docs/translate.md): `# Name`, the head lines (source, typed, declarations), `## kinds` / `## type kinds` / `## families` of `name := words`, and sections of forms `construct(part, part: kind)` with indented `facts:` and `lowered` lines.",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#title" },
+    { "include": "#head" },
+    { "include": "#kinds" },
+    { "include": "#families" },
+    { "include": "#types" },
+    { "include": "#section" },
+    { "include": "#form" },
+    { "include": "#under-form" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.polyir-canon",
+      "match": "^\\s*//.*$"
+    },
+    "title": {
+      "match": "^(#)\\s+(.*?)\\s*$",
+      "captures": {
+        "0": { "name": "markup.heading.title.polyir-canon" },
+        "1": { "name": "punctuation.definition.heading.polyir-canon" },
+        "2": { "name": "entity.name.section.title.polyir-canon" }
+      }
+    },
+    "section-heading": {
+      "match": "^(##)\\s+(.*?)\\s*$",
+      "captures": {
+        "0": { "name": "markup.heading.section.polyir-canon" },
+        "1": { "name": "punctuation.definition.heading.polyir-canon" },
+        "2": { "name": "entity.name.section.polyir-canon" }
+      }
+    },
+    "section": { "include": "#section-heading" },
+    "head": {
+      "patterns": [
+        {
+          "match": "^(source)(:)\\s*(.*?)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.other.head.polyir-canon" },
+            "2": { "name": "punctuation.separator.key-value.polyir-canon" },
+            "3": { "name": "entity.name.namespace.language.polyir-canon" }
+          }
+        },
+        {
+          "match": "^(typed)(:)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.other.head.polyir-canon" },
+            "2": { "name": "punctuation.separator.key-value.polyir-canon" },
+            "3": { "patterns": [{ "include": "#names-of-sections" }] }
+          }
+        },
+        {
+          "match": "^(declarations)(:)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.other.head.polyir-canon" },
+            "2": { "name": "punctuation.separator.key-value.polyir-canon" },
+            "3": { "patterns": [{ "include": "#part-names" }] }
+          }
+        }
+      ]
+    },
+    "names-of-sections": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.polyir-canon", "match": "," },
+        { "name": "entity.name.section.polyir-canon", "match": "[^\\s,]+" }
+      ]
+    },
+    "part-names": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.polyir-canon", "match": "," },
+        { "name": "variable.parameter.part.polyir-canon", "match": "[A-Za-z_]\\w*" }
+      ]
+    },
+    "kinds": {
+      "comment": "`## kinds` and `## type kinds`: `kind := part names`, a part's kind by its name.",
+      "begin": "^(##)\\s+(kinds|type kinds)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-canon" },
+        "1": { "name": "punctuation.definition.heading.polyir-canon" },
+        "2": { "name": "entity.name.section.polyir-canon" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "match": "^([A-Za-z_]\\w*)\\s*(:=)(.*)$",
+          "captures": {
+            "1": { "name": "storage.type.kind.polyir-canon" },
+            "2": { "name": "keyword.operator.assignment.polyir-canon" },
+            "3": { "patterns": [{ "include": "#part-names" }] }
+          }
+        }
+      ]
+    },
+    "families": {
+      "comment": "`## families`: `family := types or families`, the words a page's pattern may use for several types.",
+      "begin": "^(##)\\s+(families)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-canon" },
+        "1": { "name": "punctuation.definition.heading.polyir-canon" },
+        "2": { "name": "entity.name.section.polyir-canon" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "match": "^([A-Za-z_]\\w*)\\s*(:=)(.*)$",
+          "captures": {
+            "1": { "name": "entity.name.type.family.polyir-canon" },
+            "2": { "name": "keyword.operator.assignment.polyir-canon" },
+            "3": { "patterns": [{ "name": "support.type.polyir-canon", "match": "[A-Za-z_]\\w*" }] }
+          }
+        }
+      ]
+    },
+    "types": {
+      "comment": "`## types`: the type forms, each named as a type.",
+      "begin": "^(##)\\s+(types)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-canon" },
+        "1": { "name": "punctuation.definition.heading.polyir-canon" },
+        "2": { "name": "entity.name.section.polyir-canon" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "match": "^([A-Za-z_]\\w*)(?:(\\()([^)]*)(\\)))?\\s*$",
+          "captures": {
+            "1": { "name": "entity.name.type.construct.polyir-canon" },
+            "2": { "name": "punctuation.definition.parameters.begin.polyir-canon" },
+            "3": { "patterns": [{ "include": "#parts" }] },
+            "4": { "name": "punctuation.definition.parameters.end.polyir-canon" }
+          }
+        },
+        { "include": "#under-form" }
+      ]
+    },
+    "form": {
+      "comment": "`construct(part, part: kind)`: one form of a construct.",
+      "match": "^([A-Za-z_]\\w*)(?:(\\()([^)]*)(\\)))?\\s*$",
+      "captures": {
+        "1": { "name": "entity.name.function.construct.polyir-canon" },
+        "2": { "name": "punctuation.definition.parameters.begin.polyir-canon" },
+        "3": { "patterns": [{ "include": "#parts" }] },
+        "4": { "name": "punctuation.definition.parameters.end.polyir-canon" }
+      }
+    },
+    "parts": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.polyir-canon", "match": "," },
+        {
+          "match": "([A-Za-z_]\\w*)\\s*(:)\\s*([A-Za-z_]\\w*)",
+          "captures": {
+            "1": { "name": "variable.parameter.part.polyir-canon" },
+            "2": { "name": "punctuation.separator.kind.polyir-canon" },
+            "3": { "name": "storage.type.kind.polyir-canon" }
+          }
+        },
+        { "name": "variable.parameter.part.polyir-canon", "match": "[A-Za-z_]\\w*" }
+      ]
+    },
+    "under-form": {
+      "patterns": [
+        {
+          "match": "^\\s+(facts)(:)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.other.facts.polyir-canon" },
+            "2": { "name": "punctuation.separator.key-value.polyir-canon" },
+            "3": {
+              "patterns": [
+                { "name": "punctuation.separator.comma.polyir-canon", "match": "," },
+                { "name": "entity.other.attribute-name.fact.polyir-canon", "match": "[A-Za-z_]\\w*" }
+              ]
+            }
+          }
+        },
+        {
+          "match": "^\\s+(lowered)\\s*$",
+          "captures": { "1": { "name": "keyword.other.lowered.polyir-canon" } }
+        }
+      ]
+    }
+  }
+}

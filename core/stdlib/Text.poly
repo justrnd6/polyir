@@ -1,0 +1,213 @@
+// TEXT: working with strings, as part of polyir. Built on the four string built-ins (`str(x)`, `s[i]`,
+// `s.slice(from, to)`, `s.find(sub, from)`) and `len`, so it runs on every target.
+//
+//   import "../../stdlib/Text.poly"       (the path is relative to the importing file)
+//
+// The import is optional: these are BUILT INTO the language. A program that calls `split`, `trim` and the rest (or
+// makes a `StringBuilder()`) without defining or importing them gets them added by the compiler (src/Prelude.nina,
+// which embeds this file; after editing it run `python3 stdlib/sync-prelude.py`). Only what a program uses is added.
+//
+// Every function reads as a method too: `s.split(",")` is `split(s, ",")`. Positions count bytes, which are the
+// characters of ASCII text.
+//
+//   contains startsWith endsWith      questions about a string
+//   split lines join                  between one string and a list of them
+//   trim replace repeat indent        new strings
+//   indentRest                        what a multi-line `${…}` in a text block uses
+//   fill                              `${name}` in a template read at run time, from a map of values
+//   StringBuilder                     text built piece by piece
+
+// Whether `part` occurs in `s`.
+func contains(s: string, part: string) -> bool {
+  return s.find(part) >= 0
+}
+
+func startsWith(s: string, prefix: string) -> bool {
+  if (len(prefix) > len(s)) {
+    return false
+  }
+  return s.slice(0, len(prefix)) == prefix
+}
+
+func endsWith(s: string, suffix: string) -> bool {
+  if (len(suffix) > len(s)) {
+    return false
+  }
+  return s.slice(len(s) - len(suffix), len(s)) == suffix
+}
+
+// The pieces of `s` between each `sep`: "a,b,,c" by "," is "a", "b", "", "c". An empty `sep` gives `s` alone.
+func split(s: string, sep: string) -> mutarray<string> {
+  let parts: mutarray<string>
+  if (len(sep) == 0) {
+    parts.push(s)
+    return parts
+  }
+  var from: i64 = 0
+  for (at = s.find(sep, 0); at >= 0; at = s.find(sep, from)) {
+    parts.push(s.slice(from, at))
+    from = at + len(sep)
+  }
+  parts.push(s.slice(from, len(s)))
+  return parts
+}
+
+// The lines of `s` (split at each newline).
+func lines(s: string) -> mutarray<string> {
+  return split(s, "\n")
+}
+
+// The strings one after another, with `sep` between each two.
+func join(parts: mutarray<string>, sep: string) -> string {
+  var out: string = ""
+  for (i = 0; i < len(parts); i = i + 1) {
+    if (i > 0) {
+      out = out + sep
+    }
+    out = out + parts[i]
+  }
+  return out
+}
+
+func isSpaceChar(c: char) -> bool {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+// `s` without the spaces, tabs and newlines at its start and end.
+func trim(s: string) -> string {
+  var from: i64 = 0
+  for (; from < len(s) && isSpaceChar(s[from]); ) {
+    from = from + 1
+  }
+  var to: i64 = len(s)
+  for (; to > from && isSpaceChar(s[to - 1]); ) {
+    to = to - 1
+  }
+  return s.slice(from, to)
+}
+
+// `s` with every `old` written as `by`.
+func replace(s: string, old: string, by: string) -> string {
+  return join(split(s, old), by)
+}
+
+// `s` written `n` times.
+func repeat(s: string, n: i64) -> string {
+  var out: string = ""
+  for (i = 0; i < n; i = i + 1) {
+    out = out + s
+  }
+  return out
+}
+
+// Each line of `s` that is not empty, `n` spaces further in.
+func indent(s: string, n: i64) -> string {
+  let all: mutarray<string> = lines(s)
+  let pad: string = repeat(" ", n)
+  for (i = 0; i < len(all); i = i + 1) {
+    if (len(all[i]) > 0) {
+      all[i] = pad + all[i]
+    }
+  }
+  return join(all, "\n")
+}
+
+// `s` with every line but the first `n` spaces further in: a multi-line value placed after `n` spaces stays lined up.
+func indentRest(s: string, n: i64) -> string {
+  let first: i64 = s.find("\n")
+  if (first < 0) {
+    return s
+  }
+  return s.slice(0, first + 1) + indent(s.slice(first + 1, len(s)), n)
+}
+
+// A template read at run time with each `${name}` written as `values[name]`; a name with no value is left as it is.
+func fill(template: string, values: mutmap<string, string>) -> string {
+  var out: string = ""
+  var from: i64 = 0
+  for (at = template.find("\${", 0); at >= 0; at = template.find("\${", from)) {
+    let close: i64 = template.find("}", at)
+    if (close < 0) {
+      return out + template.slice(from, len(template))
+    }
+    out = out + template.slice(from, at) + filledName(template.slice(at, close + 1), values)
+    from = close + 1
+  }
+  return out + template.slice(from, len(template))
+}
+
+// `${name}` as its value, or as it is when the map has none.
+func filledName(placeholder: string, values: mutmap<string, string>) -> string {
+  let name: string = trim(placeholder.slice(2, len(placeholder) - 1))
+  if (values.has(name)) {
+    return values[name]
+  }
+  return placeholder
+}
+
+// Text built piece by piece: `let out = StringBuilder()`, then `out.line("...")`, `out.add(...)`, and `out.text()`
+// at the end. It is shared, not copied, so a helper can write into the caller's builder. `indent(n)` moves the lines
+// added after it `n` spaces in, until `dedent()`.
+struct StringBuilder(pieces: mutarray<string>, indents: mutarray<i64>) {
+  // Text added as it is.
+  func add(s: string) -> StringBuilder {
+    this.pieces.push(s)
+    return this
+  }
+
+  // A line: the current indent, the text, a newline.
+  func line(s: string) -> StringBuilder {
+    if (len(s) > 0) {
+      this.pieces.push(repeat(" ", this.indentNow()))
+    }
+    this.pieces.push(s)
+    this.pieces.push("\n")
+    return this
+  }
+
+  // An empty line.
+  func blank() -> StringBuilder {
+    this.pieces.push("\n")
+    return this
+  }
+
+  // Each of `all` as a line.
+  func lines(all: mutarray<string>) -> StringBuilder {
+    for (i = 0; i < len(all); i = i + 1) {
+      this.line(all[i])
+    }
+    return this
+  }
+
+  func indent(n: i64) -> StringBuilder {
+    this.indents.push(this.indentNow() + n)
+    return this
+  }
+
+  func dedent() -> StringBuilder {
+    if (len(this.indents) > 0) {
+      this.indents.truncate(len(this.indents) - 1)
+    }
+    return this
+  }
+
+  func indentNow() -> i64 {
+    if (len(this.indents) == 0) {
+      return 0
+    }
+    return this.indents[len(this.indents) - 1]
+  }
+
+  func length() -> i64 {
+    return len(this.text())
+  }
+
+  func isEmpty() -> bool {
+    return this.length() == 0
+  }
+
+  // Everything added so far, as one string.
+  func text() -> string {
+    return join(this.pieces, "")
+  }
+}

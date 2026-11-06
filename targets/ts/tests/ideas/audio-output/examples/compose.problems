@@ -1,0 +1,1 @@
+targets/js/Js.translate:143: `extern(name, params, result)` is unsupported: JavaScript cannot call a C function

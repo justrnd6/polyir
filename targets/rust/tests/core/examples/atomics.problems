@@ -1,0 +1,5 @@
+targets/rust/Rust.translate:157: `extern(name, params, result)` is unsupported: this Rust keeps polyir's memory in its own types, and calls no C function
+targets/rust/Rust.translate:430: `atomicLoad(object, order)` is unsupported: this Rust keeps polyir's memory in its own types, not in C's
+targets/rust/Rust.translate:431: `atomicStore(object, value, order)` is unsupported: this Rust keeps polyir's memory in its own types, not in C's
+targets/rust/Rust.translate:432: `atomicRmw(object, op, value, order)` is unsupported: this Rust keeps polyir's memory in its own types, not in C's
+targets/rust/Rust.translate:433: `cmpxchg(object, expected, value, success, failure)` is unsupported: this Rust keeps polyir's memory in its own types, not in C's

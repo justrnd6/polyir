@@ -1,0 +1,22 @@
+// Declarations of things a HOST language provides. They say what exists and how each target spells it; polyir does not compile them.
+//   polyir host-types.poly --analyze        checks the declarations and the struct that implements the host interface
+//   polyir host-types.poly --out x          refuses: Runnable and ArrayList are bound to java/js only (no `native` binding)
+// Building for a host target comes with the Java back end (docs/java-mapping.md); for now this is declarations and checking.
+
+// An opaque host type: a value of it can only be handed back to the host.
+extern type ArrayList<T> = java "java.util.ArrayList" | js "Array"
+
+// A host interface. A struct may implement it, and the compiler checks the struct has the methods.
+extern interface Runnable = java "java.lang.Runnable" {
+  func run() -> i64
+}
+
+// A function with one spelling per target. With no binding at all an extern func means `native`, as it always has.
+extern func abs(x: i32) -> i32 = native "abs" | java "Math.abs($0)"
+extern func newList() -> ArrayList<i64> = java "new java.util.ArrayList<>()"
+
+struct Job(id: i64) : Runnable {
+  func run() -> i64 { return this.id }
+}
+
+func main() -> i64 { return 0 }

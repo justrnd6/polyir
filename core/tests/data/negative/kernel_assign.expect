@@ -1,0 +1,18 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"k1","paramNames":["i","src","out"],"paramTypes":[{"k":"HInt","bits":32},{"k":"HPtr","elem":{"k":"HFloat","bits":32}},{"k":"HPtr","elem":{"k":"HFloat","bits":32}}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HVarDecl","name":"t","ty":{"k":"HFloat","bits":32},"init":{"k":"HConstFloat","value":"0x0p0","ty":{"k":"HFloat","bits":64},"at":[2,18]},"at":[2,7]},{"k":"HAssign","target":{"k":"HLoadSlot","name":"t","ty":{"k":"HFloat","bits":32},"at":[3,3]},"value":{"k":"HIndexGet","base":{"k":"HLocal","name":"src","ty":{"k":"HPtr","elem":{"k":"HFloat","bits":32}},"at":[3,7]},"indices":[{"k":"HLocal","name":"i","ty":{"k":"HInt","bits":32},"at":[3,11]}],"ty":{"k":"HFloat","bits":32},"at":[3,7]},"at":[3,3]},{"k":"HAssign","target":{"k":"HIndexGet","base":{"k":"HLocal","name":"src","ty":{"k":"HPtr","elem":{"k":"HFloat","bits":32}},"at":[4,3]},"indices":[{"k":"HLocal","name":"i","ty":{"k":"HInt","bits":32},"at":[4,7]}],"ty":{"k":"HFloat","bits":32},"at":[4,3]},"value":{"k":"HConstFloat","value":"0x1p0","ty":{"k":"HFloat","bits":64},"at":[4,12]},"at":[4,3]},{"k":"HAssign","target":{"k":"HIndexGet","base":{"k":"HLocal","name":"out","ty":{"k":"HPtr","elem":{"k":"HFloat","bits":32}},"at":[5,3]},"indices":[{"k":"HLocal","name":"i","ty":{"k":"HInt","bits":32},"at":[5,7]}],"ty":{"k":"HFloat","bits":32},"at":[5,3]},"value":{"k":"HLoadSlot","name":"t","ty":{"k":"HFloat","bits":32},"at":[5,12]},"at":[5,3]},{"k":"HReturn","value":{"k":"HLoadSlot","name":"t","ty":{"k":"HFloat","bits":32},"at":[6,10]},"at":[6,10]}],"isCoroutine":false,"stage":"compute","roles":[3,2,4],"at":[1,13]},
+{"k":"HStructDef","name":"S","fieldNames":["v"],"fieldTypes":[{"k":"HFloat","bits":32}],"fieldMutable":[true]},
+{"k":"HFuncDef","name":"k2","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HLet","name":"s","ty":{"k":"HStruct","name":"S"},"value":{"k":"HStructLit","name":"S","fieldIndices":[0],"fields":[{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[10,21]}],"ty":{"k":"HStruct","name":"S"},"at":[10,14]},"at":[10,7]},{"k":"HAssign","target":{"k":"HFieldGet","base":{"k":"HLocal","name":"s","ty":{"k":"HStruct","name":"S"},"at":[11,3]},"index":0,"ty":{"k":"HFloat","bits":32},"at":[11,5]},"value":{"k":"HConstFloat","value":"0x1p1","ty":{"k":"HFloat","bits":64},"at":[11,9]},"at":[11,5]},{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[12,10]},"at":[12,10]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[9,13]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  kernel_assign.poly:4:3: a kernel can only write to an array parameter marked `writable` or `workgroup`
+  kernel_assign.poly:10:7: the type S cannot be used in a kernel
+  kernel_assign.poly:10:14: a struct cannot be used in a kernel
+  kernel_assign.poly:11:5: a kernel can only assign to a local var or an element of a writable array

@@ -1,0 +1,1 @@
+targets/java/Java.translate:164: `extern(name, params, result)` is unsupported: Java cannot call a C function

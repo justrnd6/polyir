@@ -1,0 +1,3 @@
+kernel func scale(x: float, uniform k: float) -> float {
+  return x * k
+}

@@ -1,0 +1,175 @@
+import "../Vulkan.poly"
+import "shared/classics.poly"
+import "shared/print.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func startWorkers(instance: i64, workers: ptr<i64>) -> i64 {
+  let gpus: i64 = vulkanGpuCount(instance)
+  var count: i64 = gpus
+  if (count > 4) {
+    count = 4
+  }
+  if (gpus < 2) {
+    count = 2
+  }
+  for (w = 0; w < count; w = w + 1) {
+    let which: i64 = if (gpus < 2) 0 else w
+    workers[w] = vulkanStartOn(instance, which)
+    if (workers[w] == 0) {
+      return 0
+    }
+  }
+  say("GPUs found: ")
+  sayNumber(gpus)
+  say(" (")
+  say(vulkanGpuName(workers[0]))
+  say(")")
+  newline()
+  say("workers: ")
+  sayNumber(count)
+  if (gpus < 2) {
+    say("  (only one GPU, so these are separate logical devices on it: separate queues and memory, shared hardware)")
+  } else {
+    say("  (one for each GPU)")
+  }
+  newline()
+  return count
+}
+
+func pipelinesFor(workers: ptr<i64>, count: i64, name: string) -> ptr<i64> {
+  let pipes: ptr<i64> = calloc(count, 8).toPtr()
+  for (w = 0; w < count; w = w + 1) {
+    pipes[w] = makePipeline(workers[w], "", name)
+  }
+  return pipes
+}
+
+func allBuilt(pipes: ptr<i64>, count: i64) -> i64 {
+  for (w = 0; w < count; w = w + 1) {
+    if (pipes[w] == 0) {
+      return 0
+    }
+  }
+  return 1
+}
+
+func finishAll(workers: ptr<i64>, count: i64) -> i64 {
+  for (w = 0; w < count; w = w + 1) {
+    if (vulkanFinish(workers[w]) == 0) {
+      return 0
+    }
+  }
+  return 1
+}
+
+func splitMonteCarlo(workers: ptr<i64>, count: i64) -> i64 {
+  let pipes: ptr<i64> = pipelinesFor(workers, count, "hits")
+  if (allBuilt(pipes, count) == 0) {
+    return 11
+  }
+  let threads: i64 = 65536
+  let each: i64 = threads / count
+  var mark: i64 = wallMs()
+  let whole: ptr<float> = launch(workers[0], pipes[0], spare(), 1, spare(), 1, settings(2048.0, 0.0, 0.0), threads)
+  let wholeMs: i64 = wallMs() - mark
+  mark = wallMs()
+  let parts: ptr<i64> = calloc(count, 8).toPtr()
+  for (w = 0; w < count; w = w + 1) {
+    parts[w] = launchStart(workers[w], pipes[w], spare(), 1, spare(), 1, settings(2048.0, (w * each).toFloat(), 0.0), each).toI64()
+  }
+  if (finishAll(workers, count) == 0) {
+    return 12
+  }
+  let splitMs: i64 = wallMs() - mark
+  for (w = 0; w < count; w = w + 1) {
+    let piece: ptr<float> = parts[w].toPtr()
+    for (t = 0; t < each; t = t + 1) {
+      if (near(piece[t], whole[w * each + t], 0.0) == 0) {
+        return 13
+      }
+    }
+  }
+  say("Monte Carlo, 65,536 threads x 2,048 darts: one worker ")
+  sayNumber(wholeMs)
+  say(" ms, split over ")
+  sayNumber(count)
+  say(" workers ")
+  sayNumber(splitMs)
+  say(" ms; every thread's count equals the single worker's")
+  newline()
+  return 0
+}
+
+func lifeInStrips(workers: ptr<i64>, pipes: ptr<i64>, count: i64, board: ptr<float>, n: i64) -> ptr<float> {
+  let h: i64 = n / count
+  let blocks: ptr<i64> = calloc(count, 8).toPtr()
+  let outs: ptr<i64> = calloc(count, 8).toPtr()
+  let opts: ptr<float> = settings(n.toFloat(), (h + 2).toFloat(), 0.0)
+  for (s = 0; s < count; s = s + 1) {
+    let block: ptr<float> = calloc((h + 2) * n, 4).toPtr()
+    copyRows(board, (s * h + n - 1) % n, block, 0, n, 1)
+    copyRows(board, s * h, block, 1, n, h)
+    copyRows(board, (s + 1) * h % n, block, h + 1, n, 1)
+    blocks[s] = block.toI64()
+    outs[s] = launchStart(workers[s], pipes[s], block, (h + 2) * n, spare(), 1, opts, (h + 2) * n).toI64()
+  }
+  finishAll(workers, count)
+  let next: ptr<float> = calloc(n * n, 4).toPtr()
+  for (s = 0; s < count; s = s + 1) {
+    copyRows(outs[s].toPtr(), 1, next, s * h, n, h)
+  }
+  return next
+}
+
+func splitLife(workers: ptr<i64>, count: i64) -> i64 {
+  let pipes: ptr<i64> = pipelinesFor(workers, count, "lifeStep")
+  if (allBuilt(pipes, count) == 0) {
+    return 11
+  }
+  let n: i64 = 64
+  var whole: ptr<float> = calloc(n * n, 4).toPtr()
+  for (p = 0; p < n * n; p = p + 1) {
+    if (pseudo(p + 7, 100) < 35) {
+      whole[p] = 1.0
+    }
+  }
+  var strips: ptr<float> = whole
+  let opts: ptr<float> = settings(n.toFloat(), n.toFloat(), 0.0)
+  for (g = 0; g < 20; g = g + 1) {
+    whole = launch(workers[0], pipes[0], whole, n * n, spare(), 1, opts, n * n)
+    strips = lifeInStrips(workers, pipes, count, strips, n)
+    if (sameNumbers(whole, strips, n * n, 0.0) == 0) {
+      return 13
+    }
+  }
+  say("Game of Life, 64 x 64 for 20 generations as ")
+  sayNumber(count)
+  say(" strips: the stitched board equals the whole board every generation")
+  newline()
+  say("    each generation the CPU carried ")
+  sayNumber(count * 2)
+  say(" boundary rows between the workers' separate memories")
+  newline()
+  return 0
+}
+
+func main() -> i64 {
+  let instance: i64 = vulkanInstance()
+  if (instance == 0) {
+    return 10
+  }
+  if (vulkanGpuCount(instance) == 0) {
+    return 10
+  }
+  let workers: ptr<i64> = calloc(4, 8).toPtr()
+  let count: i64 = startWorkers(instance, workers)
+  if (count == 0) {
+    return 10
+  }
+  var code: i64 = splitMonteCarlo(workers, count)
+  if (code != 0) {
+    return code
+  }
+  code = splitLife(workers, count)
+  return code
+}

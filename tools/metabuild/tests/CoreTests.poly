@@ -1,0 +1,206 @@
+// The core, without a machine: a Polyfile and a host in, the plan out. `main` returns how many checks failed.
+//
+//   polyir tests/CoreTests.poly --run --target interp
+import "../src/Polyfile.poly"
+import "../src/Plan.poly"
+import "../src/Library.poly"
+
+func mac() -> Host {
+  return Host(os: "macos", cpu: "arm64")
+}
+
+func linux() -> Host {
+  return Host(os: "linux", cpu: "x64")
+}
+
+func sample() -> string {
+  return """
+    // a sample project
+    name demo
+    main src/demo.poly
+    targets native c java rust js python
+    dep zlib from pkg-config on linux
+    dep zlib from brew on macos
+    dep fmt from git https://github.com/fmtlib/fmt tag 10.2.1
+    dep com.google.guava:guava:33.0.0-jre from maven
+    dep serde 1.0 from cargo
+    dep lodash 4.17.21 from npm
+    dep requests 2.32 from pip
+    use yarn for js
+    """
+}
+
+func failedUnless(ok: bool) -> i64 {
+  if (ok) {
+    return 0
+  }
+  return 1
+}
+
+// 1 when `got` is not `want` (run the check alone with `--interp --entry checkX` and compare by hand to see why).
+func failedText(what: string, got: string, want: string) -> i64 {
+  if (got == want) {
+    return 0
+  }
+  return 1
+}
+
+func checkReadsSettings() -> i64 {
+  let p: Project = readPolyfile(sample(), "/work/demo", mac())
+  return failedUnless(len(p.problems) == 0 && p.name == "demo" && p.main == "src/demo.poly" && len(p.targets) == 6)
+}
+
+func checkPlatformLines() -> i64 {
+  let onMac: Project = readPolyfile(sample(), ".", mac())
+  let onLinux: Project = readPolyfile(sample(), ".", linux())
+  let macZlib: bool = len(depsFrom(onMac, "brew")) == 1 && len(depsFrom(onMac, "pkg-config")) == 0
+  let linuxZlib: bool = len(depsFrom(onLinux, "brew")) == 0 && len(depsFrom(onLinux, "pkg-config")) == 1
+  return failedUnless(macZlib && linuxZlib)
+}
+
+func checkProblemsNameTheirLine() -> i64 {
+  let bad: string = """
+    main a.poly
+    targets rust jvm
+    dep x from apt
+    dep y from maven
+    use cmake for js
+    color blue
+    """
+  let p: Project = readPolyfile(bad, ".", mac())
+  let all: string = p.problems.join("\n")
+  let named: bool = all.contains("Polyfile:2: 'jvm' is not a target") && all.contains("Polyfile:3: 'apt' is not a provider") &&
+    all.contains("Polyfile:4: no target takes a maven dep") && all.contains("Polyfile:5: js is built with one of") &&
+    all.contains("Polyfile:6: unknown setting 'color'")
+  return failedUnless(named) + failedText("problem count", str(len(p.problems)), "5")
+}
+
+func checkCmakeLists() -> i64 {
+  let p: Project = readPolyfile(sample(), ".", linux())
+  let want: string = """
+    cmake_minimum_required(VERSION 3.20)
+    project(demo LANGUAGES C)
+    set(CMAKE_C_STANDARD 11)
+    find_package(Threads REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(zlib REQUIRED IMPORTED_TARGET zlib)
+    include(FetchContent)
+    FetchContent_Declare(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt GIT_TAG 10.2.1)
+    FetchContent_MakeAvailable(fmt)
+    add_executable(demo src/demo.c)
+    target_link_libraries(demo PRIVATE Threads::Threads m PkgConfig::zlib fmt)
+    """
+  return failedText("CMakeLists.txt", fileText(plan(p), "build/cmake-c/CMakeLists.txt"), want)
+}
+
+func checkCargoToml() -> i64 {
+  let p: Project = readPolyfile(sample(), ".", mac())
+  let want: string = """
+    [package]
+    name = "demo"
+    version = "0.1.0"
+    edition = "2021"
+
+    [dependencies]
+    serde = "1.0"
+    fmt = { git = "https://github.com/fmtlib/fmt", tag = "10.2.1" }
+    """
+  return failedText("Cargo.toml", fileText(plan(p), "build/cargo/Cargo.toml"), want)
+}
+
+func checkGradleUsesMavenDeps() -> i64 {
+  let p: Project = readPolyfile(sample(), ".", mac())
+  let gradle: string = fileText(plan(p), "build/gradle-java/build.gradle.kts")
+  return failedUnless(gradle.contains("implementation(\"com.google.guava:guava:33.0.0-jre\")") &&
+    gradle.contains("mainClass.set(\"Demo\")"))
+}
+
+func checkYarnAndPip() -> i64 {
+  let p: Project = readPolyfile(sample(), ".", mac())
+  let out: Plan = plan(p)
+  let packageOk: bool = fileText(out, "build/yarn-js/package.json").contains("\"lodash\": \"4.17.21\"")
+  let pipOk: bool = fileText(out, "build/pip/requirements.txt") == "requests~=2.32\nfmt @ git+https://github.com/fmtlib/fmt@10.2.1\n"
+  return failedUnless(packageOk && pipOk)
+}
+
+// The goals' steps, in order, for one target.
+func stepsFor(out: Plan, target: string) -> string {
+  let lines: mutarray<string>
+  for (s in out.steps) {
+    if (s.target == target) {
+      lines.push("${s.goal}: ${s.cmd.join(" ")}")
+    }
+  }
+  return lines.join("\n")
+}
+
+func checkRustSteps() -> i64 {
+  let out: Plan = plan(readPolyfile(sample(), ".", mac()))
+  let want: string = """
+    build: polyir src/demo.poly --emit-rust
+    build: cargo build --release --quiet --manifest-path build/cargo/Cargo.toml
+    run: build/cargo/target/release/demo"""
+  return failedText("rust steps", stepsFor(out, "rust"), want)
+}
+
+func checkBrewCheckOnMac() -> i64 {
+  let out: Plan = plan(readPolyfile(sample(), ".", mac()))
+  let checks: mutarray<string>
+  for (s in out.steps) {
+    if (s.goal == "check" && s.target != "") {
+      checks.push("${s.cmd.join(" ")} | ${s.hint}")
+    }
+  }
+  return failedText("brew check", checks.join("\n"), "brew --prefix --installed zlib | zlib is not installed: brew install zlib")
+}
+
+// The library form: the plan as plain records, a step's command words after their count.
+func checkLibraryWords() -> i64 {
+  let words: mutarray<string> = planWords("name x\nmain m.poly\ntargets native\n", ".", "macos", "arm64")
+  let want: string = "step|check||.||polyir is not on PATH|5|polyir|m.poly|--analyze|--targets|native|" +
+    "step|build|native|.||polyir is not on PATH|3|polyir|m.poly|--check|" +
+    "step|run|native|.||polyir --run-targets says what to install|5|polyir|m.poly|--run|--target|native"
+  let problems: mutarray<string> = planWords("name x\nflavor sweet\n", ".", "macos", "arm64")
+  return failedText("library words", words.join("|"), want) + failedText("library problem", problems[0], "problem")
+}
+
+// A goal runs its own steps; meta-build's goals also build (and run), a build.poly goal runs only its own.
+func checkGoalsPickSteps() -> i64 {
+  let builtIn: bool = wanted("build", "up") && wanted("run", "test") && !wanted("run", "build")
+  let added: bool = wanted("docs", "docs") && !wanted("build", "docs") && !wanted("docs", "up")
+  return failedUnless(builtIn && added)
+}
+
+// A target polyir runs itself finds the pkg-config and brew libraries through POLYIR_LIBRARY_PATH.
+func checkDirectLibraryPath() -> i64 {
+  let out: Plan = plan(readPolyfile(sample(), ".", mac()))
+  let want: string = "build: polyir src/demo.poly --check\nrun: sh -c POLYIR_LIBRARY_PATH=\"\$(brew --prefix zlib)/lib:\$POLYIR_LIBRARY_PATH\" exec 'polyir' 'src/demo.poly' '--run' '--target' 'native'"
+  let plain: Plan = plan(readPolyfile("name x\nmain m.poly\ntargets interp\n", ".", mac()))
+  return failedText("direct steps", stepsFor(out, "native"), want) +
+    failedText("direct steps without libraries", stepsFor(plain, "interp"), "build: polyir m.poly --check\nrun: polyir m.poly --run --target interp")
+}
+
+// One check of the whole project first: the bindings every target needs.
+func checkBindingCheckFirst() -> i64 {
+  let out: Plan = plan(readPolyfile(sample(), ".", mac()))
+  let first: Step = out.steps[0]
+  let ok: bool = first.target == "" && first.goal == "check" &&
+    first.cmd.join(" ") == "polyir src/demo.poly --analyze --targets native c java rust js python"
+  return failedUnless(ok)
+}
+
+func main() -> i64 {
+  return checkReadsSettings() +
+  checkPlatformLines() +
+  checkProblemsNameTheirLine() +
+  checkCmakeLists() +
+  checkCargoToml() +
+  checkGradleUsesMavenDeps() +
+  checkYarnAndPip() +
+  checkRustSteps() +
+  checkBrewCheckOnMac() +
+  checkLibraryWords() +
+  checkGoalsPickSteps() +
+  checkDirectLibraryPath() +
+  checkBindingCheckFirst()
+}

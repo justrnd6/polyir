@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  err_unknown_function.poly:2:10: unknown function helper
+$ --analyze --strict
+exit 1
+check failed:
+  err_unknown_function.poly:2:10: unknown function helper
+$ --emit-hir-json
+exit 1
+check failed:
+  err_unknown_function.poly:2:10: unknown function helper
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_unknown_function.poly:2:10: unknown function helper

@@ -1,0 +1,76 @@
+module Geometry {
+  struct Point(x: i64, y: i64) {
+    func manhattan() -> i64 {
+      return this.absolute(this.x) + this.absolute(this.y)
+    }
+
+    internal func absolute(n: i64) -> i64 {
+      if (n < 0) {
+        return 0 - n
+      } else {
+        return n
+      }
+    }
+  }
+
+  internal func clamp(n: i64, low: i64, high: i64) -> i64 {
+    if (n < low) {
+      return low
+    } else if (n > high) {
+      return high
+    } else {
+      return n
+    }
+  }
+
+  func distance(a: Point, b: Point) -> i64 {
+    let step: Point = Point(x: a.x - b.x, y: a.y - b.y)
+    return clamp(step.manhattan(), 0, 100)
+  }
+
+  module Shapes {
+    interface Shape {
+      func area() -> i64
+    }
+
+    struct Square(side: i64) : Shape {
+      func area() -> i64 {
+        return this.side * this.side
+      }
+    }
+
+    struct Rect(w: i64, h: i64) : Shape {
+      func area() -> i64 {
+        return this.w * this.h
+      }
+    }
+
+    func total(shapes: array<Shape>) -> i64 {
+      var sum: i64 = 0
+      for (s in shapes) {
+        sum = sum + s.area()
+      }
+      return sum
+    }
+  }
+}
+
+func main() -> void {
+  let a: Geometry.Point = Geometry.Point(x: 1, y: 2)
+  let b: Geometry.Point = Geometry.Point(x: 4, y: -2)
+  let shapes: array<Geometry.Shapes.Shape> = [Geometry.Shapes.Square(side: 3), Geometry.Shapes.Rect(w: 2, h: 5)]
+  let size: string = if (Geometry.Shapes.total(shapes) > 10) "big" else "small"
+  print("${Geometry.distance(a, b)} ${size} ${larger(3, 7, false)} ${larger("x", "y", true)} ${firstOf(["first", "second"])}")
+}
+
+func larger<T>(a: T, b: T, aFirst: bool) -> T {
+  if (aFirst) {
+    return a
+  } else {
+    return b
+  }
+}
+
+func firstOf<T>(xs: array<T>) -> T {
+  return xs[0]
+}

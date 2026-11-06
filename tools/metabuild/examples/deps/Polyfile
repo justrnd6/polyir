@@ -1,0 +1,12 @@
+// One checksum, every ecosystem: each target computes CRC-32 with a library its own tool brings. The interpreter, the
+// JIT and the native build load or link zlib themselves (`import native "z"`), CMake finds it with pkg-config, Gradle
+// fetches Guava from Maven Central, Cargo crc32fast from crates.io, npm crc-32 and pip crcmod. src/Checksum.poly
+// imports each library and says how each target calls it; `poly up` builds every target and checks they agree.
+name deps
+main src/main.poly
+targets interp jit native c java rust js python
+dep zlib from pkg-config
+dep com.google.guava:guava:33.0.0-jre from maven
+dep crc32fast 1.4 from cargo
+dep crc-32 1.2.2 from npm
+dep crcmod 1.7 from pip

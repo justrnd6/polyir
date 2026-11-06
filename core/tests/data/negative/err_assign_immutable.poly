@@ -1,0 +1,8 @@
+struct P(x: i64);
+func main() -> i64 {
+  let a: i64 = 1
+  a = 2
+  let p: P = P { x: 1 }
+  p.x = 3
+  return a
+}

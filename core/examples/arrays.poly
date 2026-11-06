@@ -1,0 +1,49 @@
+// `T[N]` is a fixed-size LOCAL array — the other place polyir touches real
+// memory, for the same reason as buffers.poly: `hist[i] = …` needs a
+// real address, which `alloca`+`gep`+`store`/`load` is the only way to get.
+//
+//   polyir run arrays.poly --entry histTest   -> 50
+
+func histTest() -> i64 {
+  let hist: i64[4]
+  hist[0] = 10
+  hist[1] = 20
+  hist[2] = 30
+  hist[3] = 40
+  return hist[1] + hist[2]
+}
+
+// `.len()` — same pure compile-time constant `grid`'s own `.rows()`/
+// `.cols()` already are, read straight off the declared `N`.
+func lenCheck() -> i64 {
+  let hist: i64[4]
+  return hist.len()
+}
+
+// `T[N]` AS A FUNCTION PARAMETER — decays to a plain `ptr`, same as C
+// (and the same reason `buffers.poly`'s own `ptr<T>` pattern already
+// exists): passing the full array BY VALUE would mean copying all `N`
+// elements on every call, and genuinely didn't work at all before this
+// fix (the function body indexes via `gep`, which needs a real `ptr`
+// operand, not an aggregate array value). `.len()` works identically
+// on a PARAMETER as on a local — both read the same declared `N`.
+func sumFixed(arr: i64[4]) -> i64 {
+  return arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+func lenOnParam(arr: i64[4]) -> i64 {
+  return arr.len()
+}
+
+// Calling `sumFixed`/`lenOnParam` with a LOCAL array — the call site
+// looks no different than passing a `mutarray<T>` would; the local's own
+// address is already what gets passed, no new syntax needed either
+// side of the call.
+func callWithLocal() -> i64 {
+  let hist: i64[4]
+  hist[0] = 1
+  hist[1] = 2
+  hist[2] = 3
+  hist[3] = 4
+  return sumFixed(hist) * 100 + lenOnParam(hist)
+}

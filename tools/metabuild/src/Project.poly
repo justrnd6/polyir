@@ -1,0 +1,99 @@
+// What meta-build knows about a project, and what it makes of it.
+//
+// A project is read from its Polyfile (Polyfile.poly) for one machine (`Host`). `plan` (Plan.poly) turns it into a
+// `Plan`: the files to write (each tool's own project) and the steps each goal runs (the tools' own commands).
+// Nothing here touches the machine: reading files, writing them and running commands is the runner's job (Up.poly),
+// so this core runs anywhere polyir runs and any front end can use it.
+
+// The machine a plan is for: `os` is macos, linux or windows; `cpu` is arm64 or x64.
+struct Host(os: string, cpu: string)
+
+// One `dep` line: a library a target needs and where it comes from. `provider` is pkg-config, brew, git, maven,
+// cargo, npm or pip; `url` and `tag` are only for git. `line` is where it was written, for messages.
+struct Dep(name: string, version: string, provider: string, url: string, tag: string, line: i64)
+
+// One `use TOOL for TARGET` line: a tool other than the convention for a target.
+struct Use(tool: string, target: string)
+
+// A project as its Polyfile describes it, for one host. `problems` lists what is wrong with the Polyfile, each with
+// its line; a project with problems is never planned.
+struct Project {
+  var name: string
+  var dir: string
+  var main: string
+  var entry: string
+  var target: string
+  targets: mutarray<string>
+  deps: mutarray<Dep>
+  uses: mutarray<Use>
+  problems: mutarray<string>
+  var host: Host
+}
+
+// One command a goal runs, in `dir`, for `target`. When `output` is not empty, the command's output is written to
+// that file (how a generated program's source is made: `polyir main.poly --emit-c`). `hint` says what to install
+// when the command's tool is missing, or what a failed check means.
+struct Step(goal: string, target: string, dir: string, cmd: mutarray<string>, output: string, hint: string)
+
+// A file to write: its path (from the project's folder) and its text.
+struct GenFile(path: string, text: string)
+
+// What `plan` makes of a project: the files to write and the steps the goals run, in order.
+struct Plan(files: mutarray<GenFile>, steps: mutarray<Step>)
+
+func addFile(out: Plan, path: string, text: string) -> void {
+  out.files.push(GenFile(path: path, text: text))
+}
+
+// The text the plan writes at `path`, or "" when it writes nothing there.
+func fileText(out: Plan, path: string) -> string {
+  for (f in out.files) {
+    if (f.path == path) {
+      return f.text
+    }
+  }
+  return ""
+}
+
+// A step with no output file.
+func step(goal: string, target: string, cmd: mutarray<string>, hint: string) -> Step {
+  return Step(goal: goal, target: target, dir: ".", cmd: cmd, output: "", hint: hint)
+}
+
+// A step of the whole project rather than of one target: what build.poly adds. It runs once, before the targets'
+// steps, for its goal (`poly docs` for a "docs" task; a "build" or "check" task with every build).
+func task(goal: string, cmd: mutarray<string>) -> Step {
+  return step(goal, "", cmd, "see build.poly")
+}
+
+// A task whose command's output is written to `output` (from the project's folder).
+func taskWriting(goal: string, cmd: mutarray<string>, output: string) -> Step {
+  return Step(goal: goal, target: "", dir: ".", cmd: cmd, output: output, hint: "see build.poly")
+}
+
+// The deps of one provider.
+func depsFrom(p: Project, provider: string) -> mutarray<Dep> {
+  let found: mutarray<Dep>
+  for (d in p.deps) {
+    if (d.provider == provider) {
+      found.push(d)
+    }
+  }
+  return found
+}
+
+// The folder a tool's generated project lives in.
+func toolDir(tool: string) -> string {
+  return "build/${tool}"
+}
+
+// The last part of a path: `src/demo` is `demo`.
+func lastPart(path: string) -> string {
+  let parts: mutarray<string> = path.split("/")
+  for (i = len(parts) - 1; i >= 0; i = i - 1) {
+    if (len(parts[i]) > 0 && parts[i] != ".") {
+      return parts[i]
+    }
+  }
+  return "project"
+}

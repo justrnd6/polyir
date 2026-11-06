@@ -1,0 +1,15 @@
+func drop<T>(xs: array<T>, n: i64) -> mutarray<T> {
+  let out: mutarray<T> = mutarray<T>()
+  for (i = n; i < xs.len(); i = i + 1) {
+    out.push(xs[i])
+  }
+  return out
+}
+
+func first<T>(xs: array<T>) -> T {
+  return xs[0]
+}
+
+func last<T>(xs: array<T>) -> T {
+  return xs[xs.len() - 1]
+}

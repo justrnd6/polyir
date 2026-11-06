@@ -1,0 +1,23 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HExternDef","name":"sinf","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32}},
+{"k":"HFuncDef","name":"k1","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HGoto","label":"out","args":[],"at":[3,8]},{"k":"HLabel","name":"out","paramNames":[],"paramTypes":[],"at":[4,9]},{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[5,10]},"at":[5,10]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[2,13]},
+{"k":"HFuncDef","name":"k2","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HTry","try":[{"k":"HThrow","value":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[9,11]},"at":[9,11]}],"name":"e","catch":[{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[11,12]},"at":[11,12]}],"at":[10,12]},{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[13,10]},"at":[13,10]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[7,13]},
+{"k":"HFuncDef","name":"k3","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HSwitch","value":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[16,11]},"caseValues":[1],"caseLabels":["a"],"caseArgs":[[]],"defaultLabel":"b","defaultArgs":[],"at":[16,11]},{"k":"HLabel","name":"a","paramNames":[],"paramTypes":[],"at":[20,9]},{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[21,10]},"at":[21,10]},{"k":"HLabel","name":"b","paramNames":[],"paramTypes":[],"at":[22,9]},{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[23,10]},"at":[23,10]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[15,13]},
+{"k":"HFuncDef","name":"k4","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HExprStmt","value":{"k":"HCall","callee":"sinf","args":[{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[26,8]}],"ty":{"k":"HFloat","bits":32},"at":[26,3]},"at":[26,3]},{"k":"HReturn","value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[27,10]},"at":[27,10]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[25,13]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  kernel_statements.poly:3:8: this statement cannot run on a GPU: goto
+  kernel_statements.poly:4:9: this statement cannot run on a GPU: label
+  kernel_statements.poly:10:12: this statement cannot run on a GPU: try
+  kernel_statements.poly:16:11: this statement cannot run on a GPU: switch
+  kernel_statements.poly:20:9: this statement cannot run on a GPU: label
+  kernel_statements.poly:22:9: this statement cannot run on a GPU: label
+  kernel_statements.poly:26:3: a kernel cannot have a statement that only evaluates an expression

@@ -1,0 +1,205 @@
+import "../Vulkan.poly"
+import "shared/shapes.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  var code: i64 = checkManyBuffers(gpu)
+  if (code == 0) {
+    code = checkGrid(gpu)
+  }
+  if (code == 0) {
+    code = checkAtomics(gpu)
+  }
+  return code
+}
+
+func checkManyBuffers(gpu: i64) -> i64 {
+  let pipeline: i64 = vulkanPipeline(gpu, "blend7.spv", 8, 8)
+  if (pipeline == 0) {
+    return 11
+  }
+  let n: i64 = 100000
+  let inputs: ptr<i64> = makeInputs(7, n)
+  let buffers: ptr<i64> = calloc(8, 8).toPtr()
+  for (k = 0; k < 7; k = k + 1) {
+    buffers[k] = vulkanBuffer(gpu, inputs[k], n * 4)
+  }
+  buffers[7] = vulkanEmptyBuffer(gpu, n * 4)
+  let push: ptr<i32> = calloc(2, 4).toPtr()
+  push[0] = n.toI32()
+  let scale: ptr<float> = push.toI64().toPtr()
+  scale[1] = 1.5
+  if (vulkanDispatchBuffers(gpu, pipeline, n, push.toI64(), buffers, 8) == 0) {
+    return 12
+  }
+  return blendMatches(inputs, vulkanContents(buffers[7]).toPtr(), n)
+}
+
+func makeInputs(count: i64, n: i64) -> ptr<i64> {
+  let inputs: ptr<i64> = calloc(count, 8).toPtr()
+  for (k = 0; k < count; k = k + 1) {
+    let data: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) {
+      data[i] = (i % (k + 3)).toFloat() * 0.25
+    }
+    inputs[k] = data.toI64()
+  }
+  return inputs
+}
+
+func blendMatches(inputs: ptr<i64>, got: ptr<float>, n: i64) -> i64 {
+  for (i = 0; i < n; i = i + 1) {
+    if (nearly(got[i], blendAt(inputs, i), 0.0001) == 0) {
+      return 13
+    }
+  }
+  return 0
+}
+
+func blendAt(inputs: ptr<i64>, i: i64) -> float {
+  let a: ptr<float> = inputs[0].toPtr()
+  let b: ptr<float> = inputs[1].toPtr()
+  let c: ptr<float> = inputs[2].toPtr()
+  let d: ptr<float> = inputs[3].toPtr()
+  let e: ptr<float> = inputs[4].toPtr()
+  let f: ptr<float> = inputs[5].toPtr()
+  let g: ptr<float> = inputs[6].toPtr()
+  return blend7(a[i], b[i], c[i], d[i], e[i], f[i], g[i], 1.5)
+}
+
+func checkGrid(gpu: i64) -> i64 {
+  let width: i64 = 320
+  let height: i64 = 200
+  let pipeline: i64 = vulkanPipeline(gpu, "plasma.spv", 1, 20)
+  if (pipeline == 0) {
+    return 11
+  }
+  let image: i64 = vulkanEmptyBuffer(gpu, width * height * 4)
+  let push: ptr<i32> = calloc(5, 4).toPtr()
+  push[0] = width.toI32()
+  push[1] = height.toI32()
+  push[2] = width.toI32()
+  push[3] = height.toI32()
+  let phase: ptr<float> = push.toI64().toPtr()
+  phase[4] = 0.7
+  let buffers: ptr<i64> = calloc(2, 8).toPtr()
+  buffers[0] = image
+  if (vulkanDispatch2D(gpu, pipeline, width, height, push.toI64(), buffers, 1) == 0) {
+    return 12
+  }
+  if (plasmaMatches(vulkanContents(image).toPtr(), width, height) == 0) {
+    return 14
+  }
+  return checkVignette(gpu, image, width, height)
+}
+
+func plasmaMatches(pic: ptr<float>, width: i64, height: i64) -> i64 {
+  for (y = 0; y < height; y = y + 1) {
+    for (x = 0; x < width; x = x + 1) {
+      let want: float = plasma(x.toI32(), y.toI32(), width.toI32(), height.toI32(), 0.7)
+      if (nearly(pic[y * width + x], want, 0.001) == 0) {
+        return 0
+      }
+    }
+  }
+  return 1
+}
+
+func checkVignette(gpu: i64, image: i64, width: i64, height: i64) -> i64 {
+  let pipeline: i64 = vulkanPipeline(gpu, "vignette.spv", 2, 16)
+  if (pipeline == 0) {
+    return 11
+  }
+  let out: i64 = vulkanEmptyBuffer(gpu, width * height * 4)
+  let push: ptr<i32> = calloc(4, 4).toPtr()
+  push[0] = width.toI32()
+  push[1] = height.toI32()
+  push[2] = width.toI32()
+  push[3] = height.toI32()
+  let buffers: ptr<i64> = calloc(2, 8).toPtr()
+  buffers[0] = image
+  buffers[1] = out
+  if (vulkanDispatch2D(gpu, pipeline, width, height, push.toI64(), buffers, 2) == 0) {
+    return 12
+  }
+  if (vignetteMatches(vulkanContents(image).toPtr(), vulkanContents(out).toPtr(), width, height) == 0) {
+    return 14
+  }
+  return 0
+}
+
+func vignetteMatches(source: ptr<float>, pic: ptr<float>, width: i64, height: i64) -> i64 {
+  for (y = 0; y < height; y = y + 1) {
+    for (x = 0; x < width; x = x + 1) {
+      let want: float = vignette(source[y * width + x], x.toI32(), y.toI32(), width.toI32(), height.toI32())
+      if (nearly(pic[y * width + x], want, 0.0005) == 0) {
+        return 0
+      }
+    }
+  }
+  return 1
+}
+
+func checkAtomics(gpu: i64) -> i64 {
+  let pipeline: i64 = vulkanPipeline(gpu, "tally.spv", 5, 4)
+  if (pipeline == 0) {
+    return 11
+  }
+  let n: i64 = 1000000
+  let counts: i32[4]
+  let sums: float[4]
+  let lows: i32[1]
+  let highs: i32[1]
+  for (b = 0; b < 4; b = b + 1) {
+    counts[b] = 0
+    sums[b] = 0.0
+  }
+  lows[0] = 2147483647
+  highs[0] = (0 - 1)
+  let buffers: ptr<i64> = calloc(5, 8).toPtr()
+  buffers[0] = vulkanBuffer(gpu, counts.toI64(), 16)
+  buffers[1] = vulkanBuffer(gpu, sums.toI64(), 16)
+  buffers[2] = vulkanBuffer(gpu, lows.toI64(), 4)
+  buffers[3] = vulkanBuffer(gpu, highs.toI64(), 4)
+  buffers[4] = vulkanEmptyBuffer(gpu, n * 4)
+  let push: i32[1]
+  push[0] = n.toI32()
+  if (vulkanDispatchBuffers(gpu, pipeline, n, push.toI64(), buffers, 5) == 0) {
+    return 12
+  }
+  return compareTallies(buffers, n)
+}
+
+func compareTallies(buffers: ptr<i64>, n: i64) -> i64 {
+  let counts: ptr<i32> = vulkanContents(buffers[0]).toPtr()
+  let sums: ptr<float> = vulkanContents(buffers[1]).toPtr()
+  let lows: ptr<i32> = vulkanContents(buffers[2]).toPtr()
+  let highs: ptr<i32> = vulkanContents(buffers[3]).toPtr()
+  var low: i32 = 2147483647
+  var high: i32 = (0 - 1)
+  for (i = 0; i < n; i = i + 1) {
+    let value: i32 = reported(i.toI32())
+    if (value < low) {
+      low = value
+    }
+    if (value > high) {
+      high = value
+    }
+  }
+  for (b = 0; b < 4; b = b + 1) {
+    if (counts[b].toI64() != n / 4) {
+      return 15
+    }
+    if (sums[b] != (n / 4).toFloat() * 0.5) {
+      return 15
+    }
+  }
+  if (lows[0] != low || highs[0] != high) {
+    return 15
+  }
+  return 0
+}

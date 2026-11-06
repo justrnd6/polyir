@@ -1,0 +1,20 @@
+$ --analyze
+exit 1
+check failed:
+  err_assign_immutable.poly:4:3: cannot assign to a: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+  err_assign_immutable.poly:6:5: cannot assign field x of P: it is not a var field. P has no var fields, so it is an immutable value (declare a field `var x: T` to make it assignable)
+$ --analyze --strict
+exit 1
+check failed:
+  err_assign_immutable.poly:4:3: cannot assign to a: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+  err_assign_immutable.poly:6:5: cannot assign field x of P: it is not a var field. P has no var fields, so it is an immutable value (declare a field `var x: T` to make it assignable)
+$ --emit-hir-json
+exit 1
+check failed:
+  err_assign_immutable.poly:4:3: cannot assign to a: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+  err_assign_immutable.poly:6:5: cannot assign field x of P: it is not a var field. P has no var fields, so it is an immutable value (declare a field `var x: T` to make it assignable)
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_assign_immutable.poly:4:3: cannot assign to a: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+  err_assign_immutable.poly:6:5: cannot assign field x of P: it is not a var field. P has no var fields, so it is an immutable value (declare a field `var x: T` to make it assignable)

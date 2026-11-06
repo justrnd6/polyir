@@ -1,0 +1,27 @@
+func classify(x: i64) -> i64 {
+  if (x < 0) {
+    return 0 - 1
+  } else if (x == 0) {
+    return 0
+  } else {
+    return 1
+  }
+}
+
+func maxVal(a: i64, b: i64) -> i64 {
+  var result: i64 = 0
+  if (a < b) {
+    result = b
+  } else {
+    result = a
+  }
+  return result
+}
+
+func absViaIf(x: i64) -> i64 {
+  var r: i64 = x
+  if (r < 0) {
+    r = 0 - r
+  }
+  return r
+}

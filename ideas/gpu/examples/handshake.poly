@@ -1,0 +1,62 @@
+// HOW LONG DOES EACH STEP OF "ASK THE GPU TO DO SOMETHING" TAKE? (Metal.) The program makes the same moves as any GPU
+// program, one at a time, and times each: find the GPU, compile the kernel, make the buffers, launch a tiny kernel many
+// times, launch a big one, and read the results back. The kernel is one add, so what is timed is the conversation between
+// the CPU and the GPU rather than the arithmetic.
+//
+//   polyir --emit-msl handshake.poly > handshake.metal
+//   polyir handshake.poly --out handshake && ./handshake        (Apple Silicon; run in this folder)
+//
+// Exit 0 means the results were right (every 997th result equals the CPU's). 10 no GPU, 11 the Metal source is missing,
+// 12 a launch failed, 13 a result was wrong. The times differ from machine to machine and run to run; the proportions
+// are the lesson.
+import "../Metal.poly"
+import "shared/print.poly"
+import "shared/handshake.poly"
+
+func main() -> i64 {
+    let n: i64 = 1048576
+    let input: ptr<float> = makeInput(n)
+    say("Metal: where the time goes")
+    newline()
+    var mark: i64 = wallMs()
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    reportRow("find the GPU                        ", wallMs() - mark, "ms", "once per program")
+    let source: string = metalReadFile("handshake.metal")
+    if (source == "") { return 11 }
+    mark = wallMs()
+    let pipeline: i64 = metalPipeline(device, source, "addOne")
+    if (pipeline == 0) { return 11 }
+    reportRow("compile the kernel                  ", wallMs() - mark, "ms", "once per kernel")
+    mark = wallMs()
+    let buffers: ptr<i64> = calloc(2, 8).toPtr()
+    buffers[0] = metalBuffer(device, input.toI64(), n * 4)
+    buffers[1] = metalEmptyBuffer(device, n * 4)
+    reportRow("make 2 buffers, fill one with 4 MiB ", wallMs() - mark, "ms", "once per buffer")
+    return launches(device, pipeline, buffers, input, n)
+}
+
+// A tiny launch many times (the fixed cost of a launch), then a big launch a few times, then read the results.
+func launches(device: i64, pipeline: i64, buffers: ptr<i64>, input: ptr<float>, n: i64) -> i64 {
+    let tiny: i64 = 1000
+    var mark: i64 = wallMs()
+    for (k = 0; k < tiny; k = k + 1) {
+        if (metalDispatchBuffers(device, pipeline, 1, buffers, 2) == 0) { return 12 }
+    }
+    reportRow("launch for 1 element, and wait      ", microsEach(wallMs() - mark, tiny), "us", "every launch")
+    let big: i64 = 50
+    mark = wallMs()
+    for (k = 0; k < big; k = k + 1) {
+        if (metalDispatchBuffers(device, pipeline, n, buffers, 2) == 0) { return 12 }
+    }
+    reportRow("launch for 1,048,576 elements, wait ", microsEach(wallMs() - mark, big), "us", "every launch")
+    mark = wallMs()
+    let output: ptr<float> = metalContents(buffers[1]).toPtr()
+    var sum: float = 0.0
+    for (i = 0; i < n; i = i + 1) {
+        sum = sum + output[i]
+    }
+    reportRow("the CPU reads the 4 MiB of results  ", wallMs() - mark, "ms", "no copy: same memory")
+    if (resultsAreRight(input, output, n) == 0) { return 13 }
+    return 0
+}

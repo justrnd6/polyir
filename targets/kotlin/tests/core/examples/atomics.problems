@@ -1,0 +1,6 @@
+targets/kotlin/Kotlin.translate:100: `extern(name, params, result)` is unsupported: Kotlin cannot call a C function
+targets/kotlin/Kotlin.translate:352: `atomicLoad(object, order)` is unsupported: this Kotlin has no memory shared with C to read atomically
+targets/kotlin/Kotlin.translate:353: `atomicStore(object, value, order)` is unsupported: this Kotlin has no memory shared with C to write atomically
+targets/kotlin/Kotlin.translate:354: `atomicRmw(object, op, value, order)` is unsupported: this Kotlin has no memory shared with C to change atomically
+targets/kotlin/Kotlin.translate:355: `cmpxchg(object, expected, value, success, failure)` is unsupported: this Kotlin has no memory shared with C to change atomically
+targets/kotlin/Kotlin.translate:356: `fence(order)` is unsupported: this Kotlin has no memory shared with C to order

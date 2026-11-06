@@ -1,0 +1,81 @@
+// `array<T,S>` — a fixed-CAPACITY, raw-`ptr` sibling of `T[N]`: `S` is
+// baked into the type (recovered at compile time for `.capacity()`,
+// same mechanism `grid`/`tensor`'s own `.rows()`/`.cols()` use), the
+// full buffer is `realloc`d ONCE at construction, and it's index-only —
+// fill/set via `arr[i] = val`, exactly like `T[N]`, no `push`/`.len()`
+// at all (there's no runtime length to track). Deliberately UNCHECKED
+// past `S` (same policy as `mutmap<K,V>`'s own "inserting past
+// capacity is undefined").
+
+func fillToCapacity() -> i64 {
+  let arr: buffer<i64, 4> = buffer<i64, 4>()
+  arr[0] = 10
+  arr[1] = 20
+  arr[2] = 30
+  arr[3] = 40
+  return arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+// `.capacity()` is a pure compile-time constant read off the declared
+// `S` — always `4` here, regardless of how many slots have actually
+// been filled in.
+func capacityCheck() -> i64 {
+  let arr: buffer<i64, 4> = buffer<i64, 4>()
+  arr[0] = 1
+  arr[1] = 2
+  return arr.capacity()
+}
+
+// `let` alone is enough — indexed writes go straight through the
+// SAME `gep`+`store` every `ptr<T>`/`T[N]` write already uses, no
+// `var`/mutable slot needed (`array<T,S>` is a raw pointer VALUE, not
+// struct-wrapped state that needs rebinding on every write).
+func letBoundIndexedFill() -> i64 {
+  let arr: buffer<i64, 3> = buffer<i64, 3>()
+  arr[0] = 5
+  arr[1] = 6
+  arr[2] = 7
+  return arr[0] + arr[1] + arr[2]
+}
+
+// A `var`-bound array filled across a `for` loop's own iterations —
+// same shape `T[N]`'s own examples already use; the fill COUNT is
+// tracked by the caller-supplied bound `n`, not a runtime length.
+func sumViaLoop(n: i64) -> i64 {
+  var arr: buffer<i64, 10> = buffer<i64, 10>()
+  for (i = 0; i < n; i = i + 1) {
+    arr[i] = i
+  }
+  var total: i64 = 0
+  for (i = 0; i < n; i = i + 1) {
+    total = total + arr[i]
+  }
+  return total
+}
+
+// Element-type reuse — `string`/`char` both work unchanged.
+func stringElements() -> i64 {
+  var names: buffer<string, 2> = buffer<string, 2>()
+  names[0] = "first"
+  names[1] = "second"
+  if (names[0] != "first") { return 0 }
+  if (names[1] != "second") { return 0 }
+  return 1
+}
+
+// `array<T,S>` as a function PARAMETER — a free capability of the
+// raw-`ptr` representation (no by-value decay logic needed, unlike
+// `T[N]`, since `array<T,S>` never had a by-value form to begin
+// with): indexing and `.capacity()` both work on the parameter
+// exactly as they do on a local.
+func sumParam(arr: buffer<i64, 3>) -> i64 {
+  return arr[0] + arr[1] + arr[2] + arr.capacity()
+}
+
+func viaParam() -> i64 {
+  let arr: buffer<i64, 3> = buffer<i64, 3>()
+  arr[0] = 100
+  arr[1] = 200
+  arr[2] = 300
+  return sumParam(arr)
+}

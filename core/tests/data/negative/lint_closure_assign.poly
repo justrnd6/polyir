@@ -1,0 +1,9 @@
+func main() -> i64 {
+  var hit: i64 = 0
+  var miss: i64 = 0
+  let f: closure(i64) -> i64 = closure(x: i64) -> i64 {
+    hit = x
+    return hit
+  }
+  return f(2) + miss
+}

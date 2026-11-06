@@ -1,0 +1,45 @@
+// REVERB BY CONVOLUTION through Vulkan: the `convolveSample` kernel of ideas/audio/Convolve.poly as a
+// Vulkan shader, one thread per output sample, checked against the CPU's convolution.
+//
+//   polyir --emit-glsl convolve-vulkan.poly       (tests/gpu.sh splits and compiles the shaders)
+//   polyir convolve-vulkan.poly --out convolve-vulkan && ./convolve-vulkan    (run in this folder)
+//
+// Exit 0 means the GPU's samples equal the CPU's. 10 no Vulkan GPU, 11 a shader is missing,
+// 12 a dispatch failed, 13 the GPU and CPU disagree.
+import "../Vulkan.poly"
+import "../../audio/Sound.poly"
+import "../../audio/Convolve.poly"
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    // Four storage buffers (the sound, the response, the two sizes, the result); push constant: the thread count.
+    let pipeline: i64 = vulkanPipeline(gpu, "convolveSample.spv", 4, 4)
+    if (pipeline == 0) { return 11 }
+    let rate: i64 = 44100
+    let dry: Sound = soundNew(0.2, rate)
+    dry.tone(0, 440.0, 0.8, 0.0, 0.1)
+    let room: Sound = soundNew(0.2, rate)
+    let impulse: ptr<float> = room.samples
+    for (j = 0; j < room.count; j = j + 1) {
+        impulse[j] = 0.5 * noise(j.toI32()) * (1.0 - j.toFloat() / room.count.toFloat())
+    }
+    impulse[0] = 1.0
+    let viaCpu: Sound = dry.convolve(room)
+    let n: i64 = viaCpu.count
+    let sizes: i32[2]
+    sizes[0] = dry.count.toI32()
+    sizes[1] = room.count.toI32()
+    let push: i32[1]
+    push[0] = n.toI32()
+    let out: i64 = vulkanEmptyBuffer(gpu, n * 4)
+    if (vulkanDispatch(gpu, pipeline, n, push.toI64(), vulkanBuffer(gpu, dry.samples.toI64(), dry.count * 4), vulkanBuffer(gpu, room.samples.toI64(), room.count * 4), vulkanBuffer(gpu, sizes.toI64(), 8), out) == 0) { return 12 }
+    let got: ptr<float> = vulkanContents(out).toPtr()
+    let want: ptr<float> = viaCpu.samples
+    for (i = 0; i < n; i = i + 11) {
+        var gap: float = got[i] - want[i]
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > 0.002) { return 13 }
+    }
+    return 0
+}

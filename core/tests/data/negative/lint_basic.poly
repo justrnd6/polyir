@@ -1,0 +1,6 @@
+func main() -> i64 {
+  var x: i64 = 1
+  var y: i64 = 2
+  y = y + 1
+  return x + y
+}

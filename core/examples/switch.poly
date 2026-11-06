@@ -1,0 +1,26 @@
+// LLVM's own `switch` instruction, directly: no fallthrough — each case
+// jumps straight to its own label, same block-argument/phi mechanism
+// `goto`/`branch` already use, just N-ary with one required default arm.
+//
+//   polyir run switch.poly --entry dayKind --args "3"   -> 1  (weekday)
+//   polyir run switch.poly --entry dayKind --args "6"   -> 0  (weekend)
+//   polyir run switch.poly --entry dayKind --args "9"   -> 0 - 1  (invalid)
+
+func dayKind(day: i64) -> i64 {
+  switch (day) {
+    0 => weekend()
+    6 => weekend()
+    1 => weekday()
+    2 => weekday()
+    3 => weekday()
+    4 => weekday()
+    5 => weekday()
+    else => invalid()
+  }
+label weekend():
+  return 0
+label weekday():
+  return 1
+label invalid():
+  return 0 - 1
+}

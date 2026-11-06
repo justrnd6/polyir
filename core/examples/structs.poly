@@ -1,0 +1,16 @@
+// Structs are SSA values, not memory: a literal builds through chained
+// `insertvalue`; a field read is one `extractvalue`. No `alloca` anywhere.
+//
+//   polyir run structs.poly --entry distFromOrigin --args "3 4"   -> 25.0
+
+struct Point(x: double, y: double)
+
+func distanceSquared(a: Point, b: Point) -> double {
+  let dx: double = a.x - b.x
+  let dy: double = a.y - b.y
+  return dx * dx + dy * dy
+}
+
+func distFromOrigin(bx: double, by: double) -> double {
+  return distanceSquared(Point(x: 0.0, y: 0.0), Point(x: bx, y: by))
+}

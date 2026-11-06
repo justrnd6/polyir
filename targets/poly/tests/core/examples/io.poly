@@ -1,0 +1,25 @@
+extern func putchar(c: i32) -> i32
+extern func getchar() -> i32
+
+func writeLine() -> i32 {
+  putchar(104)
+  putchar(108)
+  putchar(108)
+  putchar(118)
+  putchar(109)
+  putchar(32)
+  putchar(105)
+  putchar(111)
+  return putchar(10)
+}
+
+func echoOneByte() -> i32 {
+  let c: i32 = getchar()
+  return putchar(c)
+}
+
+func main() -> i64 {
+  writeLine()
+  echoOneByte()
+  return 0
+}

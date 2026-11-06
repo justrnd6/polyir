@@ -1,0 +1,55 @@
+// The js and ts targets as a Node package: build/npm/package.json with the npm deps (and git ones) and the program
+// polyir generates. npm (or yarn, with `use yarn for js`) resolves, downloads, verifies and locks them.
+import "../Project.poly"
+
+func npmPlan(p: Project, target: string, tool: string, out: Plan) -> void {
+  let dir: string = toolDir("${tool}-${target}")
+  let file: string = "${programName(p)}.${target}"
+  addFile(out, "${dir}/package.json", packageJson(p, file))
+  out.steps.push(emitStep(p, target, "${dir}/${file}"))
+  if (len(npmDeps(p)) > 0) {
+    out.steps.push(npmInstall(tool, target, dir))
+  }
+  out.steps.push(step("run", target, nodeCommand(target, "${dir}/${file}"), "install Node.js from nodejs.org or with nvm"))
+}
+
+func npmInstall(tool: string, target: string, dir: string) -> Step {
+  if (tool == "yarn") {
+    return step("build", target, ["yarn", "--cwd", dir, "install", "--silent"], "install yarn: corepack enable")
+  }
+  return step("build", target, ["npm", "install", "--prefix", dir, "--silent"], "install Node.js from nodejs.org or with nvm")
+}
+
+// TypeScript runs on Node 22.6 and newer directly, its types stripped.
+func nodeCommand(target: string, file: string) -> mutarray<string> {
+  if (target == "ts") {
+    return ["node", "--experimental-strip-types", "--no-warnings", file]
+  }
+  return ["node", file]
+}
+
+func packageJson(p: Project, file: string) -> string {
+  return """
+    {
+      "name": "${programName(p)}",
+      "version": "0.1.0",
+      "private": true,
+      "scripts": { "start": "node ${file}" },
+      "dependencies": {
+        ${npmDeps(p).join(",\n")}
+      }
+    }
+    """
+}
+
+// Each dependency as a package.json entry: a version, or a git url with its tag.
+func npmDeps(p: Project) -> mutarray<string> {
+  let entries: mutarray<string>
+  for (d in depsFrom(p, "npm")) {
+    entries.push("\"${d.name}\": \"${d.version}\"")
+  }
+  for (d in depsFrom(p, "git")) {
+    entries.push("\"${d.name}\": \"git+${d.url}#${d.tag}\"")
+  }
+  return entries
+}

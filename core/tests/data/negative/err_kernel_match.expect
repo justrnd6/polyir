@@ -1,0 +1,13 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"pick","paramNames":["x","mode"],"paramTypes":[{"k":"HFloat","bits":32},{"k":"HInt","bits":64}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HVarDecl","name":"matchValue_2_10","ty":{"k":"HFloat","bits":32},"init":null,"at":[2,10]},{"k":"HSelect","value":{"k":"HLocal","name":"mode","ty":{"k":"HInt","bits":64},"at":[2,17]},"caseKeys":[[{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[3,5]}],[{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[4,5]}]],"names":["",""],"caseBodies":[[{"k":"HAssign","target":{"k":"HLoadSlot","name":"matchValue_2_10","ty":{"k":"HFloat","bits":32},"at":[3,10]},"value":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[3,10]},"at":[3,10]}],[{"k":"HAssign","target":{"k":"HLoadSlot","name":"matchValue_2_10","ty":{"k":"HFloat","bits":32},"at":[4,12]},"value":{"k":"HBinary","op":"Add","left":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[4,10]},"right":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[4,14]},"ty":{"k":"HFloat","bits":32},"at":[4,12]},"at":[4,12]}]],"else":[{"k":"HAssign","target":{"k":"HLoadSlot","name":"matchValue_2_10","ty":{"k":"HFloat","bits":32},"at":[5,15]},"value":{"k":"HBinary","op":"Sub","left":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[5,13]},"right":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[5,17]},"ty":{"k":"HFloat","bits":32},"at":[5,15]},"at":[5,15]}],"at":[2,10]},{"k":"HReturn","value":{"k":"HLoadSlot","name":"matchValue_2_10","ty":{"k":"HFloat","bits":32},"at":[2,10]},"at":[2,10]}],"isCoroutine":false,"stage":"compute","roles":[0,1],"at":[1,13]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_kernel_match.poly:2:10: this statement cannot run on a GPU: a switch of keys (write it with `if`)

@@ -1,0 +1,27 @@
+import "Metal.poly"
+
+func fftStagesGpu(device: i64, stage: i64, first: i64, second: i64, total: i64, batch: i64, direction: i64) -> i64 {
+  var source: i64 = first
+  var target: i64 = second
+  let scratch: i64 = metalEmptyBuffer(device, batch * (total / 2) * 4)
+  var n: i64 = total
+  var s: i64 = 1
+  for (pass = 0; pass < 30; pass = pass + 1) {
+    if (n > 1) {
+      let settings: i32[4]
+      settings[0] = total.toI32()
+      settings[1] = n.toI32()
+      settings[2] = s.toI32()
+      settings[3] = direction.toI32()
+      if (metalDispatch(device, stage, batch * (total / 2), source, metalBuffer(device, settings.toI64(), 16), target, scratch) == 0) {
+        return 0
+      }
+      let swap: i64 = source
+      source = target
+      target = swap
+      n = n / 2
+      s = s * 2
+    }
+  }
+  return source
+}

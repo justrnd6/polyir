@@ -1,0 +1,6 @@
+kernel func tally(index i: i32, writable counts: ptr<i32>, writable sums: ptr<float>, writable lows: ptr<i32>) -> i32 {
+    atomicAdd(counts, i % 4, 1)
+    atomicAddFloat(sums, i % 4, 0.5)
+    atomicMin(lows, 0, i)
+    return 0
+}

@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  conflicting 'extern func puts' declarations (different signatures)
+$ --analyze --strict
+exit 1
+check failed:
+  conflicting 'extern func puts' declarations (different signatures)
+$ --emit-hir-json
+exit 1
+check failed:
+  conflicting 'extern func puts' declarations (different signatures)
+$ --emit-msl
+exit 1
+kernel check failed:
+  conflicting 'extern func puts' declarations (different signatures)

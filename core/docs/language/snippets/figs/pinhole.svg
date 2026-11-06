@@ -1,0 +1,28 @@
+<svg viewBox="0 0 700 270" width="100%" role="img" aria-label="A real pinhole camera and the virtual camera">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#586069"/></marker></defs>
+<text x="20" y="18" font-size="12" font-weight="700" fill="#1b1f24">A real pinhole camera: the picture is upside-down</text>
+<line x1="40" y1="190" x2="40" y2="70" stroke="#d73a49" stroke-width="3" marker-end="url(#arr)"/>
+<text x="40" y="212" font-size="11" text-anchor="middle" fill="#586069">the toy</text>
+<rect x="200" y="80" width="130" height="100" fill="#f6f8fa" stroke="#586069" stroke-width="1.6"/>
+<rect x="198" y="126" width="5" height="8" fill="#fff"/>
+<line x1="40" y1="70" x2="330" y2="178.75" stroke="#9a6700" stroke-width="1.2"/>
+<line x1="40" y1="190" x2="330" y2="81.25" stroke="#9a6700" stroke-width="1.2"/>
+<line x1="326" y1="81" x2="326" y2="178" stroke="#d73a49" stroke-width="3" marker-end="url(#arr)"/>
+<text x="200" y="200" font-size="11" text-anchor="middle" fill="#586069">a tiny hole</text>
+<text x="265" y="72" font-size="11" text-anchor="middle" fill="#586069">dark box</text>
+<text x="326" y="198" font-size="11" text-anchor="middle" fill="#586069">its picture,</text>
+<text x="326" y="212" font-size="11" text-anchor="middle" fill="#586069">upside-down</text>
+<text x="380" y="18" font-size="12" font-weight="700" fill="#1b1f24">The virtual camera: the picture plane is put in front</text>
+<circle cx="400" cy="130" r="4" fill="#0b5cad"/>
+<text x="400" y="152" font-size="11" text-anchor="middle" fill="#586069">the eye</text>
+<line x1="470" y1="70" x2="470" y2="190" stroke="#0b5cad" stroke-width="2"/>
+<text x="470" y="210" font-size="11" text-anchor="middle" fill="#0b5cad">picture plane</text>
+<text x="470" y="224" font-size="11" text-anchor="middle" fill="#0b5cad">("the window")</text>
+<line x1="660" y1="190" x2="660" y2="70" stroke="#d73a49" stroke-width="3" marker-end="url(#arr)"/>
+<text x="660" y="212" font-size="11" text-anchor="middle" fill="#586069">the toy</text>
+<line x1="400" y1="130" x2="660" y2="70" stroke="#9a6700" stroke-width="1.2"/>
+<line x1="400" y1="130" x2="660" y2="190" stroke="#9a6700" stroke-width="1.2"/>
+<line x1="466" y1="146.8" x2="466" y2="113.2" stroke="#d73a49" stroke-width="3" marker-end="url(#arr)" transform="translate(0,0)"/>
+<text x="20" y="254" font-size="11" fill="#586069">Light travels in straight lines. Each point of the toy sends one ray through the hole, so each point lands on one spot of the picture.</text>
+<text x="20" y="268" font-size="11" fill="#586069">The virtual camera uses the same rays but puts the picture plane between the eye and the toy, which makes the picture the right way up.</text>
+</svg>

@@ -1,0 +1,54 @@
+// AN IMAGE AS A SIGNAL: what a grid of pixels really is, tried on the GPU (Metal). A picture is a list of numbers,
+// one measurement per position, and the GPU's thread number is simply the position in that list.
+//
+//   channel        show one colour channel (red, green or blue) as a grey picture
+//   quantize       keep only a few brightness levels (a smaller bit depth)
+//   decimate       make a smaller picture by KEEPING every k-th pixel (and throwing the rest away)
+//   boxAverage     make a smaller picture by AVERAGING each k x k block
+//   enlargeNearest make a bigger picture by repeating pixels
+//   enlargeBilinear make a bigger picture by blending the four nearest pixels
+//
+//   polyir --emit-msl pixels.poly > pixels.metal
+//   polyir pixels.poly --out pixels && ./pixels        (Apple Silicon; run in this folder)
+//
+// Prints a small table of pixel numbers and saves pixels-*.ppm and pixels-scan.pgm. Exit 0 means every GPU picture
+// equals the CPU's and the maths held: averaging keeps the mean brightness, enlarging then decimating gives the
+// small picture back exactly, bilinear never invents a brighter or darker pixel than the original had, and a
+// 2-bit picture has at most four different levels. 10 no GPU, 11 the Metal source is missing, 12 a dispatch failed,
+// 13 the GPU and CPU disagree, 14 a property failed.
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/plot.poly"
+import "shared/print.poly"
+import "shared/pixels.poly"
+
+// One kernel on the GPU: `outCount` output pixels from the source picture (`srcW` x `srcH`) and a setting.
+func runKernel(device: i64, source: string, name: string, img: ptr<float>, srcW: i64, srcH: i64, setting: float, outCount: i64) -> ptr<float> {
+    let pipeline: i64 = metalPipeline(device, source, name)
+    if (pipeline == 0) { return 0.toPtr() }
+    let opts: ptr<float> = settings(srcW, srcH, setting)
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    buffers[0] = metalBuffer(device, img.toI64(), srcW * srcH * 16)
+    buffers[1] = metalBuffer(device, opts.toI64(), 16)
+    buffers[2] = metalEmptyBuffer(device, outCount * 16)
+    if (metalDispatchBuffers(device, pipeline, outCount, buffers, 3) == 0) { return 0.toPtr() }
+    return metalContents(buffers[2]).toPtr()
+}
+
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("pixels.metal")
+    if (source == "") { return 11 }
+    printTable(facePicture())
+    var code: i64 = scanDemo(device, source)
+    if (code != 0) { return code }
+    code = channelsDemo(device, source)
+    if (code != 0) { return code }
+    code = bitsDemo(device, source)
+    if (code != 0) { return code }
+    code = resizeDemo(device, source)
+    if (code != 0) { return code }
+    return enlargeDemo(device, source)
+}

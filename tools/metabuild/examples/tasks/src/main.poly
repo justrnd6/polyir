@@ -1,0 +1,8 @@
+// The words of a sentence, counted and measured: the same answer on every target.
+func main() -> i64 {
+  var total: i64 = 0
+  for (w in "the quick brown fox jumps".split(" ")) {
+    total = total + len(w) * 10
+  }
+  return total + len("a,b,c".split(","))
+}

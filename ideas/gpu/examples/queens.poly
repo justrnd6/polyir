@@ -1,0 +1,113 @@
+// N-QUEENS on the GPU (Metal): count every way to place N non-attacking queens on an N x N
+// board, with one GPU thread per partial board (see shared/queens.poly), then add the
+// threads' counts together ON THE GPU with the pair-adding passes of shared/reduce.poly.
+// The answer is checked against the CPU running the very same kernel one prefix at a time,
+// and against the well-known counts. It prints a small timing table.
+//
+//   polyir --emit-msl queens.poly > queens.metal
+//   polyir queens.poly --out queens && ./queens        (Apple Silicon; run in this folder)
+//
+// Exit 0 means every count matched. 10 no GPU, 11 the Metal source is missing, 12 a dispatch
+// failed, 13 a count differs from the CPU's, 14 a count differs from the known answer.
+import "../Metal.poly"
+import "shared/queens.poly"
+import "shared/reduce.poly"
+import "shared/print.poly"
+
+// The board sizes tried, smallest first.
+func boardSize(round: i64) -> i64 {
+    if (round == 0) { return 8 }
+    if (round == 1) { return 10 }
+    if (round == 2) { return 12 }
+    if (round == 3) { return 13 }
+    if (round == 4) { return 14 }
+    return 15
+}
+
+func knownCount(n: i64) -> i64 {
+    if (n == 8) { return 92 }
+    if (n == 10) { return 724 }
+    if (n == 12) { return 14200 }
+    if (n == 13) { return 73712 }
+    if (n == 14) { return 365596 }
+    if (n == 15) { return 2279184 }
+    return 0
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("queens.metal")
+    say("board  solutions   CPU (ms)   GPU (ms)   prefixes (threads)")
+    newline()
+    var code: i64 = 0
+    for (round = 0; round < 6; round = round + 1) {
+        if (code == 0) { code = solve(device, source, boardSize(round)) }
+    }
+    return code
+}
+
+// Solve one board size both ways, print a row of the table, and check the answers.
+func solve(device: i64, source: string, n: i64) -> i64 {
+    var depth: i64 = 3
+    if (n >= 11) { depth = 4 }
+    var capacity: i64 = 1
+    for (r = 0; r < depth; r = r + 1) {
+        capacity = capacity * n
+    }
+    let prefixes: ptr<i32> = calloc(capacity * 3, 4).toPtr()
+    let count: i64 = listPrefixes(n, depth, prefixes)
+    let p: i32[2]
+    p[0] = n.toI32()
+    p[1] = depth.toI32()
+    // The CPU: one thread, one prefix after another, with the same kernel.
+    let cpuStack: ptr<i32> = calloc(count * (n + 1) * 4, 4).toPtr()
+    let cpuStart: i64 = wallMs()
+    var cpuTotal: i64 = 0
+    for (t = 0; t < count; t = t + 1) {
+        cpuTotal = cpuTotal + queens(t, prefixes, p.toI64().toPtr(), cpuStack).toI64()
+    }
+    let cpuMs: i64 = wallMs() - cpuStart
+    // The GPU: one thread per prefix, then the pair-adding passes for the total.
+    let gpuStart: i64 = wallMs()
+    let gpuTotal: i64 = gpuSolve(device, source, prefixes, count, p.toI64(), n)
+    let gpuMs: i64 = wallMs() - gpuStart
+    say("  ")
+    sayNumber(n)
+    say("      ")
+    sayNumber(gpuTotal)
+    say("        ")
+    sayNumber(cpuMs)
+    say("         ")
+    sayNumber(gpuMs)
+    say("         ")
+    sayNumber(count)
+    newline()
+    if (gpuTotal != cpuTotal) { return 13 }
+    if (knownCount(n) != 0 && gpuTotal != knownCount(n)) { return 14 }
+    return 0
+}
+
+// The GPU part: search every prefix, then reduce the per-thread counts to one number.
+func gpuSolve(device: i64, source: string, prefixes: ptr<i32>, count: i64, p: i64, n: i64) -> i64 {
+    let search: i64 = metalPipeline(device, source, "queens")
+    let add: i64 = metalPipeline(device, source, "pairSumInt")
+    if (search == 0 || add == 0) { return 0 - 1 }
+    let stack: i64 = metalEmptyBuffer(device, count * (n + 1) * 16)
+    var counts: i64 = metalEmptyBuffer(device, count * 4)
+    if (metalDispatch(device, search, count, metalBuffer(device, prefixes.toI64(), count * 12), metalBuffer(device, p, 8), stack, counts) == 0) { return 0 - 1 }
+    var length: i64 = count
+    for (pass = 0; pass < 40; pass = pass + 1) {
+        if (length > 1) {
+            let next: i64 = (length + 1) / 2
+            let size: i32[1]
+            size[0] = length.toI32()
+            let out: i64 = metalEmptyBuffer(device, next * 4)
+            metalDispatch(device, add, next, counts, metalBuffer(device, size.toI64(), 4), out, 0)
+            counts = out
+            length = next
+        }
+    }
+    let answer: ptr<i32> = metalContents(counts).toPtr()
+    return answer[0].toI64()
+}

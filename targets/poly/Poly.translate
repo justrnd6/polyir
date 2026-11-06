@@ -1,0 +1,371 @@
+# Poly
+source: polyir
+target: poly
+style: indent 2, braces same-line, names keep, paths ., qualify relative, generics kept, extension poly
+
+// A checked program written back as .poly, polyir's own source, the way WritePoly (core/src/hir/PolySource.cpp) spells it:
+// a method in its struct, a declaration in its `module` block (named bare there, by its path elsewhere), a generic that works
+// for every type written once (`struct Box<T>`), `for (x in xs)`, `if` values, list literals and `"n = ${x}"`. Checking the
+// file again gives the same program (core/tests/PolyRoundTripTest.cpp). What .poly cannot spell yet is `unimplemented`.
+
+## declarations
+program(support, items)             := {items}
+module(name, items) :=
+  module {name} {
+    {items}
+  }
+
+// A struct is `struct Point(x: i64, var y: i64)`, one with no fields `struct Empty`; its statics, methods and nested structs
+// are its body.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  {annotations?}
+  struct {name}<{typeParams}>({fields}) {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields: empty, methods, nested, statics) :=
+  {annotations?}
+  struct {name}<{typeParams}> {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  {annotations?}
+  struct {name}<{typeParams}>({fields}) : {implements} {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields: empty, methods, nested, statics, implements) :=
+  {annotations?}
+  struct {name}<{typeParams}> : {implements} {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields, methods, nested, statics, internal) :=
+  {annotations?}
+  internal struct {name}<{typeParams}>({fields}) {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields: empty, methods, nested, statics, internal) :=
+  {annotations?}
+  internal struct {name}<{typeParams}> {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields, methods, nested, statics, implements, internal) :=
+  {annotations?}
+  internal struct {name}<{typeParams}>({fields}) : {implements} {
+    {statics}
+    {methods}
+    {nested}
+  }
+struct(name, typeParams, fields: empty, methods, nested, statics, implements, internal) :=
+  {annotations?}
+  internal struct {name}<{typeParams}> : {implements} {
+    {statics}
+    {methods}
+    {nested}
+  }
+field(name, type)                   := {name}: {type}
+field(name, type, isMutable)        := var {name}: {type}
+field(name, type, value)            := {name}: {type} = {value}
+field(name, type, value, isMutable) := var {name}: {type} = {value}
+
+method(name, params, result, body) :=
+  {annotations?}
+  func {name}({params}) -> {result} {body}
+method(name, params, result, body, internal) :=
+  {annotations?}
+  internal func {name}({params}) -> {result} {body}
+static(name, params, result, body) :=
+  {annotations?}
+  static func {name}({params}) -> {result} {body}
+static(name, params, result, body, internal) :=
+  {annotations?}
+  internal static func {name}({params}) -> {result} {body}
+func(name, typeParams, params, result, body) :=
+  {annotations?}
+  func {name}<{typeParams}>({params}) -> {result} {body}
+func(name, typeParams, params, result, body, internal) :=
+  {annotations?}
+  internal func {name}<{typeParams}>({params}) -> {result} {body}
+coro(name, params, yields, body)    := coro func {name}({params}) -> {yields} {body}
+coro(name, params, yields, body, internal) := internal coro func {name}({params}) -> {yields} {body}
+kernel(stage, name, params, result, body) := unimplemented "a kernel's parameters' qualifiers (index, uniform) are not in the tree"
+param(name, type)                   := {name}: {type}
+
+interface(name, methods) :=
+  interface {name} {
+    {methods}
+  }
+interface(name, methods, internal) :=
+  internal interface {name} {
+    {methods}
+  }
+signature(name, params, result)     := func {name}({params}) -> {result}
+extern(name, params, result)        := extern func {name}({params}) -> {result}
+global(name, type, value)           := global {name}: {type} = {value}
+import(module)                      := unimplemented "a host import's bindings are not in the tree"
+import(module, alias)               := unimplemented "a host import's bindings are not in the tree"
+// An imported .poly file, by its path from this one.
+use(name, path, names)              := import "{path}.poly"
+
+annotation(name, args)              := @{name}({args})
+annotation(name, args: empty)       := @{name}
+// @Builder makes its builder when the file is checked, and the tree holds the one it made: written both, it would be twice.
+annotation(name: Builder, args)     := unimplemented "@Builder makes its builder again, and the tree holds the one it made"
+annotation(name: Builder, args: empty) := unimplemented "@Builder makes its builder again, and the tree holds the one it made"
+arg(name, value)                    := {name}: {value}
+
+## statements
+let(name, type, value)              := let {name}: {type} = {value}
+var(name, type)                     := var {name}: {type}
+var(name, type, value)              := var {name}: {type} = {value}
+// A fixed array, a grid and a tensor are declared without a value: they start with every item zero.
+let(name, type: fixed grid tensor, value) := let {name}: {type}
+var(name, type: fixed grid tensor, value) := var {name}: {type}
+assign(target, value)               := {target} = {value}
+store(object, index, value)         := {object}[{index}] = {value}
+store(object, indices, value)       := {object}[{indices}] = {value}
+expr(value)                         := {value}
+if(cond, then)                      := if ({cond}) {then}
+if(cond, then, else)                := if ({cond}) {then} else {else}
+if(cond, then, elseIf)              := if ({cond}) {then} else {elseIf}
+while(cond, body)                   := for (; {cond}; ) {body}
+for(counters, cond, steps, body)    := for ({counters}; {cond}; {steps}) {body}
+counter(name, type, value)          := {name} = {value}
+step(name, value)                   := {name} = {value}
+foreach(name, source, body)         := for ({name} in {source}) {body}
+return                              := return
+return(value)                       := return {value}
+return(value: unit)                 := return
+// `if (c) { return a } else { return b }` reaches the tree as the return of an `if` value: its lower form is the statement.
+return(value: choose)               := lower
+try(body, name, handler)            := try {body} catch ({name}) {handler}
+try(body, cleanup)                  := try {body} cleanup {cleanup}
+throw(value)                        := throw {value}
+yield(value)                        := yield {value}
+// A switch of blocks, which `match` and `switch` lower to: `.poly`'s own `switch`, an arm per line.
+select(value, arms) :=
+  switch ({value}) {
+    {arms}
+  }
+select(value, arms, else) :=
+  switch ({value}) {
+    {arms}
+    else => {else}
+  }
+arm(keys, body)                     := {keys| | } => {body}
+caseArm(case, body)                 := variant({case}, _) => {body}
+caseArm(case, bound, body)          := variant({case}, {bound}) => {body}
+caseArm(case: None, body)           := None => {body}
+caseArm(case: Some Ok Err, body)    := {case}(_) => {body}
+caseArm(case: Some Ok Err, bound, body) := {case}({bound}) => {body}
+
+## flow
+// .poly writes a function with labels as its labels (`label loop(a: i64):`, `goto`, `branch`); the tree holds them as a
+// machine (a loop over the states), which would check as another program.
+machine(state, cases)               := unimplemented "the tree holds labels as a machine; .poly writes them as labels"
+case(state, number, body)           := unimplemented "the tree holds labels as a machine; .poly writes them as labels"
+jump(state, number)                 := unimplemented "the tree holds labels as a machine; .poly writes them as labels"
+
+## expressions
+int(value)                          := {value}
+// A literal takes the type of its place, so a float (32 bits) is written as its digits too.
+float(value)                        := {value}
+bool(value)                         := {value}
+string(value)                       := "{value}"
+  escape: $ as \$
+unit                                := unimplemented "a void value has no .poly spelling but a bare `return`"
+name(name)                          := {name}
+this                                := this
+funcref(name)                       := {name}
+binary(left, op, right)             := {left} {op} {right}
+unary(op, operand)                  := {op}{operand}
+
+// A number of one type as another is a cast method; an integer of the wrong width is fixed again by the front end.
+cast(value, type)                   := unimplemented "only a cast to a number or a pointer has a .poly spelling"
+cast(value, type: i8)               := {value}.toI8()
+cast(value, type: i16)              := {value}.toI16()
+cast(value, type: i32)              := {value}.toI32()
+cast(value, type: i64)              := {value}.toI64()
+cast(value, type: u8)               := {value}.toU8()
+cast(value, type: u16)              := {value}.toU16()
+cast(value, type: u32)              := {value}.toU32()
+cast(value, type: u64)              := {value}.toU64()
+cast(value, type: float)            := {value}.toFloat()
+cast(value, type: double)           := {value}.toDouble()
+cast(value, type: ptr)              := {value}.toPtr()
+coerce(value, type)                 := {value}
+// A template that is one value hole alone is laid out as a statement, so an operator under it brings its own brackets.
+coerce(value: binary unary choose, type) := ({value})
+
+choose(cond, then, else)            := if ({cond}) {then} else {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+methodcall(object, name, args)      := {object}.{name}({args})
+// A method whose name a dot takes for a builtin is called by its function's whole name, its struct's path then `_`.
+methodcall(object, name: len count hash push copy with has add remove freeze thaw truncate capacity yielded toI8 toI16 toI32 toI64 toU8 toU16 toU32 toU64 toFloat toDouble toPtr, args, owner) := {owner}_{name}({object}, {args})
+// .poly calls a closure only through the name that holds it.
+invoke(callee, args)                := unimplemented "a closure is called only through the name that holds it"
+invoke(callee: name, args)          := {callee}({args})
+hostcall(binding, args)             := unimplemented "a host binding is not in the tree"
+get(object, name)                   := {object}.{name}
+index(object, index, type)          := {object}[{index}]
+index(object, indices, type)        := {object}[{indices}]
+
+new(name, values)                   := {name}({values})
+new(name, typeArgs, values)         := {name}({values})
+init(name, value)                   := {name}: {value}
+list(values, type)                  := [{values}]
+list(values: empty, type)           := {type}()
+vec(values, type)                   := vec[{values}]
+empty(type)                         := {type}()
+sized(type, sizes)                  := {type}({sizes})
+closure(params, result, body)       := closure({params}) -> {result} {body}
+lambda(params, value)               := lower
+some(type, value)                   := {type.some}({value})
+none(type)                          := {type.none}()
+ok(type, value)                     := {type.ok}({value})
+err(type, value)                    := {type.err}({value})
+variant(type, case, value)          := {type}({case}, {value})
+
+// Text with holes is .poly's own interpolation; a hole ends at its first brace, so a value with one is joined instead.
+interp(pieces)                      := "{pieces}"
+text(value)                         := {value}
+  escape: $ as \$
+hole(value)                         := ${{value}}
+hole(value: closure)                := unimplemented "a hole ends at its first brace"
+
+## builtins
+len(object)                         := {object}.len()
+capacity(object)                    := {object}.capacity()
+capacity(object: map mutmap set mutset) := unimplemented "a map's or set's capacity is read only in a for loop over it"
+rows(object)                        := {object}.rows()
+cols(object)                        := {object}.cols()
+dim(object, axis)                   := {object}.dim({axis})
+push(object, value)                 := {object}.push({value})
+hash(value)                         := hash({value})
+shuffle(object, lanes)              := {object}.shuffle({lanes})
+atomicLoad(object, order)           := {object}.atomicLoad({order})
+atomicStore(object, value, order)   := {object}.atomicStore({value}, {order})
+atomicRmw(object, op, value, order) := {object}.atomicRmw({op}, {value}, {order})
+cmpxchg(object, expected, value, success, failure) := {object}.cmpxchg({expected}, {value}, {success}, {failure})
+fence(order)                        := fence({order})
+tag(object)                         := {object}.tag()
+isCase(object, case)                := {object}.isCase({case})
+unwrapAt(object, case, type)        := {object}.unwrapAt({case})
+isOk(object)                        := {object}.isOk()
+isErr(object)                       := {object}.isErr()
+unwrapOk(object)                    := {object}.unwrapOk()
+unwrapErr(object)                   := {object}.unwrapErr()
+isSome(object)                      := {object}.isSome()
+isNone(object)                      := {object}.isNone()
+unwrap(object)                      := {object}.unwrap()
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+yielded(value)                      := {value}.yielded()
+copy(object)                        := {object}.copy()
+freeze(object)                      := {object}.freeze()
+thaw(object)                        := {object}.thaw()
+with(object, value)                 := {object}.with({value})
+with(object, key, value)            := {object}.with({key}, {value})
+has(object, key)                    := {object}.has({key})
+add(object, value)                  := {object}.add({value})
+remove(object, key)                 := {object}.remove({key})
+truncate(object, size)              := {object}.truncate({size})
+str(value)                          := str({value})
+charAt(object, index)               := {object}[{index}]
+slice(object, from, to)             := {object}.slice({from}, {to})
+find(object, part, from)            := {object}.find({part}, {from})
+print(value)                        := print({value})
+fail(value)                         := fail({value})
+
+## types
+// A type whose spelling ends in `>`, inside another's `<...>`, is followed by a space: .poly reads `>>` as the shift.
+i8                                  := i8
+i16                                 := i16
+i32                                 := i32
+i64                                 := i64
+u8                                  := u8
+u16                                 := u16
+u32                                 := u32
+u64                                 := u64
+bool                                := bool
+float                               := float
+double                              := double
+string                              := string
+void                                := void
+struct(name)                        := {name}
+instance(name, args)                := {name}<{args}>
+instance(name, args: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := {name}<{args} >
+param(name)                         := {name}
+host(name, binding)                 := unimplemented "a host type's binding is not in the tree"
+host(name, binding, args)           := unimplemented "a host type's binding is not in the tree"
+array(elem)                         := array<{elem}>
+array(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := array<{elem} >
+mutarray(elem)                      := mutarray<{elem}>
+mutarray(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := mutarray<{elem} >
+map(key, value)                     := map<{key}, {value}>
+map(key, value: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := map<{key}, {value} >
+mutmap(key, value)                  := mutmap<{key}, {value}>
+mutmap(key, value: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := mutmap<{key}, {value} >
+set(elem)                           := set<{elem}>
+set(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := set<{elem} >
+mutset(elem)                        := mutset<{elem}>
+mutset(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := mutset<{elem} >
+optional(elem)                      := optional<{elem}>
+optional(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := optional<{elem} >
+either(ok, err)                     := either<{ok}, {err}>
+either(ok, err: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := either<{ok}, {err} >
+variant(cases)                      := variant<{cases}>
+closure(params, result)             := closure({params}) -> {result}
+func(params, result)                := func({params}) -> {result}
+ptr(elem)                           := ptr<{elem}>
+ptr(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := ptr<{elem} >
+coro(elem)                          := coro<{elem}>
+coro(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := coro<{elem} >
+vec(elem, size)                     := vec<{elem}, {size}>
+matrix(elem, size)                  := matrix<{elem}, {size}>
+fixed(elem, size)                   := {elem}[{size}]
+buffer(elem, size)                  := buffer<{elem}, {size}>
+grid(elem, rows, cols)              := grid<{elem}, {rows}, {cols}>
+tensor(elem, dims)                  := tensor<{elem}, {dims}>
+sparse(elem)                        := sparse<{elem}>
+
+// What makes an optional or an either: `Some<i64>`, `None<i64>`, `eitherOk<i64, string>`, `eitherErr<i64, string>`.
+optional.some(elem)                 := Some<{elem}>
+optional.some(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := Some<{elem} >
+optional.none(elem)                 := None<{elem}>
+optional.none(elem: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := None<{elem} >
+either.ok(ok, err)                  := eitherOk<{ok}, {err}>
+either.ok(ok, err: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := eitherOk<{ok}, {err} >
+either.err(ok, err)                 := eitherErr<{ok}, {err}>
+either.err(ok, err: array mutarray map mutmap set mutset optional either variant ptr coro instance vec matrix fixed buffer grid tensor sparse closure func) := eitherErr<{ok}, {err} >
+
+## operators
+levels: if else, ||, &&, == != < <= > >= === !==, |, ^, &, << >>, + -, * / %
+
+## reserved
+// .poly's own words (front/Lexer.hpp): a name that is one of them gets a _ after it.
+func extern import global vec darray array mutarray buffer map mutmap set mutset grid tensor sparse hashmap meta struct
+interface type static let var val if else for in switch label goto branch return try catch throw closure variant either
+eitherOk eitherErr optional bridge Some None coro kernel uniform index writable workgroup yield true false ptr
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): where each statement came from, and its code, which polyir reads back (`//# from`), so
+// the program keeps its first source's places and code through every translation after this one.
+line := //# from {file}:{line}:{column} {code}

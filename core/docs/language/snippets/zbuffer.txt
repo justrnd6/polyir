@@ -1,0 +1,1 @@
+pixels that differ from the CPU's picture: 0 of 307200

@@ -1,0 +1,51 @@
+// `if`/`else` is statement-form sugar over the same label mechanism
+// labels.poly uses explicitly. A `let` is honest SSA — it never
+// escapes its own branch, nothing to merge (`classify` below: each arm
+// just returns). A real `var`, declared OUTSIDE the `if`, is ordinary
+// mutable MEMORY instead — reassigning it inside either branch (or
+// both) just works, no merge/phi bookkeeping needed at all (`maxVal`
+// below: both arms reassign `result`).
+//
+//   polyir run control-flow.poly --entry classify --args "-5"   -> -1
+//   polyir run control-flow.poly --entry classify --args "0"    -> 0
+//   polyir run control-flow.poly --entry classify --args "7"    -> 1
+//   polyir run control-flow.poly --entry maxVal --args "3 7"    -> 7
+//   polyir run control-flow.poly --entry maxVal --args "7 3"    -> 7
+
+func classify(x: i64) -> i64 {
+  if (x < 0) {
+    return 0 - 1
+  } else {
+    if (x == 0) {
+      return 0
+    } else {
+      return 1
+    }
+  }
+}
+
+// `result` is a real `var`: BOTH arms reassign it via ordinary `=`,
+// not a `let` shadow — there's no merge step to reason about, since
+// it's one fixed memory location the whole function shares; whichever
+// branch actually runs at runtime is simply the one whose `store` the
+// final `load` (at `return result`) sees.
+func maxVal(a: i64, b: i64) -> i64 {
+  var result: i64 = 0
+  if (a < b) {
+    result = b
+  } else {
+    result = a
+  }
+  return result
+}
+
+// A real `var` declared BEFORE the `if`, reassigned only on the
+// branch that needs it — the `else` (there isn't one here) simply
+// leaves it unchanged, exactly as it would in any imperative language.
+func absViaIf(x: i64) -> i64 {
+  var r: i64 = x
+  if (r < 0) {
+    r = 0 - r
+  }
+  return r
+}

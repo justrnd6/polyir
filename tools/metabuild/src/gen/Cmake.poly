@@ -1,0 +1,109 @@
+// The c and cpp targets as CMake projects: build/cmake-<target>/CMakeLists.txt with the program polyir generates, its
+// pkg-config and brew libraries (found with pkg_check_modules; a brew prefix is asked of brew by CMake itself) and its
+// git libraries (FetchContent). CMake does the finding, fetching and building.
+import "../Project.poly"
+
+func cmakePlan(p: Project, target: string, out: Plan) -> void {
+  let dir: string = toolDir("cmake-${target}")
+  let source: string = "src/${programName(p)}.${cmakeExtension(target)}"
+  addFile(out, "${dir}/CMakeLists.txt", cmakeLists(p, target, source))
+  out.steps.push(emitStep(p, target, "${dir}/${source}"))
+  for (d in libraryDeps(p)) {
+    out.steps.push(libraryCheck(d, target))
+  }
+  let hint: string = "install CMake from cmake.org (or with your package manager)"
+  out.steps.push(step("build", target, ["cmake", "-S", dir, "-B", "${dir}/out", "-DCMAKE_BUILD_TYPE=Release"], hint))
+  out.steps.push(step("build", target, ["cmake", "--build", "${dir}/out"], hint))
+  out.steps.push(step("run", target, ["${dir}/out/${programName(p)}"], ""))
+}
+
+func cmakeExtension(target: string) -> string {
+  if (target == "cpp") {
+    return "cpp"
+  }
+  return "c"
+}
+
+func cmakeLists(p: Project, target: string, source: string) -> string {
+  let name: string = programName(p)
+  return """
+    cmake_minimum_required(VERSION 3.20)
+    project(${name} LANGUAGES ${cmakeLanguage(target)})
+    ${cmakeStandard(target)}
+    find_package(Threads REQUIRED)
+    ${cmakeLibraries(p)}
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE Threads::Threads ${cmakeMath(target)}${cmakeLinked(p)})
+    """
+}
+
+// The C program uses libm's functions; C++ gets them from its standard library.
+func cmakeMath(target: string) -> string {
+  if (target == "c") {
+    return "m "
+  }
+  return ""
+}
+
+func cmakeLanguage(target: string) -> string {
+  if (target == "cpp") {
+    return "CXX"
+  }
+  return "C"
+}
+
+func cmakeStandard(target: string) -> string {
+  if (target == "cpp") {
+    return "set(CMAKE_CXX_STANDARD 17)"
+  }
+  return "set(CMAKE_C_STANDARD 11)"
+}
+
+// The pkg-config and brew libraries: found by pkg-config, a brew one with brew's prefix added to its search path.
+func libraryDeps(p: Project) -> mutarray<Dep> {
+  let found: mutarray<Dep> = depsFrom(p, "pkg-config")
+  for (d in depsFrom(p, "brew")) {
+    found.push(d)
+  }
+  return found
+}
+
+func cmakeLibraries(p: Project) -> string {
+  let out = StringBuilder()
+  if (len(libraryDeps(p)) > 0) {
+    out.line("find_package(PkgConfig REQUIRED)")
+  }
+  for (d in depsFrom(p, "brew")) {
+    out.line("execute_process(COMMAND brew --prefix ${d.name} OUTPUT_VARIABLE ${d.name}_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)")
+    out.line("set(ENV{PKG_CONFIG_PATH} \"\${${d.name}_PREFIX}/lib/pkgconfig:\$ENV{PKG_CONFIG_PATH}\")")
+  }
+  for (d in libraryDeps(p)) {
+    out.line("pkg_check_modules(${d.name} REQUIRED IMPORTED_TARGET ${d.name})")
+  }
+  for (d in depsFrom(p, "git")) {
+    out.line("include(FetchContent)")
+    out.line("FetchContent_Declare(${d.name} GIT_REPOSITORY ${d.url} GIT_TAG ${d.tag})")
+    out.line("FetchContent_MakeAvailable(${d.name})")
+  }
+  return out.text().trim()
+}
+
+func cmakeLinked(p: Project) -> string {
+  let names: mutarray<string>
+  for (d in libraryDeps(p)) {
+    names.push("PkgConfig::${d.name}")
+  }
+  for (d in depsFrom(p, "git")) {
+    names.push(d.name)
+  }
+  return names.join(" ")
+}
+
+// Before CMake runs: is the library there? A missing one stops the build with what to install.
+func libraryCheck(d: Dep, target: string) -> Step {
+  if (d.provider == "brew") {
+    return step("check", target, ["brew", "--prefix", "--installed", d.name], "${d.name} is not installed: brew install ${d.name}")
+  }
+  return step("check", target, ["pkg-config", "--exists", d.name],
+    "${d.name} is not installed (pkg-config cannot find it): install it with your package manager")
+}

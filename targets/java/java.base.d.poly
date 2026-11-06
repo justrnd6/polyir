@@ -1,0 +1,108 @@
+// java.base.d.poly: declarations of a few java.base classes, WRITTEN BY HAND to find out what the declaration style needs before any
+// generator exists (docs/java-mapping.md, step 2). It is checked by `polyir --analyze`; nothing here can be built natively, because
+// no declaration has a `native` binding. The Java back end will read it to know how to call the JDK.
+//
+// How to read it:
+//   - `extern type X = java "pkg.X" { ... }` declares a host class. Instance members take the value as `$0`; `static` members do not.
+//   - A member with no binding is spelled the Java way: `x.size()`, `Math.abs(x)`, `new ArrayList<>(...)` for the static `new`.
+//   - A binding with no `$` only names the Java method (`= java "abs"`): that is how Java overloads get distinct polyir names
+//     (`absInt`, `absLong`). A binding with `$` is the whole call.
+//   - No `-> type` means the Java method is void.
+//   - Java `int` is `i32`, `long` is `i64`, `boolean` is `i1`, `double` is `double`, `String` is `string`.
+//
+// What writing it showed (each is a gap to close; the list is also in docs/java-mapping.md):
+//   F1  polyir has no void. A host member can omit `-> type`, but a polyir struct that implements `Runnable` has to write
+//       `func run() -> i64`, and the back end would drop the result. Needs a `void`/`unit` type.
+//   F2  Java arrays are mutable and shared (`Arrays.sort(a)` changes `a`). Converting `long[]` to a polyir `mutarray` copies, so
+//       the change would be lost. Arrays therefore need a host handle type (`LongArray` below) until a copy-free bridge exists.
+//   F3  Java overloads need distinct polyir names (`absInt`/`absLong`/`absDouble`), chosen by whoever writes the declaration.
+//       A generator must invent them mechanically (`name` + the parameter types).
+//   F4  `ArrayList<i64>` is `ArrayList<Long>`: element reads unbox, and `null` is possible. `remove(int)` and `remove(Object)` are a
+//       trap with boxed numbers, so `removeAt` spells the cast in a full template.
+//   F5  Varargs (`Arrays.asList(T...)`) have no polyir form. Left out; a list literal bridge is needed.
+//   F6  Checked and unchecked exceptions (`get` out of range, `Math.toIntExact` overflow) are not in the signatures. See the
+//       absence/exception notes in the document.
+//   F9  A bridge converts a polyir value at a host call (`array<i64>` to `long[]` by copy, `optional<T>` to a nullable `T`); it cannot give
+//       the callee the same array, so a method that changes its array argument still needs the `LongArray` handle (F2).
+//   F8  Java member names that are polyir keywords (`set`, `map`, `array`, `index`, `type`, `static`) cannot be used as written: rename
+//       and bind (`setAt = java "set"`). A generator needs the same renaming table.
+//   F7  Nullable returns (`Map.get`, `Optional`) need `optional<T>`; none of the classes below has one, deliberately.
+
+// A functional interface a polyir struct may implement.
+extern interface Runnable = java "java.lang.Runnable" {
+  func run() -> i64
+}
+
+extern type Math = java "java.lang.Math" {
+  static func absInt(x: i32) -> i32 = java "abs"
+  static func absLong(x: i64) -> i64 = java "abs"
+  static func absDouble(x: double) -> double = java "abs"
+  static func maxInt(a: i32, b: i32) -> i32 = java "max"
+  static func maxLong(a: i64, b: i64) -> i64 = java "max"
+  static func maxDouble(a: double, b: double) -> double = java "max"
+  static func minInt(a: i32, b: i32) -> i32 = java "min"
+  static func minLong(a: i64, b: i64) -> i64 = java "min"
+  static func minDouble(a: double, b: double) -> double = java "min"
+  static func sqrt(x: double) -> double
+  static func pow(base: double, exponent: double) -> double
+  static func floor(x: double) -> double
+  static func ceil(x: double) -> double
+  static func floorDiv(a: i64, b: i64) -> i64
+  static func floorMod(a: i64, b: i64) -> i64
+  static func toIntExact(x: i64) -> i32
+}
+
+// `long[]`: a handle, because Java arrays are shared and mutable (F2).
+extern type LongArray = java "long[]" {
+  static func new(length: i32) -> LongArray = java "new long[$0]"
+  func length() -> i32 = java "$0.length"
+  func get(at: i32) -> i64 = java "$0[$1]"
+  func setAt(at: i32, value: i64) = java "$0[$1] = $2"
+}
+
+extern type Arrays = java "java.util.Arrays" {
+  static func toStringLongs(a: LongArray) -> string = java "toString"
+  static func sortLongs(a: LongArray) = java "sort"
+  static func fillLongs(a: LongArray, value: i64) = java "fill"
+  static func copyOfLongs(a: LongArray, newLength: i32) -> LongArray = java "copyOf"
+  static func equalsLongs(a: LongArray, b: LongArray) -> i1 = java "equals"
+  static func sumLongs(a: LongArray) -> i64 = java "java.util.Arrays.stream($0).sum()"
+  // Declared with a polyir array: the bridge below copies it into a long[] for the call.
+  static func render(a: array<i64>) -> string = java "toString"
+}
+
+extern type ArrayList<T> = java "java.util.ArrayList" {
+  static func new() -> ArrayList<T>
+  static func withCapacity(capacity: i32) -> ArrayList<T> = java "new java.util.ArrayList<>($0)"
+  func add(x: T) -> i1
+  func addAt(at: i32, x: T) = java "add"
+  func get(at: i32) -> T
+  func setAt(at: i32, x: T) -> T = java "set"
+  func removeAt(at: i32) -> T = java "$0.remove((int) $1)"
+  func size() -> i32
+  func isEmpty() -> i1
+  func clear()
+  func contains(x: T) -> i1
+  func indexOf(x: T) -> i32
+}
+
+// ── bridges: how a polyir value crosses into a call and back ─────────────────────────────────────────────────────────────────────────
+// A member is declared with polyir types; the bridge for that type is applied at every call. `$` is the value.
+bridge optional<T> <-> java "T" {
+  toHost = "$.orElse(null)"
+  fromHost = "Optional.ofNullable($)"
+}
+
+bridge array<i64> <-> java "long[]" {
+  toHost = "$.stream().mapToLong(Long::longValue).toArray()"
+  fromHost = "Arrays.stream($).boxed().toList()"
+}
+
+extern type System = java "java.lang.System" {
+  static func getenv(name: string) -> optional<string>
+  static func lineSeparator() -> string
+}
+
+extern type Strings = java "java.lang.String" {
+  static func joinWith(separator: string, parts: array<string>) -> string = java "String.join($0, $1)"
+}

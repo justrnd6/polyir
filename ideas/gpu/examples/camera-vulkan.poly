@@ -1,0 +1,35 @@
+// THE CAMERA FROM SCRATCH, on the GPU (Vulkan): the same kernel, set, pictures and checks as camera.poly (Metal), from
+// shared/camera.poly. The kernel `project` turns every corner of a toy room into a spot in the picture; the CPU joins the spots.
+//
+//   polyir --emit-glsl camera-vulkan.poly       (one shader per kernel; tests/gpu.sh splits and compiles them)
+//   polyir camera-vulkan.poly --out camera-vulkan && ./camera-vulkan    (run in this folder)
+//
+// Saves camera-1-moves.pgm, camera-2-zoom.pgm and camera-3-dolly-zoom.pgm. Exit 0 means everything matched. 10 no Vulkan GPU,
+// 12 a launch failed or a shader is missing, 13 the GPU and CPU disagree, 14 a check failed.
+import "../Vulkan.poly"
+import "shared/picture.poly"
+import "shared/print.poly"
+import "shared/camera.poly"
+
+// The shader is project.spv: three storage buffers (the points, the camera, the results) and one push constant (the count).
+func makePipeline(ctx: i64, source: string, name: string) -> i64 {
+    return vulkanPipeline(ctx, name + ".spv", 3, 4)
+}
+
+func launchProject(ctx: i64, pipeline: i64, points: ptr<float>, pointCount: i64, cam: ptr<float>) -> ptr<float> {
+    let push: i64 = words(2)
+    let slots: ptr<i32> = push.toPtr()
+    slots[0] = pointCount.toI32()
+    let buffers: ptr<i64> = calloc(3, 8).toPtr()
+    buffers[0] = vulkanBuffer(ctx, points.toI64(), pointCount * 12)
+    buffers[1] = vulkanBuffer(ctx, cam.toI64(), 64)
+    buffers[2] = vulkanEmptyBuffer(ctx, pointCount * 16)
+    if (vulkanDispatchBuffers(ctx, pipeline, pointCount, push, buffers, 3) == 0) { return calloc(pointCount * 4, 4).toPtr() }
+    return vulkanContents(buffers[2]).toPtr()
+}
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    return runAll(gpu, "")
+}

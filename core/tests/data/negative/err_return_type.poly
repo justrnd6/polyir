@@ -1,0 +1,7 @@
+func f() -> i64 {
+  return "no"
+}
+func g() -> string {
+  return 1
+}
+func main() -> i64 { return f() }

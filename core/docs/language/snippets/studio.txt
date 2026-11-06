@@ -1,0 +1,15 @@
+studio-mix.wav: saved and read back, largest difference 0.046 thousandths
+the 440 Hz melody: left 0.380, right 0.124
+resampled to 48,000 Hz: 192000 frames, the 440 Hz melody still 0.380 (was 0.380); to 22,050 Hz: 88200 frames, melody 0.380
+3,000 Hz tone at 8,000 Hz down to 4,000 Hz: dropping every second sample gives a false 1,000 Hz tone of 1.000; resample gives 0.000
+equalizer, tone by tone: predicted gain / measured gain
+     50 Hz   1.986   1.986
+    100 Hz   1.896   1.896
+    200 Hz   1.370   1.370
+    500 Hz   0.821   0.821
+   1000 Hz   0.502   0.502
+   2000 Hz   0.810   0.810
+   6000 Hz   1.167   1.167
+  12000 Hz   1.397   1.397
+hum at 50 Hz: 0.300 before the notch, 0.000 after; the 440 Hz tone is 0.487
+telephone gain at 100 Hz, 1,000 Hz and 8,000 Hz: 0.110, 0.993, 0.147

@@ -1,0 +1,35 @@
+// Running the FFT stages (ideas/audio/Fft.poly) on the GPU (Metal): the launches in order, swapping two
+// buffers so each stage reads what the last one wrote ("ping-pong").
+//
+//   let result: i64 = fftStagesGpu(device, stagePipeline, bufferA, bufferB, 2048, 1, 1)
+//
+// bufferA holds the complex input (real, imaginary pairs); the function returns whichever buffer holds
+// the transform (A or B, depending on how many stages there were). A native build is needed.
+import "Metal.poly"
+import "../audio/Fft.poly"
+
+// Run all log2(N) stages for `batch` transforms of N numbers each. direction is 1 (forward) or -1
+// (inverse; divide by N afterwards to finish). Returns the buffer with the result, or 0 on failure.
+func fftStagesGpu(device: i64, stage: i64, first: i64, second: i64, total: i64, batch: i64, direction: i64) -> i64 {
+    var source: i64 = first
+    var target: i64 = second
+    let scratch: i64 = metalEmptyBuffer(device, batch * (total / 2) * 4)
+    var n: i64 = total
+    var s: i64 = 1
+    for (pass = 0; pass < 30; pass = pass + 1) {
+        if (n > 1) {
+            let settings: i32[4]
+            settings[0] = total.toI32()
+            settings[1] = n.toI32()
+            settings[2] = s.toI32()
+            settings[3] = direction.toI32()
+            if (metalDispatch(device, stage, batch * (total / 2), source, metalBuffer(device, settings.toI64(), 16), target, scratch) == 0) { return 0 }
+            let swap: i64 = source
+            source = target
+            target = swap
+            n = n / 2
+            s = s * 2
+        }
+    }
+    return source
+}

@@ -1,0 +1,137 @@
+func startsWith(s: string, prefix: string) -> bool {
+  if (prefix.len() > s.len()) {
+    return false
+  }
+  return s.slice(0, prefix.len()) == prefix
+}
+
+func endsWith(s: string, suffix: string) -> bool {
+  if (suffix.len() > s.len()) {
+    return false
+  }
+  return s.slice(s.len() - suffix.len(), s.len()) == suffix
+}
+
+func sizeOf(n: i64) -> string {
+  var matchValue_10_10: string
+  switch (n) {
+    0 => {
+      matchValue_10_10 = "none"
+    }
+    1 | 2 | 3 => {
+      matchValue_10_10 = "a few"
+    }
+    else => {
+      matchValue_10_10 = "many"
+    }
+  }
+  return matchValue_10_10
+}
+
+func gradeOf(score: i64) -> string {
+  var matchValue_19_10: string
+  if (score >= 90) {
+    matchValue_19_10 = "A"
+  } else if (score >= 80) {
+    matchValue_19_10 = "B"
+  } else {
+    matchValue_19_10 = "C"
+  }
+  return matchValue_19_10
+}
+
+func kindOf(path: string) -> string {
+  var matchValue_28_10: string
+  if (path == "Ninafile" || path == "Polyfile") {
+    matchValue_28_10 = "build"
+  } else if (endsWith(path, ".poly")) {
+    matchValue_28_10 = "polyir"
+  } else if (startsWith(path, "README")) {
+    matchValue_28_10 = "docs"
+  } else {
+    matchValue_28_10 = "other"
+  }
+  return matchValue_28_10
+}
+
+func shown(found: optional<i64>) -> string {
+  var matchValue_38_10: string
+  if (found.isSome() && found.unwrap() > 100) {
+    let n: i64 = found.unwrap()
+    matchValue_38_10 = "big ${n}"
+  } else if (found.isSome()) {
+    let n: i64 = found.unwrap()
+    matchValue_38_10 = "found ${n}"
+  } else {
+    matchValue_38_10 = "nothing"
+  }
+  return matchValue_38_10
+}
+
+func safeDivide(a: i64, b: i64) -> either<i64, string> {
+  if (b == 0) {
+    return eitherErr<i64, string>("divide by zero")
+  }
+  return eitherOk<i64, string>(a / b)
+}
+
+func quotient(a: i64, b: i64) -> string {
+  let match_54_10: either<i64, string> = safeDivide(a, b)
+  var matchValue_54_10: string
+  switch (match_54_10) {
+    Ok(q) => {
+      matchValue_54_10 = "quotient ${q}"
+    }
+    Err(why) => {
+      matchValue_54_10 = why
+    }
+  }
+  return matchValue_54_10
+}
+
+func said(xs: array<i64>) -> string {
+  var matchValue_62_10: string
+  if (xs.len() == 0) {
+    matchValue_62_10 = "empty"
+  } else if (xs.len() == 1) {
+    let x: i64 = xs[0]
+    matchValue_62_10 = "just ${x}"
+  } else {
+    let first: i64 = xs[0]
+    let rest: mutarray<i64> = drop(xs, 1)
+    matchValue_62_10 = "${first}, then ${rest.len()} more"
+  }
+  return matchValue_62_10
+}
+
+func report(code: i64) -> void {
+  if (code == 200 || code == 204) {
+    print("done")
+  } else if (code >= 500) {
+    print("retry ${code}")
+  } else if (code >= 400) {
+    let s: i64 = code
+    print("failed with ${s}")
+  } else {
+    print("? ${code}")
+  }
+}
+
+func main() -> i64 {
+  print(sizeOf(2))
+  print(gradeOf(85))
+  print(kindOf("main.poly"))
+  print(shown(Some<i64>(500)))
+  print(quotient(7, 2))
+  print(said([3, 4, 5]))
+  report(404)
+  return 0
+}
+
+func drop<T>(xs: array<T>, n: i64) -> mutarray<T> {
+  let out: mutarray<T> = mutarray<T>()
+  for (i = n; i < xs.len(); i = i + 1) {
+    out.push(xs[i])
+  }
+  return out
+}

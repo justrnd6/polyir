@@ -1,0 +1,96 @@
+// `mutarray<T>` — growable arrays. `mutarray<i64>()` starts empty, `push(arr, x)` adds to the end, `arr[i]` reads or
+// writes an element and `len(arr)` counts them.
+//
+// A mutarray is a REFERENCE: the name holds a pointer to the array (a small header on the heap), not the array itself.
+// Copying the name, passing it to a function, or storing it in a struct gives another name for the SAME array, so a
+// `push` through any of them is seen by all of them. Because a push changes the array and not the name, the name
+// can be a `let`.
+
+func sumPushed(a: i64, b: i64, c: i64) -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  push(arr, a)
+  push(arr, b)
+  push(arr, c)
+  push(arr, a + b + c)
+  return arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+func lenCheck(a: i64, b: i64, c: i64) -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  push(arr, a)
+  push(arr, b)
+  push(arr, c)
+  return len(arr)
+}
+
+// Building a mutarray across a `for` loop, then reading it back with a second loop.
+func sumSquaresUpTo(n: i64) -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  for (i = 0; i < n; i = i + 1) {
+    push(arr, i * i)
+  }
+  var total: i64 = 0
+  for (i = 0; i < len(arr); i = i + 1) {
+    total = total + arr[i]
+  }
+  return total
+}
+
+// The same idea, but conditional: push only the even ones.
+func sumEvensBelow(n: i64) -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  for (i = 0; i < n; i = i + 1) {
+    if (i % 2 == 0) {
+      push(arr, i)
+    }
+  }
+  var total: i64 = 0
+  for (i = 0; i < len(arr); i = i + 1) {
+    total = total + arr[i]
+  }
+  return total
+}
+
+// Sharing: a function that is handed a mutarray grows the caller's mutarray. `fillSquares` pushes 0, 1, 4, ...; `main`-style
+// code sees them without anything being returned.
+func fillSquares(arr: mutarray<i64>, count: i64) -> i64 {
+  for (i = 0; i < count; i = i + 1) {
+    push(arr, i * i)
+  }
+  return count
+}
+
+func squaresThroughAHelper(count: i64) -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  fillSquares(arr, count)
+  return len(arr) * 1000 + arr[count - 1]
+}
+
+// `push` gives the mutarray back, so `arr = push(arr, x)` still means what it says (and is how the explicit-label
+// version below passes the grown array along).
+func pushGivesTheArrayBack() -> i64 {
+  var arr: mutarray<i64> = mutarray<i64>()
+  arr = push(arr, 10)
+  arr = push(arr, 20)
+  return arr[0] + arr[1]
+}
+
+// The same function as `sumEvensBelow`, written the explicit, lower-level way with no loop statement at all: `arr` is
+// carried through as an ordinary block argument, grown via `push(arr, i)` only on the branch that takes it. Kept as a
+// second example: `label`/`goto`/`branch` is the escape hatch for shapes that are not a simple loop/if nesting.
+func sumEvensBelowExplicit(n: i64) -> i64 {
+  let empty: mutarray<i64> = mutarray<i64>()
+  goto loop(0, empty)
+label loop(i: i64, arr: mutarray<i64>):
+  branch i < n ? body(i, arr) : finish(arr)
+label body(i: i64, arr: mutarray<i64>):
+  branch i % 2 == 0 ? pushIt(i, arr) : skip(i, arr)
+label pushIt(i: i64, arr: mutarray<i64>):
+  goto loop(i + 1, push(arr, i))
+label skip(i: i64, arr: mutarray<i64>):
+  goto loop(i + 1, arr)
+label finish(arr: mutarray<i64>):
+  for (i = 0, total = 0; i < len(arr); i = i + 1, total = total + arr[i]) {
+  }
+  return total
+}

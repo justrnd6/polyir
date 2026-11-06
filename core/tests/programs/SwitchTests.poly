@@ -1,0 +1,127 @@
+// `switch` with block arms: exact keys (numbers, chars, strings, booleans, sum cases), conditions and guards among them,
+// and the `switch { … }` of conditions. The switch of jumps between labels is unchanged (LogicTests.poly). Each check is
+// 0 when it holds.
+
+// 0 when `got` is `want`, 1 when not.
+func offText(got: string, want: string) -> double {
+    if (got == want) {
+        return 0.0
+    }
+    return 1.0
+}
+
+func dayName(day: i64) -> string {
+    var name: string = "?"
+    switch (day) {
+        0 | 6 => { name = "weekend" }
+        1 => { name = "monday" }
+        else => { name = "weekday" }
+    }
+    return name
+}
+
+func checkNumbers() -> double {
+    return offText(dayName(0) + dayName(6) + dayName(1) + dayName(3), "weekendweekendmondayweekday")
+}
+
+func classOf(c: i8) -> string {
+    var kind: string = "other"
+    switch (c) {
+        'a' | 'e' | 'i' | 'o' | 'u' => { kind = "vowel" }
+        ' ' => { kind = "space" }
+    }
+    return kind
+}
+
+func checkChars() -> double {
+    return offText(classOf('e') + classOf(' ') + classOf('z'), "vowelspaceother")
+}
+
+func verb(command: string) -> string {
+    var done: string = ""
+    switch (command) {
+        "start" | "go" => { done = "began" }
+        "stop" => { done = "halted" }
+        else => { done = "?" }
+    }
+    return done
+}
+
+func checkStrings() -> double {
+    return offText(verb("go") + verb("start") + verb("stop") + verb("x"), "beganbeganhalted?")
+}
+
+func checkBooleans() -> double {
+    var said: string = ""
+    for (i = 0; i < 2; i = i + 1) {
+        switch (i == 0) {
+            true => { said = said + "yes" }
+            false => { said = said + "no" }
+        }
+    }
+    return offText(said, "yesno")
+}
+
+func outcome(r: either<i64, string>) -> string {
+    var said: string = ""
+    switch (r) {
+        Ok(v) => { said = "ok ${v}" }
+        Err(e) => { said = "err ${e}" }
+    }
+    return said
+}
+
+func checkSums() -> double {
+    var count: i64 = 0
+    let found: optional<i64> = Some<i64>(4)
+    switch (found) {
+        Some(n) => { count = n }
+        None => { count = -1 }
+    }
+    return offText(outcome(eitherOk<i64, string>(3)) + ", " + outcome(eitherErr<i64, string>("no")) + ", ${count}", "ok 3, err no, 4")
+}
+
+// Cases that are not a single key: a condition on the subject, or a name and a guard.
+func status(code: i64) -> string {
+    var said: string = ""
+    switch (code) {
+        200 | 204 => { said = "done" }
+        code >= 500 => { said = "retry ${code}" }
+        s if s >= 400 => { said = "fail ${s}" }
+        else => { said = "? ${code}" }
+    }
+    return said
+}
+
+func checkConditionsAmongKeys() -> double {
+    return offText(status(204) + "; " + status(503) + "; " + status(404) + "; " + status(301), "done; retry 503; fail 404; ? 301")
+}
+
+func counter() -> i64 {
+    return 500
+}
+
+// A subject that is a call runs once; only a guard can name it.
+func checkCallSubject() -> double {
+    var said: string = ""
+    switch (counter()) {
+        200 => { said = "ok" }
+        s if s >= 500 => { said = "server ${s}" }
+        else => { said = "other" }
+    }
+    return offText(said, "server 500")
+}
+
+// No subject: each arm is a condition, tested in order.
+func step(name: string) -> string {
+    var said: string = ""
+    switch {
+        name.endsWith(".poly") => { said = "compile " + name + ";" }
+        else => { said = "skip " + name + ";" }
+    }
+    return said
+}
+
+func checkConditions() -> double {
+    return offText(step("a.poly") + step("b.md"), "compile a.poly;skip b.md;")
+}

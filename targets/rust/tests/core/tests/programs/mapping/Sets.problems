@@ -1,0 +1,2 @@
+targets/rust/Rust.translate:521: `mutmap(key: struct float double, value)` is unsupported: a struct or a float has no hash in Rust to key a map by
+targets/rust/Rust.translate:527: `mutset(elem: struct float double)` is unsupported: a struct or a float has no hash in Rust to key a set by

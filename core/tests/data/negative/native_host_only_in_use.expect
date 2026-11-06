@@ -1,0 +1,26 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HHostType","name":"Clock","base":"Clock","typeArgs":[],"isInterface":false,"bindings":["java=java.time.Clock","js=Date"]},
+{"k":"HHostType","name":"Task","base":"Task","typeArgs":[],"isInterface":true,"bindings":["java=java.lang.Runnable"]},
+{"k":"HStructDef","name":"Task","fieldNames":["data","vtable"],"fieldTypes":[{"k":"HPtr","elem":{"k":"HInt","bits":8}},{"k":"HPtr","elem":{"k":"HInt","bits":8}}],"fieldMutable":[false,false]},
+{"k":"HIfaceDef","name":"Task","methodNames":["run"],"methodParams":[[]],"methodRets":[{"k":"HInt","bits":64}],"implementers":["Job"]},
+{"k":"HExternDef","name":"now","paramNames":[],"paramTypes":[],"ret":{"k":"HStruct","name":"Clock"}},
+{"k":"HHostMember","function":"now","owner":"","member":"now","isStatic":true,"hasResult":true,"bindings":["java=java.time.Clock.systemUTC()"]},
+{"k":"HStructDef","name":"Job","fieldNames":["id"],"fieldTypes":[{"k":"HInt","bits":64}],"fieldMutable":[false]},
+{"k":"HFuncDef","name":"Job_run","paramNames":["this"],"paramTypes":[{"k":"HStruct","name":"Job"}],"ret":{"k":"HInt","bits":64},"body":[{"k":"HReturn","value":{"k":"HFieldGet","base":{"k":"HLocal","name":"this","ty":{"k":"HStruct","name":"Job"},"at":[10,30]},"index":0,"ty":{"k":"HInt","bits":64},"at":[10,35]},"at":[10,35]}],"isCoroutine":false,"at":[10,8]},
+{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HReturn","value":{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[13,29]},"at":[13,29]}],"isCoroutine":false,"at":[13,6]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  no `kernel func` found
+$ --check
+exit 1
+compile failed:
+  native_host_only_in_use.poly:7:13: Clock is a host type with no native binding, so now cannot be built natively (compile for the target it is bound to)
+  native_host_only_in_use.poly:9:23: Task is a host type with no native binding, so Job cannot be built natively (compile for the target it is bound to)

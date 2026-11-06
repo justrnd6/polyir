@@ -1,0 +1,48 @@
+<svg viewBox="0 0 700 330" width="100%" role="img" aria-label="The layers between an polyir program and the GPU on a Mac">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#586069"/></marker></defs>
+<text x="20" y="18" font-size="12" font-weight="700" fill="#1b1f24">On a Mac (this machine)</text>
+<rect x="20" y="30" width="150" height="36" rx="5" fill="#f6f8fa" stroke="#586069"/>
+<text x="95.0" y="52.0" font-size="11" text-anchor="middle" font-weight="700" fill="#1b1f24">your polyir program</text>
+<rect x="20" y="90" width="150" height="44" rx="5" fill="#eef5fc" stroke="#0b5cad"/>
+<text x="95.0" y="109.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">Metal.poly</text>
+<text x="95.0" y="123.0" font-size="10" text-anchor="middle" fill="#1b1f24">(Objective-C calls)</text>
+<rect x="220" y="90" width="150" height="44" rx="5" fill="#eef5fc" stroke="#0b5cad"/>
+<text x="295.0" y="109.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">Vulkan.poly</text>
+<text x="295.0" y="123.0" font-size="10" text-anchor="middle" fill="#1b1f24">(C function calls)</text>
+<rect x="220" y="150" width="150" height="36" rx="5" fill="#f6f8fa" stroke="#586069"/>
+<text x="295.0" y="172.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">Vulkan loader</text>
+<rect x="220" y="204" width="150" height="36" rx="5" fill="#fff8e6" stroke="#9a6700"/>
+<text x="295.0" y="226.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">MoltenVK</text>
+<rect x="20" y="258" width="350" height="36" rx="5" fill="#eef5fc" stroke="#0b5cad"/>
+<text x="195.0" y="280.0" font-size="11" text-anchor="middle" font-weight="700" fill="#1b1f24">Metal (Apple's API and driver)</text>
+<rect x="20" y="306" width="350" height="20" rx="5" fill="#e6f4ea" stroke="#1a7f37"/>
+<text x="195.0" y="320.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">the GPU in the M chip</text>
+<line x1="95" y1="66" x2="95" y2="90" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<polyline points="170,48 295,48 295,88" fill="none" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="295" y1="134" x2="295" y2="150" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="295" y1="186" x2="295" y2="204" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="295" y1="240" x2="295" y2="258" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="95" y1="134" x2="95" y2="258" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="195" y1="294" x2="195" y2="306" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<text x="400" y="18" font-size="12" font-weight="700" fill="#1b1f24">On Windows, Linux, Android (for comparison)</text>
+<rect x="400" y="30" width="150" height="36" rx="5" fill="#f6f8fa" stroke="#586069"/>
+<text x="475.0" y="52.0" font-size="11" text-anchor="middle" font-weight="700" fill="#1b1f24">your program</text>
+<rect x="400" y="90" width="150" height="44" rx="5" fill="#eef5fc" stroke="#0b5cad"/>
+<text x="475.0" y="109.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">Vulkan</text>
+<text x="475.0" y="123.0" font-size="10" text-anchor="middle" fill="#1b1f24">(same calls)</text>
+<rect x="400" y="150" width="150" height="36" rx="5" fill="#f6f8fa" stroke="#586069"/>
+<text x="475.0" y="172.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">Vulkan loader</text>
+<rect x="400" y="204" width="150" height="44" rx="5" fill="#fff8e6" stroke="#9a6700"/>
+<text x="475.0" y="223.0" font-size="10" text-anchor="middle" font-weight="700" fill="#1b1f24">the GPU maker's driver</text>
+<text x="475.0" y="237.0" font-size="10" text-anchor="middle" fill="#1b1f24">(NVIDIA, AMD, Intel ...)</text>
+<rect x="400" y="266" width="150" height="36" rx="5" fill="#e6f4ea" stroke="#1a7f37"/>
+<text x="475.0" y="288.0" font-size="11" text-anchor="middle" font-weight="700" fill="#1b1f24">the GPU</text>
+<line x1="475" y1="66" x2="475" y2="90" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="475" y1="134" x2="475" y2="150" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="475" y1="186" x2="475" y2="204" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="475" y1="248" x2="475" y2="266" stroke="#586069" stroke-width="1.4" marker-end="url(#arr)"/>
+<text x="575" y="110" font-size="10" fill="#586069">Vulkan is a standard that the</text>
+<text x="575" y="124" font-size="10" fill="#586069">GPU makers implement.</text>
+<text x="575" y="224" font-size="10" fill="#586069">Apple has not made a Vulkan</text>
+<text x="575" y="238" font-size="10" fill="#586069">driver; MoltenVK translates.</text>
+</svg>

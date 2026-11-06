@@ -1,0 +1,58 @@
+import "../Audio.poly"
+import "../../audio/Sound.poly"
+import "../../audio/Wave.poly"
+extern func getenv(name: string) -> i64
+
+func scaleStep(k: i64) -> float {
+  if (k == 0) {
+    return 0.0
+  }
+  if (k == 1) {
+    return 2.0
+  }
+  if (k == 2) {
+    return 4.0
+  }
+  if (k == 3) {
+    return 5.0
+  }
+  if (k == 4) {
+    return 7.0
+  }
+  if (k == 5) {
+    return 9.0
+  }
+  if (k == 6) {
+    return 11.0
+  }
+  return 12.0
+}
+
+func main() -> i64 {
+  let rate: i64 = 44100
+  let song: Sound = soundNew(6.0, rate)
+  for (k = 0; k < 8; k = k + 1) {
+    song.tone(0, noteFrequency((60.0 + scaleStep(k))), 0.35, k.toFloat() * 0.4, 0.4)
+  }
+  song.tone(2, noteFrequency(36.0), 0.12, 0.0, 3.2)
+  song.tone(0, noteFrequency(60.0), 0.2, 3.2, 2.6)
+  song.tone(0, noteFrequency(64.0), 0.2, 3.2, 2.6)
+  song.tone(0, noteFrequency(67.0), 0.2, 3.2, 2.6)
+  song.tone(0, noteFrequency(72.0), 0.2, 3.2, 2.6)
+  let withEcho: Sound = soundNew(6.5, rate)
+  Sound_add(withEcho, song, 0.0, 1.0)
+  Sound_add(withEcho, song, 0.25, 0.4)
+  withEcho.normalize(0.9)
+  if (withEcho.peak() < 0.89 || withEcho.peak() > 0.91) {
+    return 12
+  }
+  if (withEcho.saveWav("compose.wav") == 0) {
+    return 11
+  }
+  if (getenv("POLYIR_PLAY") != 0) {
+    if (soundPlay(withEcho) != 0) {
+      return 15
+    }
+  }
+  return 0
+}

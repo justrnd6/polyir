@@ -1,0 +1,34 @@
+// Garbage: every round makes a struct, two lists, a map, a closure, an optional and a string, and drops them all. With the garbage
+// collector a native build holds flat memory however many rounds it runs (tests/NativeGcTest.cpp runs it for 100,000 and 1,000,000
+// rounds, by changing ROUNDS).
+
+struct Pt {
+    var x: i64
+    y: i64
+}
+
+func round(i: i64) -> i64 {
+    let p: Pt = Pt { x: i, y: 1 }
+    let xs: array<i64> = array<i64>().with(i).with(2)
+    let m: mutmap<i64, i64> = mutmap<i64, i64>()
+    m[i] = 3
+    let f: closure() -> i64 = closure() -> i64 {
+        return p.y + 1
+    }
+    let o: optional<Pt> = Some<Pt>(p)
+    let s: string = "round " + str(i)
+    return p.y + xs[1] + m[i] + f() + o.unwrap().x + len(s) - len(s)
+}
+
+func churn(rounds: i64) -> i64 {
+    var total: i64 = 0
+    for (i = 0; i < rounds; i = i + 1) {
+        total = (total + round(i)) % 1000003
+    }
+    return total
+}
+
+func main() -> i64 {
+    print(str(churn(1000000)))  // ROUNDS
+    return 0
+}

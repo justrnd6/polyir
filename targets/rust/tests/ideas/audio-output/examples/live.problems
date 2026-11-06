@@ -1,0 +1,3 @@
+targets/rust/Rust.translate:157: `extern(name, params, result)` is unsupported: this Rust keeps polyir's memory in its own types, and calls no C function
+targets/rust/Rust.translate:345: `cast(value: ptr, type)` is unsupported: a pointer is a list here, not an address
+targets/rust/Rust.translate:346: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

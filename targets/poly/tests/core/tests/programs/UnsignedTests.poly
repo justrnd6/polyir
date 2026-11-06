@@ -1,0 +1,84 @@
+import "Check.poly"
+
+func checkAnUnsignedComparisonDoesNotSeeTheTopBitAsASign() -> double {
+  let big: u32 = 4000000000
+  var seen: i64 = 0
+  if (big > 3000000000) {
+    seen = seen + 1
+  }
+  if (big >= big) {
+    seen = seen + 10
+  }
+  if (big < 5) {
+    seen = seen + 100
+  }
+  return offInt(seen, 11)
+}
+
+func checkAnUnsignedDivisionAndRemainder() -> double {
+  let big: u32 = 4000000000
+  let half: u32 = big / 2
+  let rest: u32 = big % 7
+  return offInt(half.toI64(), 2000000000) + offInt(rest.toI64(), 3)
+}
+
+func checkAnUnsignedRightShiftFillsWithZeros() -> double {
+  let big: u32 = 4000000000
+  let shifted: u32 = big >> 28
+  let m: u64 = (0 - 1)
+  return offInt(shifted.toI64(), 14) + offInt((m >> 63).toI64(), 1)
+}
+
+func checkAnUnsignedWidensWithZeroBits() -> double {
+  let big: u32 = 4000000000
+  let small: u8 = 200
+  return offInt(big.toI64(), 4000000000) + offInt(small.toI64(), 200)
+}
+
+func checkNarrowUnsignedArithmeticWrapsAtItsSize() -> double {
+  let b: u8 = 200
+  let c: u8 = 100
+  let sum: u8 = b + c
+  let under: u8 = c - b
+  return offInt(sum.toI64(), 44) + offInt(under.toI64(), 156)
+}
+
+func checkAnUnsignedGoesToAFloatAsItsValue() -> double {
+  let big: u32 = 4000000000
+  let asDouble: double = big.toDouble()
+  return offInt(asDouble.toI64(), 4000000000)
+}
+
+func checkTheLargestU64IsLargerThanFive() -> double {
+  let m: u64 = (0 - 1)
+  var seen: i64 = 0
+  if (m > 5) {
+    seen = seen + 1
+  }
+  if (m / 2 == 9223372036854775807) {
+    seen = seen + 10
+  }
+  return offInt(seen, 11)
+}
+
+struct Pixel(r: u8, g: u8, b: u8) {
+}
+
+func checkAnUnsignedFieldKeepsItsValueAndStructsCompare() -> double {
+  let a: Pixel = Pixel(r: 250, g: 128, b: 7)
+  let b: Pixel = Pixel(r: 250, g: 128, b: 7)
+  var seen: i64 = 0
+  if (a == b) {
+    seen = seen + 1
+  }
+  seen = seen + a.g.toI64()
+  return offInt(seen, 129)
+}
+
+func checkUnsignedKeysAreOrdinaryKeys() -> double {
+  let m: mutmap<u32, i64> = mutmap<u32, i64>(4)
+  let k: u32 = 4000000000
+  m[k] = 7
+  m[5] = 9
+  return offInt(m[k], 7) + offInt(m[5], 9)
+}

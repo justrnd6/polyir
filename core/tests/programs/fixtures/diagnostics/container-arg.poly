@@ -1,0 +1,9 @@
+func words() -> mutarray<string> {
+  return ["up"]
+}
+func main() -> i64 {
+  if (words().contains("u")) {
+    return 1
+  }
+  return 0
+}

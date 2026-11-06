@@ -1,0 +1,27 @@
+// Coroutines as garbage: every round makes a generator (its frame, its yield slot and its result block are objects of the collector), takes
+// two values from it and drops it half way. 300,000 rounds hold flat memory.
+
+coro func counting(from: i64) -> i64 {
+    let step: array<i64> = array<i64>().with(1)
+    for (i = from; i < from + 10; i = i + step[0]) {
+        yield i
+    }
+}
+
+func twoOf(from: i64) -> i64 {
+    var total: i64 = 0
+    for (n in counting(from)) {
+        total = total + n
+        if (n > from) { return total }  // leaves the loop: the generator is closed and dropped
+    }
+    return total
+}
+
+func main() -> i64 {
+    var total: i64 = 0
+    for (r = 0; r < 300000; r = r + 1) {
+        total = (total + twoOf(r)) % 1000003
+    }
+    print(str(total))
+    return 0
+}

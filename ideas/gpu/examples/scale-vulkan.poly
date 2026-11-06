@@ -1,0 +1,46 @@
+// A GPU kernel run through Vulkan and checked against the CPU.
+//
+//   polyir --emit-glsl scale-vulkan.poly > scale.glsl      (the kernel as a GLSL shader)
+//   glslangValidator -V scale.comp -o scale.spv            (SPIR-V; `tests/vulkan.sh` shows the split)
+//   polyir scale-vulkan.poly --out scale-vulkan && ./scale-vulkan   (run in this folder)
+//
+// The program exits with 0 when every GPU result equals the CPU result.
+import "../Vulkan.poly"
+
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k + 1.0
+}
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    // Two storage buffers (the input and the result); the push constants are
+    // the element count and `k`, four bytes each.
+    let pipeline: i64 = vulkanPipeline(gpu, "scale.spv", 2, 8)
+    if (pipeline == 0) { return 11 }
+    return compareWithCpu(gpu, pipeline)
+}
+
+// Run on the GPU, then compare each element with the same kernel run on the CPU.
+func compareWithCpu(gpu: i64, pipeline: i64) -> i64 {
+    let xs: float[4]
+    xs[0] = 1.0
+    xs[1] = 2.5
+    xs[2] = 0.0
+    xs[3] = 8.0
+    let input: i64 = vulkanBuffer(gpu, xs.toI64(), 16)
+    let output: i64 = vulkanEmptyBuffer(gpu, 16)
+    if (input == 0 || output == 0) { return 12 }
+    let factor: float = 3.0
+    let push: i64 = words(2)
+    let counts: ptr<i32> = push.toPtr()
+    counts[0] = 4
+    let uniforms: ptr<float> = push.toPtr()
+    uniforms[1] = factor
+    if (vulkanDispatch(gpu, pipeline, 4, push, input, output, 0, 0) == 0) { return 12 }
+    let results: ptr<float> = vulkanContents(output).toPtr()
+    for (i = 0; i < 4; i = i + 1) {
+        if (results[i] != scale(xs[i], factor)) { return 13 }
+    }
+    return 0
+}

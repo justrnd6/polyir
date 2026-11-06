@@ -1,0 +1,13 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HSwitch","value":{"k":"HConstInt","value":3,"ty":{"k":"HInt","bits":64},"at":[2,11]},"caseValues":[1,1],"caseLabels":["one","two"],"caseArgs":[[],[]],"defaultLabel":"other","defaultArgs":[],"at":[2,11]},{"k":"HLabel","name":"one","paramNames":[],"paramTypes":[],"at":[7,9]},{"k":"HReturn","value":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[8,10]},"at":[8,10]},{"k":"HLabel","name":"two","paramNames":[],"paramTypes":[],"at":[9,9]},{"k":"HReturn","value":{"k":"HConstInt","value":2,"ty":{"k":"HInt","bits":64},"at":[10,10]},"at":[10,10]},{"k":"HLabel","name":"other","paramNames":[],"paramTypes":[],"at":[11,9]},{"k":"HReturn","value":{"k":"HConstInt","value":3,"ty":{"k":"HInt","bits":64},"at":[12,10]},"at":[12,10]}],"isCoroutine":false,"at":[1,6]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  no `kernel func` found

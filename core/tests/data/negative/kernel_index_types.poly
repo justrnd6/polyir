@@ -1,0 +1,7 @@
+kernel func k1(index i: i32, uniform src: ptr<float>, x: float) -> float {
+  let a: float = src[i]
+  let v: vec<float, 3> = vec[x, x, x]
+  let w: vec<float, 5> = vec[x, x, x, x, x]
+  let b: float = v[1]
+  return a + b
+}

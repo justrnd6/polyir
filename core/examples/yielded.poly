@@ -1,0 +1,16 @@
+// `v.yielded()` hands `v` out like `yield v` and answers (an i1) whether the coroutine was abandoned with `close()` while suspended there.
+// A producer that holds something open stops handing values out on `true`, cleans up and finishes; `close` resumes it once with that answer.
+coro func count(n: i64) -> i64 {
+  var gone: i1 = false
+  for (i = 0; i < n; i = i + 1) {
+    if (!gone) { gone = i.yielded() }
+  }
+}
+
+func main() -> i64 {
+  let c: coro<i64> = count(5)
+  let first: variant<i64> = c.resume()
+  c.close()
+  if (c.done()) { return first.unwrapAt(0) + 40 }
+  return 1
+}

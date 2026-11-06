@@ -1,0 +1,70 @@
+// KERNELS THAT WRITE ARRAYS: scatter, histograms and splatting.
+//
+// So far a kernel only RETURNED one number per element. A parameter marked `writable`
+// is an array the kernel may also WRITE to, anywhere: `out[k] = v`. That unlocks
+// jobs where an element's answer does not land in "its own" slot:
+//
+//   scatter    thread i puts its value at a slot it computes (reverseCopy)
+//   histogram  thread i adds 1 to the bin its value falls in (histogram)
+//   splat      thread i adds 1 to the pixel where a point lands (splat)
+//
+// THE DANGER: threads run at the same time. If two threads add to the same bin with an
+// ordinary `counts[b] = counts[b] + 1`, both can read the old value, both write old + 1,
+// and one update is lost (a "race"). `atomicAdd(counts, bin, 1)` makes the read-add-write
+// one indivisible step. It only works on a `writable` array of 32-bit integers.
+//
+// A kernel must still return a value; kernels that only write arrays return 0.
+extern func floorf(x: float) -> float
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+
+// On the CPU there is one thread, so adding in three plain steps is already safe. The GPU
+// build replaces this call by the hardware's atomic add. Returns the value before the add.
+func atomicAdd(counts: ptr<i32>, slot: i32, amount: i32) -> i32 {
+    let old: i32 = counts[slot]
+    counts[slot] = old + amount
+    return old
+}
+
+// Scatter: element i of `src` goes to slot n - 1 - i of `dst` (the list reversed).
+kernel func reverseCopy(index i: i32, uniform src: ptr<float>, uniform n: i32, writable dst: ptr<float>) -> i32 {
+    dst[n - 1 - i] = src[i]
+    return 0
+}
+
+// Histogram: count how many data values fall in each of `bins` bins.
+kernel func histogram(index i: i32, uniform data: ptr<i32>, uniform bins: i32, writable counts: ptr<i32>) -> i32 {
+    let bin: i32 = data[i] % bins
+    atomicAdd(counts, bin, 1)
+    return 0
+}
+
+// The same job WITHOUT the atomic: updates get lost whenever two threads hit one bin at once.
+kernel func histogramRacy(index i: i32, uniform data: ptr<i32>, uniform bins: i32, writable counts: ptr<i32>) -> i32 {
+    let bin: i32 = data[i] % bins
+    counts[bin] = counts[bin] + 1
+    return 0
+}
+
+// Splatting: point number i of a two-armed spiral "galaxy" is worked out from i alone, and
+// one is added to the grid cell it lands in. The result is a density picture: cells where
+// many points land get big counts. p: 0 the grid's width in cells.
+kernel func splat(index i: i32, uniform p: ptr<float>, writable cells: ptr<i32>) -> i32 {
+    let w: i32 = p[0].toI32()
+    let arm: i32 = i % 2
+    // Along the arm: t runs from 0 (centre) to 1 (edge), and the arm winds as t grows.
+    let t: float = ((i / 2) % 20000).toFloat() / 20000.0
+    let angle: float = t * 9.0 + arm.toFloat() * 3.14159265
+    let radius: float = 0.08 + 0.85 * t
+    // Two cheap pseudo-random numbers from i (a tiny linear congruential generator), used to
+    // scatter the points around the arm; the arm gets wider further out.
+    let h1: i32 = (i * 75 + 74) % 65537
+    let h2: i32 = (h1 * 75 + 74) % 65537
+    let spread: float = 0.015 + 0.09 * t
+    let x: float = radius * cosf(angle) + (h1.toFloat() / 65537.0 - 0.5) * spread * 2.0
+    let y: float = radius * sinf(angle) + (h2.toFloat() / 65537.0 - 0.5) * spread * 2.0
+    let px: i32 = floorf((x * 0.5 + 0.5) * w.toFloat()).toI32()
+    let py: i32 = floorf((y * 0.5 + 0.5) * w.toFloat()).toI32()
+    if (px >= 0 && px < w && py >= 0 && py < w) { atomicAdd(cells, py * w + px, 1) }
+    return 0
+}

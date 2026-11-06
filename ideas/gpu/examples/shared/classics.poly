@@ -1,0 +1,546 @@
+// Seven CLASSIC problems of GPU computing, shared by classics.poly (Metal) and classics-vulkan.poly (Vulkan).
+//
+//   saxpy        y = a x + y                       the "hello world" of GPU work: one independent step per element (MAP)
+//   scanStep     running totals (prefix sum)       a chain that looks sequential, rebuilt as log2 n parallel steps (SCAN)
+//   matmul       matrix times matrix               one dot product per output number, many reads per thread (GATHER)
+//   lifeStep     Conway's Game of Life             every cell looks at its 8 neighbours, repeated generation after generation (STENCIL)
+//   accel        N-body gravity                    every body sums the pull of every other body (ALL PAIRS)
+//   hits         Monte Carlo estimate of pi        thousands of independent random experiments, counted (MONTE CARLO)
+//   oddEvenStep  sorting by odd-even transposition compare-and-swap neighbours, n rounds (SORT)
+//
+// Every kernel has the same shape so one helper can run them all: two input arrays `a` and `b` and a settings array `opts`
+// (all floats), and one float result per thread. `index i` is the thread's number. The importing file supplies two functions:
+//   makePipeline(ctx, source, name) -> i64      the kernel, ready to run (0 if it failed)
+//   launch(ctx, pipeline, a, aCount, b, bCount, opts, outCount) -> ptr<float>      one launch: copies a, b and opts into
+//                                               buffers, runs `outCount` threads, waits, and returns the results
+// and needs shared/print.poly.
+
+extern func sqrtf(x: float) -> float
+
+// ---- 1. SAXPY: y = alpha x + y. opts[0] is alpha. ----
+kernel func saxpy(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    return opts[0] * a[i] + b[i]
+}
+
+// ---- 2. Prefix sum (scan): out[i] = a[0] + a[1] + ... + a[i]. ----
+// One step of the "doubling" method: every element adds in the element `offset` places to its left (opts[0] is the offset).
+// After steps with offset 1, 2, 4, 8, ... each element holds the sum of a growing stretch ending at itself, and after
+// log2 n steps that stretch reaches the start. That is the whole algorithm.
+kernel func scanStep(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    let offset: i32 = opts[0].toI32()
+    if (i >= offset) { return a[i] + a[i - offset] }
+    return a[i]
+}
+
+// ---- 3. Matrix multiply: C = A B for two n x n matrices stored row by row. opts[0] is n. ----
+// Thread i makes output number i (row i / n, column i % n): the dot product of a row of A and a column of B.
+kernel func matmul(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    let n: i32 = opts[0].toI32()
+    let row: i32 = i / n
+    let col: i32 = i % n
+    var sum: float = 0.0
+    for (k = 0; k < n; k = k + 1) {
+        sum = sum + a[row * n + k] * b[k * n + col]
+    }
+    return sum
+}
+
+// ---- 4. Game of Life: one generation. opts[0] is the width, opts[1] the height; a cell is 1.0 (alive) or 0.0 (dead). ----
+// The board wraps round at its edges. A live cell with 2 or 3 live neighbours stays alive; a dead cell with exactly 3 is born.
+kernel func lifeStep(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    let w: i32 = opts[0].toI32()
+    let h: i32 = opts[1].toI32()
+    let x: i32 = i % w
+    let y: i32 = i / w
+    var alive: float = 0.0
+    for (dy = 0 - 1; dy <= 1; dy = dy + 1) {
+        for (dx = 0 - 1; dx <= 1; dx = dx + 1) {
+            if (dx != 0 || dy != 0) {
+                alive = alive + a[((y + dy + h) % h) * w + (x + dx + w) % w]
+            }
+        }
+    }
+    if (a[i] > 0.5 && alive > 1.5 && alive < 3.5) { return 1.0 }
+    if (a[i] < 0.5 && alive > 2.5 && alive < 3.5) { return 1.0 }
+    return 0.0
+}
+
+// ---- 5. N-body gravity: the pull on every body from every other. ----
+// `a` holds three numbers per body: x, y, mass. opts[0] is the number of bodies. There are two threads per body: thread 2k
+// computes the x part of body k's acceleration and thread 2k + 1 the y part. (A small number is added to the squared
+// distance so a body does not pull on itself with an infinite force.)
+kernel func accel(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    let n: i32 = opts[0].toI32()
+    let body: i32 = i / 2
+    var sx: float = 0.0
+    var sy: float = 0.0
+    for (j = 0; j < n; j = j + 1) {
+        let dx: float = a[j * 3] - a[body * 3]
+        let dy: float = a[j * 3 + 1] - a[body * 3 + 1]
+        let d2: float = dx * dx + dy * dy + 0.01
+        let inv: float = 1.0 / (d2 * sqrtf(d2))
+        sx = sx + a[j * 3 + 2] * dx * inv
+        sy = sy + a[j * 3 + 2] * dy * inv
+    }
+    if (i % 2 == 0) { return sx }
+    return sy
+}
+
+// ---- 6. Monte Carlo estimate of pi. opts[0] is the number of random points each thread tries; opts[1] is added to the thread
+// number (it lets a launch of part of the threads continue the numbering of the whole job: see the partitioning demonstration). ----
+// Each thread makes its own stream of pseudo-random numbers (a linear congruential generator, started from its thread number),
+// throws that many points into the unit square and counts how many land inside the quarter circle. All integer arithmetic, so
+// the GPU and the CPU produce exactly the same counts.
+kernel func hits(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    let tries: i32 = opts[0].toI32()
+    let id: i32 = i + opts[1].toI32()
+    var state: i64 = (id.toI64() * 2654435761 + 12345) % 2147483648
+    var inside: i32 = 0
+    for (t = 0; t < tries; t = t + 1) {
+        state = (state * 1103515245 + 12345) % 2147483648
+        let x: i64 = state / 65536
+        state = (state * 1103515245 + 12345) % 2147483648
+        let y: i64 = state / 65536
+        if (x * x + y * y < 1073741824) { inside = inside + 1 }
+    }
+    return inside.toFloat()
+}
+
+// ---- 7. Sorting by odd-even transposition. opts[0] is the phase (0 or 1), opts[1] the number of elements. ----
+// In phase 0 the pairs are (0,1), (2,3), ...; in phase 1 they are (1,2), (3,4), ... Each pair puts its smaller number on the
+// left. After n phases (alternating 0, 1, 0, 1 ...) the array is sorted. Each thread handles one element: it works out whether
+// it is the left or the right of its pair and returns the minimum or the maximum.
+kernel func oddEvenStep(index i: i32, uniform a: ptr<float>, uniform b: ptr<float>, uniform opts: ptr<float>) -> float {
+    let phase: i32 = opts[0].toI32()
+    let n: i32 = opts[1].toI32()
+    var left: i32 = i
+    if (i % 2 != phase) { left = i - 1 }
+    if (left < 0 || left + 1 >= n) { return a[i] }
+    var low: float = a[left]
+    var high: float = a[left + 1]
+    if (low > high) {
+        low = a[left + 1]
+        high = a[left]
+    }
+    if (i == left) { return low }
+    return high
+}
+
+// ---- Helpers for the host side ----
+
+// The settings array: three numbers, and a fourth that is unused.
+func settings(first: float, second: float, third: float) -> ptr<float> {
+    let opts: ptr<float> = calloc(4, 4).toPtr()
+    opts[0] = first
+    opts[1] = second
+    opts[2] = third
+    return opts
+}
+
+// A one-number array, for a kernel that does not use its `b` input (a buffer must still exist).
+func spare() -> ptr<float> {
+    return calloc(1, 4).toPtr()
+}
+
+// The same kernel on the CPU for thread `i`, picked by name: the kernels are ordinary functions. This is the reference.
+func cpuKernel(name: string, i: i64, a: ptr<float>, b: ptr<float>, opts: ptr<float>) -> float {
+    let k: i32 = i.toI32()
+    if (name == "saxpy") { return saxpy(k, a, b, opts) }
+    if (name == "scanStep") { return scanStep(k, a, b, opts) }
+    if (name == "matmul") { return matmul(k, a, b, opts) }
+    if (name == "lifeStep") { return lifeStep(k, a, b, opts) }
+    if (name == "accel") { return accel(k, a, b, opts) }
+    if (name == "hits") { return hits(k, a, b, opts) }
+    return oddEvenStep(k, a, b, opts)
+}
+
+// All `count` results of a kernel, computed one after another on the CPU.
+func cpuRun(name: string, a: ptr<float>, b: ptr<float>, opts: ptr<float>, count: i64) -> ptr<float> {
+    let out: ptr<float> = calloc(count, 4).toPtr()
+    for (i = 0; i < count; i = i + 1) {
+        out[i] = cpuKernel(name, i, a, b, opts)
+    }
+    return out
+}
+
+func near(a: float, b: float, tolerance: float) -> i64 {
+    var gap: float = a - b
+    if (gap < 0.0) { gap = 0.0 - gap }
+    if (gap <= tolerance) { return 1 }
+    return 0
+}
+
+// 1 when two arrays of n numbers agree to within `tolerance` everywhere.
+func sameNumbers(x: ptr<float>, y: ptr<float>, n: i64, tolerance: float) -> i64 {
+    for (i = 0; i < n; i = i + 1) {
+        if (near(x[i], y[i], tolerance) == 0) { return 0 }
+    }
+    return 1
+}
+
+// A deterministic pseudo-random number from 0 up to (but not including) `range`, for building test data.
+func pseudo(seed: i64, range: i64) -> i64 {
+    return ((seed * 1103515245 + 12345) % 2147483648 / 65536) % range
+}
+
+// One row of the timing table: the CPU and GPU times in milliseconds, how many launches the GPU needed, and the problem.
+func tableRow(name: string, cpuMs: i64, gpuMs: i64, launches: i64) -> i64 {
+    sayRight(cpuMs, 7)
+    sayRight(gpuMs, 8)
+    sayRight(launches, 10)
+    say("   ")
+    say(name)
+    newline()
+    return 0
+}
+
+// ---- The seven problems. Each returns 0 when it passed, 13 when the GPU disagreed with the CPU, 14 when a property failed. ----
+
+func problemSaxpy(ctx: i64, source: string) -> i64 {
+    let n: i64 = 4194304
+    let x: ptr<float> = calloc(n, 4).toPtr()
+    let y: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) {
+        x[i] = (i % 100).toFloat()
+        y[i] = (i % 7).toFloat()
+    }
+    let opts: ptr<float> = settings(2.5, 0.0, 0.0)
+    let pipeline: i64 = makePipeline(ctx, source, "saxpy")
+    if (pipeline == 0) { return 12 }
+    var mark: i64 = wallMs()
+    let gpu: ptr<float> = launch(ctx, pipeline, x, n, y, n, opts, n)
+    let gpuMs: i64 = wallMs() - mark
+    mark = wallMs()
+    let cpu: ptr<float> = cpuRun("saxpy", x, y, opts, n)
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("SAXPY, 4,194,304 numbers (map)", cpuMs, gpuMs, 1)
+    if (sameNumbers(gpu, cpu, n, 0.0) == 0) { return 13 }
+    return 0
+}
+
+// Prefix sum by doubling: log2 n launches, each reading the previous step's result.
+func problemScan(ctx: i64, source: string) -> i64 {
+    let n: i64 = 65536
+    let start: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) {
+        start[i] = (i % 10 + 1).toFloat()
+    }
+    let pipeline: i64 = makePipeline(ctx, source, "scanStep")
+    if (pipeline == 0) { return 12 }
+    var mark: i64 = wallMs()
+    var current: ptr<float> = start
+    var launches: i64 = 0
+    for (offset = 1; offset < n; offset = offset * 2) {
+        current = launch(ctx, pipeline, current, n, spare(), 1, settings(offset.toFloat(), 0.0, 0.0), n)
+        launches = launches + 1
+    }
+    let gpuMs: i64 = wallMs() - mark
+    // The CPU does it with one pass of a running total.
+    mark = wallMs()
+    let cpu: ptr<float> = calloc(n, 4).toPtr()
+    var total: float = 0.0
+    for (i = 0; i < n; i = i + 1) {
+        total = total + start[i]
+        cpu[i] = total
+    }
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("prefix sum, 65,536 numbers (scan)", cpuMs, gpuMs, launches)
+    if (sameNumbers(current, cpu, n, 0.0) == 0) { return 13 }
+    return 0
+}
+
+func problemMatmul(ctx: i64, source: string) -> i64 {
+    let pipeline: i64 = makePipeline(ctx, source, "matmul")
+    if (pipeline == 0) { return 12 }
+    // Property first, on a small matrix: multiplying by the identity matrix gives the matrix back.
+    let small: i64 = 32
+    let m: ptr<float> = calloc(small * small, 4).toPtr()
+    let identity: ptr<float> = calloc(small * small, 4).toPtr()
+    for (i = 0; i < small * small; i = i + 1) {
+        m[i] = ((i * 7) % 11).toFloat()
+    }
+    for (d = 0; d < small; d = d + 1) {
+        identity[d * small + d] = 1.0
+    }
+    let times: ptr<float> = launch(ctx, pipeline, m, small * small, identity, small * small, settings(small.toFloat(), 0.0, 0.0), small * small)
+    if (sameNumbers(times, m, small * small, 0.0) == 0) { return 14 }
+    let n: i64 = 256
+    let a: ptr<float> = calloc(n * n, 4).toPtr()
+    let b: ptr<float> = calloc(n * n, 4).toPtr()
+    for (i = 0; i < n * n; i = i + 1) {
+        a[i] = (i % 7).toFloat()
+        b[i] = (i % 5).toFloat()
+    }
+    let opts: ptr<float> = settings(n.toFloat(), 0.0, 0.0)
+    var mark: i64 = wallMs()
+    let gpu: ptr<float> = launch(ctx, pipeline, a, n * n, b, n * n, opts, n * n)
+    let gpuMs: i64 = wallMs() - mark
+    mark = wallMs()
+    let cpu: ptr<float> = cpuRun("matmul", a, b, opts, n * n)
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("matrix multiply, 256 x 256 (gather)", cpuMs, gpuMs, 1)
+    if (sameNumbers(gpu, cpu, n * n, 0.0) == 0) { return 13 }
+    return 0
+}
+
+// A glider on a small board moves one cell down and one cell right every 4 generations; then a bigger random board
+// runs for 200 generations on the GPU and on the CPU.
+func problemLife(ctx: i64, source: string) -> i64 {
+    let pipeline: i64 = makePipeline(ctx, source, "lifeStep")
+    if (pipeline == 0) { return 12 }
+    let w: i64 = 32
+    var board: ptr<float> = calloc(w * w, 4).toPtr()
+    board[0 * w + 1] = 1.0
+    board[1 * w + 2] = 1.0
+    board[2 * w + 0] = 1.0
+    board[2 * w + 1] = 1.0
+    board[2 * w + 2] = 1.0
+    for (g = 0; g < 4; g = g + 1) {
+        board = launch(ctx, pipeline, board, w * w, spare(), 1, settings(w.toFloat(), w.toFloat(), 0.0), w * w)
+    }
+    // Four generations later, the same five cells, one down and one right.
+    var moved: i64 = 1
+    for (p = 0; p < w * w; p = p + 1) {
+        var expected: float = 0.0
+        if (p == 1 * w + 2 || p == 2 * w + 3 || p == 3 * w + 1 || p == 3 * w + 2 || p == 3 * w + 3) { expected = 1.0 }
+        if (near(board[p], expected, 0.0) == 0) { moved = 0 }
+    }
+    if (moved == 0) { return 14 }
+    return lifeRace(ctx, pipeline)
+}
+
+func lifeRace(ctx: i64, pipeline: i64) -> i64 {
+    let w: i64 = 256
+    let start: ptr<float> = calloc(w * w, 4).toPtr()
+    for (p = 0; p < w * w; p = p + 1) {
+        if (pseudo(p + 1, 100) < 30) { start[p] = 1.0 }
+    }
+    let opts: ptr<float> = settings(w.toFloat(), w.toFloat(), 0.0)
+    var mark: i64 = wallMs()
+    var gpu: ptr<float> = start
+    for (g = 0; g < 200; g = g + 1) {
+        gpu = launch(ctx, pipeline, gpu, w * w, spare(), 1, opts, w * w)
+    }
+    let gpuMs: i64 = wallMs() - mark
+    mark = wallMs()
+    var cpu: ptr<float> = start
+    for (g = 0; g < 200; g = g + 1) {
+        cpu = cpuRun("lifeStep", cpu, spare(), opts, w * w)
+    }
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("Game of Life, 256 x 256, 200 generations (stencil)", cpuMs, gpuMs, 200)
+    if (sameNumbers(gpu, cpu, w * w, 0.0) == 0) { return 13 }
+    return 0
+}
+
+func problemNbody(ctx: i64, source: string) -> i64 {
+    let n: i64 = 2048
+    let bodies: ptr<float> = calloc(n * 3, 4).toPtr()
+    for (k = 0; k < n; k = k + 1) {
+        bodies[k * 3] = pseudo(k * 2 + 1, 1000).toFloat() / 10.0
+        bodies[k * 3 + 1] = pseudo(k * 2 + 2, 1000).toFloat() / 10.0
+        bodies[k * 3 + 2] = 1.0 + (k % 3).toFloat()
+    }
+    let pipeline: i64 = makePipeline(ctx, source, "accel")
+    if (pipeline == 0) { return 12 }
+    let opts: ptr<float> = settings(n.toFloat(), 0.0, 0.0)
+    var mark: i64 = wallMs()
+    let gpu: ptr<float> = launch(ctx, pipeline, bodies, n * 3, spare(), 1, opts, n * 2)
+    let gpuMs: i64 = wallMs() - mark
+    mark = wallMs()
+    let cpu: ptr<float> = cpuRun("accel", bodies, spare(), opts, n * 2)
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("N-body gravity, 2,048 bodies (all pairs)", cpuMs, gpuMs, 1)
+    // The two answers agree closely (the GPU may round a little differently from the CPU).
+    for (i = 0; i < n * 2; i = i + 1) {
+        var size: float = cpu[i]
+        if (size < 0.0) { size = 0.0 - size }
+        if (near(gpu[i], cpu[i], 0.001 + 0.001 * size) == 0) { return 13 }
+    }
+    // Newton's third law: the forces (mass times acceleration) add up to nothing.
+    var netX: float = 0.0
+    var netY: float = 0.0
+    for (k = 0; k < n; k = k + 1) {
+        netX = netX + bodies[k * 3 + 2] * gpu[k * 2]
+        netY = netY + bodies[k * 3 + 2] * gpu[k * 2 + 1]
+    }
+    if (near(netX, 0.0, 0.5) == 0 || near(netY, 0.0, 0.5) == 0) { return 14 }
+    return 0
+}
+
+func problemPi(ctx: i64, source: string) -> i64 {
+    let threads: i64 = 65536
+    let tries: i64 = 256
+    let pipeline: i64 = makePipeline(ctx, source, "hits")
+    if (pipeline == 0) { return 12 }
+    let opts: ptr<float> = settings(tries.toFloat(), 0.0, 0.0)
+    var mark: i64 = wallMs()
+    let gpu: ptr<float> = launch(ctx, pipeline, spare(), 1, spare(), 1, opts, threads)
+    let gpuMs: i64 = wallMs() - mark
+    mark = wallMs()
+    let cpu: ptr<float> = cpuRun("hits", spare(), spare(), opts, threads)
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("Monte Carlo pi, 16.7 million random points", cpuMs, gpuMs, 1)
+    if (sameNumbers(gpu, cpu, threads, 0.0) == 0) { return 13 }
+    var inside: float = 0.0
+    for (t = 0; t < threads; t = t + 1) {
+        inside = inside + gpu[t]
+    }
+    let estimate: float = 4.0 * inside / (threads * tries).toFloat()
+    say("    estimate of pi from the GPU's points: ")
+    sayDecimal(estimate)
+    newline()
+    if (near(estimate, 3.14159265, 0.01) == 0) { return 14 }
+    return 0
+}
+
+// Sorting 2,048 numbers by n phases of compare-and-swap. The GPU needs one launch per phase.
+func problemSort(ctx: i64, source: string) -> i64 {
+    let n: i64 = 2048
+    let start: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) {
+        start[i] = pseudo(i + 1, 10000).toFloat()
+    }
+    let pipeline: i64 = makePipeline(ctx, source, "oddEvenStep")
+    if (pipeline == 0) { return 12 }
+    var mark: i64 = wallMs()
+    var current: ptr<float> = start
+    for (phase = 0; phase < n; phase = phase + 1) {
+        current = launch(ctx, pipeline, current, n, spare(), 1, settings((phase % 2).toFloat(), n.toFloat(), 0.0), n)
+    }
+    let gpuMs: i64 = wallMs() - mark
+    mark = wallMs()
+    let cpu: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) {
+        cpu[i] = start[i]
+    }
+    insertionSort(cpu, n)
+    let cpuMs: i64 = wallMs() - mark
+    tableRow("sort, 2,048 numbers (odd-even sort)", cpuMs, gpuMs, n)
+    if (sameNumbers(current, cpu, n, 0.0) == 0) { return 13 }
+    return 0
+}
+
+// The plain CPU sort, for comparison (insertion sort): take each number in turn and slide it left past every bigger number
+// before it. It is a simple textbook sort, not the fastest one: a library sort is much faster still, so the CPU time in the
+// table is, if anything, kind to the GPU.
+func insertionSort(x: ptr<float>, n: i64) -> i64 {
+    for (i = 1; i < n; i = i + 1) {
+        let value: float = x[i]
+        var place: i64 = i
+        var sliding: i64 = 1
+        for (j = i - 1; j >= 0; j = j - 1) {
+            if (sliding == 1 && x[j] > value) {
+                x[j + 1] = x[j]
+                place = j
+            } else {
+                sliding = 0
+            }
+        }
+        x[place] = value
+    }
+    return 0
+}
+
+// ---- Splitting a problem into parts ("partitioning") ----
+
+// Copies `count` whole rows (each `w` numbers wide) from row `fromRow` of `source` to row `toRow` of `target`.
+func copyRows(source: ptr<float>, fromRow: i64, target: ptr<float>, toRow: i64, w: i64, count: i64) -> i64 {
+    for (k = 0; k < count * w; k = k + 1) {
+        target[toRow * w + k] = source[fromRow * w + k]
+    }
+    return 0
+}
+
+// One generation of Life done in two separate parts: the top half and the bottom half of the board, each as a launch of its
+// own. A part cannot see the other's rows, but a cell on the boundary needs the row on the other side, so each part is given
+// one extra copy ("ghost") row above and below it, taken from its neighbour. This swapping of boundary rows is the
+// communication that partitioning costs.
+func lifeInTwoParts(ctx: i64, pipeline: i64, board: ptr<float>, w: i64) -> ptr<float> {
+    let half: i64 = w / 2
+    let top: ptr<float> = calloc((half + 2) * w, 4).toPtr()
+    let bottom: ptr<float> = calloc((half + 2) * w, 4).toPtr()
+    copyRows(board, w - 1, top, 0, w, 1)
+    copyRows(board, 0, top, 1, w, half + 1)
+    copyRows(board, half - 1, bottom, 0, w, half + 1)
+    copyRows(board, 0, bottom, half + 1, w, 1)
+    let opts: ptr<float> = settings(w.toFloat(), (half + 2).toFloat(), 0.0)
+    let topNext: ptr<float> = launch(ctx, pipeline, top, (half + 2) * w, spare(), 1, opts, (half + 2) * w)
+    let bottomNext: ptr<float> = launch(ctx, pipeline, bottom, (half + 2) * w, spare(), 1, opts, (half + 2) * w)
+    let next: ptr<float> = calloc(w * w, 4).toPtr()
+    copyRows(topNext, 1, next, 0, w, half)
+    copyRows(bottomNext, 1, next, half, w, half)
+    return next
+}
+
+// The Monte Carlo job as one launch, and as four launches of a quarter of the threads each: the same 65,536 streams of
+// random numbers are used either way, so the four parts must add up to exactly the whole.
+func partitionedMonteCarlo(ctx: i64, source: string) -> i64 {
+    let pipeline: i64 = makePipeline(ctx, source, "hits")
+    if (pipeline == 0) { return 12 }
+    let threads: i64 = 65536
+    let parts: i64 = 4
+    let each: i64 = threads / parts
+    let whole: ptr<float> = launch(ctx, pipeline, spare(), 1, spare(), 1, settings(256.0, 0.0, 0.0), threads)
+    for (part = 0; part < parts; part = part + 1) {
+        let piece: ptr<float> = launch(ctx, pipeline, spare(), 1, spare(), 1, settings(256.0, (part * each).toFloat(), 0.0), each)
+        for (t = 0; t < each; t = t + 1) {
+            if (near(piece[t], whole[part * each + t], 0.0) == 0) { return 13 }
+        }
+    }
+    say("    Monte Carlo split into 4 launches of 16,384 threads: every thread's count equals the single launch's")
+    newline()
+    return 0
+}
+
+// Life on a 64 x 64 board for 20 generations: whole board in one launch each time, and in two parts with swapped boundary
+// rows each time. They must stay identical, generation after generation.
+func partitionedLife(ctx: i64, source: string) -> i64 {
+    let pipeline: i64 = makePipeline(ctx, source, "lifeStep")
+    if (pipeline == 0) { return 12 }
+    let w: i64 = 64
+    var whole: ptr<float> = calloc(w * w, 4).toPtr()
+    for (p = 0; p < w * w; p = p + 1) {
+        if (pseudo(p + 7, 100) < 35) { whole[p] = 1.0 }
+    }
+    var split: ptr<float> = whole
+    let opts: ptr<float> = settings(w.toFloat(), w.toFloat(), 0.0)
+    for (g = 0; g < 20; g = g + 1) {
+        whole = launch(ctx, pipeline, whole, w * w, spare(), 1, opts, w * w)
+        split = lifeInTwoParts(ctx, pipeline, split, w)
+        if (sameNumbers(whole, split, w * w, 0.0) == 0) { return 13 }
+    }
+    say("    Life split into top and bottom halves with swapped boundary rows: identical to the whole board for 20 generations")
+    newline()
+    return 0
+}
+
+func problemPartition(ctx: i64, source: string) -> i64 {
+    newline()
+    say("Splitting a problem into parts (partitioning):")
+    newline()
+    let code: i64 = partitionedMonteCarlo(ctx, source)
+    if (code != 0) { return code }
+    return partitionedLife(ctx, source)
+}
+
+// Runs all seven in order, printing the table.
+func runAll(ctx: i64, source: string) -> i64 {
+    say(" CPU ms  GPU ms  launches   problem")
+    newline()
+    var code: i64 = problemSaxpy(ctx, source)
+    if (code != 0) { return code }
+    code = problemScan(ctx, source)
+    if (code != 0) { return code }
+    code = problemMatmul(ctx, source)
+    if (code != 0) { return code }
+    code = problemLife(ctx, source)
+    if (code != 0) { return code }
+    code = problemNbody(ctx, source)
+    if (code != 0) { return code }
+    code = problemPi(ctx, source)
+    if (code != 0) { return code }
+    code = problemSort(ctx, source)
+    if (code != 0) { return code }
+    return problemPartition(ctx, source)
+}

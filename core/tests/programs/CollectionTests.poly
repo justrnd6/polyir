@@ -1,0 +1,141 @@
+// Lists, maps and sets come as immutable (`array`, `map`, `set`) and changeable (`mutarray`, `mutmap`, `mutset`) kinds.
+import "Check.poly"
+
+struct Point(x: i64, y: i64);
+struct Named(name: string, at: Point);
+
+func checkAnArrayGrowsByMakingANewOne() -> double {
+    let a0: array<i64> = array<i64>()
+    let a1: array<i64> = a0.with(10)
+    let a2: array<i64> = a1.with(20)
+    return offInt(len(a0), 0) + offInt(len(a1), 1) + offInt(len(a2), 2) + offInt(a2[0], 10) + offInt(a2[1], 20)
+}
+
+func checkThawAndFreezeCopy() -> double {
+    let a: array<i64> = array<i64>().with(1).with(2)
+    let m: mutarray<i64> = a.thaw()
+    push(m, 3)
+    let f: array<i64> = m.freeze()
+    push(m, 4)
+    return offInt(len(a), 2) + offInt(len(m), 4) + offInt(len(f), 3) + offInt(f[2], 3)
+}
+
+func checkAMapGrowsByMakingANewOne() -> double {
+    let m0: map<i64, i64> = map<i64, i64>()
+    let m1: map<i64, i64> = m0.with(1, 100)
+    var m: map<i64, i64> = m1
+    for (i = 2; i < 30; i = i + 1) {
+        m = m.with(i, i * 100)
+    }
+    return offInt(len(m0), 0) + offInt(len(m1), 1) + offInt(len(m), 29) + offInt(m[1], 100) + offInt(m[29], 2900) + offInt(m1[2], 0)
+}
+
+func checkWithReplacesAnExistingKey() -> double {
+    let m: map<i64, i64> = map<i64, i64>().with(1, 10).with(1, 11)
+    return offInt(len(m), 1) + offInt(m[1], 11)
+}
+
+func checkHasTellsPresentFromAbsent() -> double {
+    let m: map<string, i64> = map<string, i64>().with("a", 0)
+    var score: i64 = 0
+    if (m.has("a")) { score = score + 1 }
+    if (m.has("b") == false) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkASetKeepsEachMemberOnce() -> double {
+    let s: set<i64> = set<i64>().with(7).with(8).with(7)
+    var score: i64 = 0
+    if (s.has(7)) { score = score + 1 }
+    if (s.has(9) == false) { score = score + 2 }
+    return offInt(len(s), 2) + offInt(score, 3)
+}
+
+func checkAMutsetChangesInPlace() -> double {
+    let s: mutset<string> = mutset<string>(8)
+    s.add("x")
+    s.add("y")
+    s.add("x")
+    var score: i64 = 0
+    if (s.has("y")) { score = score + 1 }
+    if (s.has("z") == false) { score = score + 2 }
+    return offInt(len(s), 2) + offInt(score, 3)
+}
+
+func checkAMutmapChangesInPlace() -> double {
+    let m: mutmap<i64, i64> = mutmap<i64, i64>(8)
+    m[1] = 10
+    m[2] = 20
+    m[1] = 11
+    return offInt(len(m), 2) + offInt(m[1], 11) + offInt(m[2], 20)
+}
+
+func checkAStructCanBeAKey() -> double {
+    let seen: mutmap<Point, i64> = mutmap<Point, i64>(16)
+    seen[Point(x: 1, y: 2)] = 10
+    seen[Point(x: 3, y: 4)] = 20
+    seen[Point(x: 1, y: 2)] = 11
+    var score: i64 = 0
+    if (seen.has(Point(x: 3, y: 4))) { score = score + 1 }
+    if (seen.has(Point(x: 9, y: 9)) == false) { score = score + 2 }
+    return offInt(len(seen), 2) + offInt(seen[Point(x: 1, y: 2)], 11) + offInt(score, 3)
+}
+
+func checkAStructWithAStringIsAKeyByContent() -> double {
+    let names: set<Named> = set<Named>().with(Named(name: "a" + "b", at: Point(x: 1, y: 1))).with(Named(name: "ab", at: Point(x: 1, y: 1))).with(Named(name: "c", at: Point(x: 2, y: 2)))
+    var score: i64 = 0
+    if (names.has(Named(name: "c", at: Point(x: 2, y: 2)))) { score = score + 1 }
+    return offInt(len(names), 2) + offInt(score, 1)
+}
+
+func checkAnImmutableArrayIsAKey() -> double {
+    let lists: map<array<i64>, string> = map<array<i64>, string>().with(array<i64>().with(1).with(2), "one-two").with(array<i64>().with(3), "three")
+    var score: i64 = 0
+    if (lists[array<i64>().with(1).with(2)] == "one-two") { score = score + 1 }
+    if (lists[array<i64>().with(3)] == "three") { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkMapsAreEqualWhateverTheOrderTheyWereBuiltIn() -> double {
+    let a: map<i64, string> = map<i64, string>().with(1, "a").with(2, "b")
+    let b: map<i64, string> = map<i64, string>().with(2, "b").with(1, "a")
+    let c: map<i64, string> = map<i64, string>().with(2, "b").with(1, "z")
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != c) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkSetsAreEqualWhateverTheOrderTheyWereBuiltIn() -> double {
+    let a: set<string> = set<string>().with("x").with("y")
+    let b: set<string> = set<string>().with("y").with("x")
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != set<string>().with("x")) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkMutableAndImmutableListsAreEqualByContent() -> double {
+    let a: array<i64> = array<i64>().with(1).with(2)
+    let b: array<i64> = array<i64>().with(1).with(2)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a === b) { score = score + 100 }
+    return offInt(score, 1)
+}
+
+func checkRepeatedWithInALoopIsNotQuadraticInMemory() -> double {
+    var total: i64 = 0
+    for (r = 0; r < 200; r = r + 1) {
+        var a: array<i64> = array<i64>()
+        var m: map<i64, i64> = map<i64, i64>()
+        var s: set<i64> = set<i64>()
+        for (i = 0; i < 20; i = i + 1) {
+            a = a.with(i)
+            m = m.with(i, i * 2)
+            s = s.with(i % 7)
+        }
+        total = total + len(a) + m[19] + len(s)
+    }
+    return offInt(total, 200 * 65)
+}

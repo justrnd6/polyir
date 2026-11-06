@@ -1,0 +1,5 @@
+func main() -> i64 {
+  goto done(1, 2)
+  label done(a: i64):
+  return a
+}

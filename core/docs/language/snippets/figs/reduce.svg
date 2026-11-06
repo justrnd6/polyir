@@ -1,0 +1,60 @@
+<svg viewBox="0 0 700 270" width="100%" role="img" aria-label="Adding eight numbers inside a workgroup">
+<text x="8" y="31" font-size="11" fill="#586069">start:</text>
+<text x="8" y="45" font-size="11" fill="#586069">each thread copies its</text>
+<text x="8" y="59" font-size="11" fill="#586069">number into tile[lane]</text>
+<rect x="192" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="215" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x0</text>
+<rect x="254" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="277" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x1</text>
+<rect x="316" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="339" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x2</text>
+<rect x="378" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="401" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x3</text>
+<rect x="440" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="463" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x4</text>
+<rect x="502" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="525" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x5</text>
+<rect x="564" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="587" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x6</text>
+<rect x="626" y="27" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#586069"/><text x="649" y="44" font-size="11" text-anchor="middle" fill="#1b1f24">x7</text>
+<text x="8" y="96" font-size="11" fill="#0b5cad">round 1 (s = 4):</text>
+<text x="8" y="110" font-size="11" fill="#0b5cad">lane l adds tile[l + 4]</text>
+<text x="8" y="124" font-size="11" fill="#0b5cad"></text>
+<rect x="192" y="92" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#0b5cad"/><text x="215" y="109" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="254" y="92" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#0b5cad"/><text x="277" y="109" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="316" y="92" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#0b5cad"/><text x="339" y="109" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="378" y="92" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#0b5cad"/><text x="401" y="109" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="440" y="92" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="502" y="92" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="564" y="92" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="626" y="92" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<path d="M463 53 C463 80 229 80 221 91" fill="none" stroke="#0b5cad" stroke-width="1.3" marker-end="url(#a1)"/>
+<path d="M525 53 C525 80 291 80 283 91" fill="none" stroke="#0b5cad" stroke-width="1.3" marker-end="url(#a1)"/>
+<path d="M587 53 C587 80 353 80 345 91" fill="none" stroke="#0b5cad" stroke-width="1.3" marker-end="url(#a1)"/>
+<path d="M649 53 C649 80 415 80 407 91" fill="none" stroke="#0b5cad" stroke-width="1.3" marker-end="url(#a1)"/>
+<text x="8" y="161" font-size="11" fill="#9a6700">round 2 (s = 2):</text>
+<text x="8" y="175" font-size="11" fill="#9a6700">lane l adds tile[l + 2]</text>
+<text x="8" y="189" font-size="11" fill="#9a6700"></text>
+<rect x="192" y="157" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#9a6700"/><text x="215" y="174" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="254" y="157" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#9a6700"/><text x="277" y="174" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="316" y="157" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="378" y="157" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="440" y="157" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="502" y="157" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="564" y="157" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="626" y="157" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<path d="M339 118 C339 145 229 145 221 156" fill="none" stroke="#9a6700" stroke-width="1.3" marker-end="url(#a2)"/>
+<path d="M401 118 C401 145 291 145 283 156" fill="none" stroke="#9a6700" stroke-width="1.3" marker-end="url(#a2)"/>
+<text x="8" y="226" font-size="11" fill="#1b7f3b">round 3 (s = 1):</text>
+<text x="8" y="240" font-size="11" fill="#1b7f3b">lane l adds tile[l + 1]</text>
+<text x="8" y="254" font-size="11" fill="#1b7f3b"></text>
+<rect x="192" y="222" width="46" height="26" rx="4" fill="#f6f8fa" stroke="#1b7f3b"/><text x="215" y="239" font-size="11" text-anchor="middle" fill="#1b1f24">&#931;</text>
+<rect x="254" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="316" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="378" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="440" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="502" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="564" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<rect x="626" y="222" width="46" height="26" rx="4" fill="none" stroke="#d0d7de" stroke-dasharray="3 3"/>
+<path d="M277 183 C277 210 229 210 221 221" fill="none" stroke="#1b7f3b" stroke-width="1.3" marker-end="url(#a3)"/>
+<defs><marker id="a1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#0b5cad"/></marker></defs>
+<line x1="20" y1="67" x2="680" y2="67" stroke="#c0392b" stroke-dasharray="6 4"/><text x="684" y="64" font-size="10" fill="#c0392b" text-anchor="end">barrier()</text>
+<defs><marker id="a2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#9a6700"/></marker></defs>
+<line x1="20" y1="132" x2="680" y2="132" stroke="#c0392b" stroke-dasharray="6 4"/><text x="684" y="129" font-size="10" fill="#c0392b" text-anchor="end">barrier()</text>
+<defs><marker id="a3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="#1b7f3b"/></marker></defs>
+<line x1="20" y1="197" x2="680" y2="197" stroke="#c0392b" stroke-dasharray="6 4"/><text x="684" y="194" font-size="10" fill="#c0392b" text-anchor="end">barrier()</text>
+<text x="150" y="266" font-size="11" fill="#1b1f24">thread 0 now holds the group total in tile[0]: it writes the partial sum out</text>
+</svg>

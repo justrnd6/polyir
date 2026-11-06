@@ -1,0 +1,3 @@
+kernel func cell(index x: i32, index y: i32, uniform width: i32) -> i32 {
+    return y * width + x
+}

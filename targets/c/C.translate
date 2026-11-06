@@ -1,0 +1,946 @@
+# C
+source: polyir
+target: c
+style: indent 2, braces same-line, names keep, paths _, qualify full, modules flat, generics copies, locals unique, extension c, library h
+
+// A checked .poly file as one C11 file that needs only the C library (and pthreads for a coroutine). A file with no `main`
+// is a header. What polyir shares (a struct, a list, a map) is a pointer to memory that is never freed. A module's
+// declarations are named by their path (`Geometry_Point`), a method is a function taking its struct first
+// (`Geometry_Point_manhattan(self)`), and a generic is written as its copies (`Box_i64`). A closure is a function written
+// apart with the variables it captures (a variable it shares and changes is boxed). An interface value is the struct
+// itself, whose `kind` says which one it is. `throw` and `try` are `longjmp` and `setjmp`. A vector uses the GCC and Clang
+// vector extension. A signed whole number that overflows is undefined in C (`-fwrapv` wraps it).
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items.declare}
+
+  {items}
+
+  {items.prototype}
+
+  {hoisted}
+
+  {items.define}
+// A library (a file with no `main` of its own) is a header, included by the files that use it.
+program(support, items, library) :=
+  #pragma once
+
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items.declare}
+
+  {items}
+
+  {items.prototype}
+
+  {hoisted}
+
+  {items.define}
+// The program's `main` is `main_`; C's own `main` gives its number back as the exit status.
+program(support, items, main) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items.declare}
+
+  {items}
+
+  {items.prototype}
+
+  {hoisted}
+
+  {items.define}
+
+  int main(void) {
+    return (int) main_();
+  }
+program(support, items, main: void) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items.declare}
+
+  {items}
+
+  {items.prototype}
+
+  {hoisted}
+
+  {items.define}
+
+  int main(void) {
+    main_();
+    return 0;
+  }
+
+// The passes over the declarations: `include` writes the headers of imported files, `declare` names each struct, the plain
+// rules define the structs, `prototype` declares each function, and `define` gives the functions their bodies. A construct
+// with no rule of a pass writes nothing.
+any.include(value)                  :=
+any.declare(value)                  :=
+any.prototype(value)                :=
+any.define(value)                   :=
+
+module(name, items)                 := {items}
+module.declare(name, items)         := {items.declare}
+module.prototype(name, items)       := {items.prototype}
+module.define(name, items)          := {items.define}
+
+struct.declare(name, typeParams, fields, methods, nested, statics) :=
+  typedef struct {name} {name};
+  {nested.declare}
+
+// A struct implementing an interface starts with its `kind`, which the interface's functions look at.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  struct {name} {
+    {fields}
+  };
+
+  {nested}
+struct(name, typeParams, fields: empty, methods, nested, statics) :=
+  struct {name} {
+    char unused;
+  };
+
+  {nested}
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  static const char {name}_kind[] = "{name}";
+
+  struct {name} {
+    const char* kind;
+    {fields}
+  };
+
+  {nested}
+
+// Each struct has a function that makes one, one that compares two by what they hold, and one that hashes one.
+struct.prototype(name, typeParams, fields, methods, nested, statics) :=
+  static {name}* {name}_new({fields.param});
+  static bool {name}_equal({name}* a, {name}* b);
+  static uint64_t {name}_hash({name}* a);
+  {methods.prototype}
+  {statics.prototype}
+  {nested.prototype}
+  uses: core, stdbool, stdint
+struct.define(name, typeParams, fields, methods, nested, statics) :=
+  static {name}* {name}_new({fields.param}) {
+    {name}* made = gcAlloc(sizeof({name}));
+    {fields.init}
+    return made;
+  }
+
+  static bool {name}_equal({name}* a, {name}* b) {
+    if (a == b || a == NULL || b == NULL) {
+      return a == b;
+    }
+
+    bool same = true;
+    {fields.equal}
+    return same;
+  }
+
+  static uint64_t {name}_hash({name}* a) {
+    uint64_t hash = 17;
+    {fields.hash}
+    return hash;
+  }
+
+  {methods.define}
+
+  {statics.define}
+
+  {nested.define}
+struct.define(name, typeParams, fields, methods, nested, statics, implements) :=
+  static {name}* {name}_new({fields.param}) {
+    {name}* made = gcAlloc(sizeof({name}));
+    made->kind = {name}_kind;
+    {fields.init}
+    return made;
+  }
+
+  static bool {name}_equal({name}* a, {name}* b) {
+    if (a == b || a == NULL || b == NULL) {
+      return a == b;
+    }
+
+    bool same = true;
+    {fields.equal}
+    return same;
+  }
+
+  static uint64_t {name}_hash({name}* a) {
+    uint64_t hash = 17;
+    {fields.hash}
+    return hash;
+  }
+
+  {methods.define}
+
+  {statics.define}
+
+  {nested.define}
+
+field(name, type)                   := {type} {name};
+field(name, type, value)            := {type} {name};
+field.param(name, type)             := {type} {name}
+field.param(name, type, value)      := {type} {name}
+field.init(name, type)              := made->{name} = {name};
+field.init(name, type, value)       := made->{name} = {name};
+// Two fields are the same by their type's own comparison; a field is hashed by what it holds.
+field.equal(name, type)             := same = same && memcmp(&a->{name}, &b->{name}, sizeof a->{name}) == 0;
+field.equal(name, type, value)      := same = same && memcmp(&a->{name}, &b->{name}, sizeof a->{name}) == 0;
+field.equal(name, type: number bool ptr, value) := same = same && a->{name} == b->{name};
+field.equal(name, type: number bool ptr) := same = same && a->{name} == b->{name};
+field.equal(name, type: string)     := same = same && textSame(a->{name}, b->{name});
+  uses: text
+field.equal(name, type: string, value) := same = same && textSame(a->{name}, b->{name});
+  uses: text
+field.equal(name, type: struct)     := same = same && {type.bare}_equal(a->{name}, b->{name});
+field.equal(name, type: struct, value) := same = same && {type.bare}_equal(a->{name}, b->{name});
+field.equal(name, type: array mutarray) := same = same && listSame(a->{name}, b->{name}, {type.itemSame});
+field.equal(name, type: array mutarray, value) := same = same && listSame(a->{name}, b->{name}, {type.itemSame});
+field.hash(name, type)              := hash = hash * 31 + hashBytes(&a->{name}, sizeof a->{name});
+field.hash(name, type, value)       := hash = hash * 31 + hashBytes(&a->{name}, sizeof a->{name});
+field.hash(name, type: int bool)    := hash = hash * 31 + (uint64_t) a->{name};
+field.hash(name, type: int bool, value) := hash = hash * 31 + (uint64_t) a->{name};
+field.hash(name, type: string)      := hash = hash * 31 + (uint64_t) textHash(a->{name});
+  uses: text
+field.hash(name, type: string, value) := hash = hash * 31 + (uint64_t) textHash(a->{name});
+  uses: text
+field.hash(name, type: struct)      := hash = hash * 31 + {type.bare}_hash(a->{name});
+field.hash(name, type: struct, value) := hash = hash * 31 + {type.bare}_hash(a->{name});
+// An interface value is only the same as itself.
+field.equal(name, type: isInterface) := same = same && a->{name} == b->{name};
+field.equal(name, type: isInterface, value) := same = same && a->{name} == b->{name};
+field.hash(name, type: isInterface) := hash = hash * 31 + hashBytes(&a->{name}, sizeof a->{name});
+field.hash(name, type: isInterface, value) := hash = hash * 31 + hashBytes(&a->{name}, sizeof a->{name});
+
+// A method takes its struct first, as `self`; a static function is named by its path, through its struct (`Point_builder`).
+method(name, params, result, body)  :=
+method.prototype(name, params, result, body) := static {result} {owner}_{name}({owner}* self, {params});
+method.define(name, params, result, body) := static {result} {owner}_{name}({owner}* self, {params}) {body}
+static(name, params, result, body)  :=
+static.prototype(name, params, result, body) := static {result} {name}({params});
+static.prototype(name, params: empty, result, body) := static {result} {name}(void);
+static.define(name, params, result, body) := static {result} {name}({params}) {body}
+static.define(name, params: empty, result, body) := static {result} {name}(void) {body}
+
+func(name, typeParams, params, result, body) :=
+func.prototype(name, typeParams, params, result, body) := static {result} {name}({params});
+func.prototype(name, typeParams, params: empty, result, body) := static {result} {name}(void);
+func.define(name, typeParams, params, result, body) := static {result} {name}({params}) {body}
+func.define(name, typeParams, params: empty, result, body) := static {result} {name}(void) {body}
+
+// A coroutine's body runs on a thread of its own (Coroutine.h), its parameters kept for it in an environment.
+coro(name, params, yields, body)    :=
+coro.prototype(name, params, yields, body) := static Coroutine* {name}({params});
+  uses: coroutine
+coro.prototype(name, params: empty, yields, body) := static Coroutine* {name}(void);
+  uses: coroutine
+coro.define(name, params, yields, body) :=
+  typedef struct {name}_Env {
+    {params.field}
+  } {name}_Env;
+
+  static void {name}_run(Coroutine* coroutine, void* raw) {
+    {name}_Env* env = raw;
+    {body}
+  }
+
+  static Coroutine* {name}({params}) {
+    {name}_Env* env = gcAlloc(sizeof({name}_Env));
+    {params.keep}
+    return coroutineNew({name}_run, env, sizeof({yields}));
+  }
+  uses: coroutine
+coro.define(name, params: empty, yields, body) :=
+  static void {name}_run(Coroutine* coroutine, void* env) {
+    (void) env;
+    {body}
+  }
+
+  static Coroutine* {name}(void) {
+    return coroutineNew({name}_run, NULL, sizeof({yields}));
+  }
+  uses: coroutine
+param.field(name, type)             := {type} {name};
+param.keep(name, type)              := env->{name} = {name};
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) :=
+kernel.prototype(stage, name, params, result, body) := static {result} {name}({params});
+kernel.define(stage, name, params, result, body) := static {result} {name}({params}) {body}
+param(name, type)                   := {type} {name}
+
+// An interface value is the struct itself. Each of the interface's functions looks at the struct's `kind` and calls that
+// struct's method.
+interface(name, methods)            :=
+interface.prototype(name, methods)  := {methods.prototype}
+interface.define(name, methods)     := {methods.define}
+signature(name, params, result)     :=
+signature.prototype(name, params, result) := static {result} {owner}_{name}(void* self, {params});
+signature.define(name, params, result) :=
+  static {result} {owner}_{name}(void* self, {params}) {
+    const char* kind = *(const char**) self;
+    {implementers.call}
+    fail("no struct of this kind implements {owner}");
+  }
+  uses: core
+signature.define(name, params, result: void) :=
+  static void {owner}_{name}(void* self, {params}) {
+    const char* kind = *(const char**) self;
+    {implementers.run}
+    fail("no struct of this kind implements {owner}");
+  }
+  uses: core
+implementer.call(name, method, args) :=
+  if (kind == {name}_kind) {
+    return {name}_{method}(self, {args});
+  }
+implementer.run(name, method, args) :=
+  if (kind == {name}_kind) {
+    {name}_{method}(self, {args});
+    return;
+  }
+
+// A function of the C library is declared by its header; any other is declared as polyir says, for the program to be linked
+// with. The C library's functions polyir declares with numbers for pointers (or for sizes) go through Memory.h.
+extern(name, params, result)        := {result} {name}({params});
+extern(name: sin cos tan sqrt floor ceil log exp fabs pow fmax fmin sinf cosf tanf sqrtf floorf ceilf logf expf fabsf powf fmaxf fminf, params, result) :=
+  uses: math
+extern(name: abs labs llabs, params, result) :=
+  uses: stdlib
+extern(name: getchar, params, result) :=
+  uses: stdio
+extern(name: calloc malloc free fopen fclose fread fwrite fseek ftell getenv strlen putchar puts, params, result) :=
+  uses: memory
+
+global(name, type, value)           := static {type} {name} = {value};
+import(module)                      := unsupported "C has no modules of another language to import"
+import(module, alias)               := unsupported "C has no modules of another language to import"
+// An imported .poly file is a header, included before this file's declarations.
+use(name, path, names)              :=
+use.include(name, path, names)      := #include "{path}.h"
+use.include(name, path, names, program) := #include "{path}.c"
+
+## statements
+let(name, type, value)              := {type} {name} = {value};
+let(name, type, value, guarded)     := {type} volatile {name} = {value};
+var(name, type)                     := {type} {name} = {type.zero};
+var(name, type, value)              := {type} {name} = {value};
+// A variable a `try` may jump past is `volatile`, so it keeps what it was given before the jump.
+var(name, type, guarded)            := {type} volatile {name} = {type.zero};
+var(name, type, value, guarded)     := {type} volatile {name} = {value};
+// A variable a closure shares and changes is boxed, so the closure and the code around it see one value.
+var(name, type, boxed)              := {type}* {name} = copyBytes(({type}[]){{type.zero}}, sizeof({type}));
+var(name, type, value, boxed)       := {type}* {name} = copyBytes(({type}[]){{value}}, sizeof({type}));
+assign(target, value)               := {target} = {value};
+store(object, index, value)         := LIST_AT({object}, {index}, {object.itemType}) = {value};
+store(object: map mutmap, index, value) := mapPut({object}, ({object.keyType}[]){{index}}, ({object.itemType}[]){{value}});
+store(object: vec ptr, index, value) := {object}[{index}] = {value};
+store(object: sparse, index, value) := sparseSet({object}, {index}, 0, ({object.itemType}[]){{value}});
+store(object: grid matrix tensor, index, value) := GRID_AT({object}, {object.itemType}, {index}) = {value};
+store(object, indices, value)       := GRID_AT({object}, {object.itemType}, {indices}) = {value};
+store(object: sparse, indices, value) := sparseSet({object}, {indices}, ({object.itemType}[]){{value}});
+expr(value)                         := {value.statement};
+if(cond, then)                      := if ({cond}) {then}
+if(cond, then, else)                := if ({cond}) {then} else {else}
+if(cond, then, elseIf)              := if ({cond}) {then} else {elseIf}
+while(cond, body)                   := while ({cond}) {body}
+// A for loop declares one counter in C's way; several counters, or one used after the loop, are declared before it.
+for(counters, cond, steps, body) :=
+  {
+    {counters.declare}
+    while ({cond}) {
+      {body}
+      {steps.assign}
+    }
+  }
+for(counters: one, cond, steps, body) := for ({counters}; {cond}; {steps}) {body}
+for(counters, cond, steps, body, usedAfter) := lower
+counter(name, type, value)          := {type} {name} = {value}
+counter.declare(name, type, value)  := {type} {name} = {value};
+step(name, value)                   := {name} = {value}
+step.assign(name, value)            := {name} = {value};
+// A walk over a list reads each item by its position; one over a map or a set walks its keys.
+foreach(name, source, body) :=
+  for (int64_t {name}_at = 0; {name}_at < {source}->count; {name}_at++) {
+    {source.itemType} {name} = LIST_AT({source}, {name}_at, {source.itemType});
+    {body}
+  }
+foreach(name, source: map mutmap set mutset, body) :=
+  for (int64_t {name}_at = 0; {name}_at < {source}->count; {name}_at++) {
+    {source.keyType} {name} = LIST_AT(mapKeys({source}), {name}_at, {source.keyType});
+    {body}
+  }
+foreach(name, source: vec, body) :=
+  for (int64_t {name}_at = 0; {name}_at < (int64_t) (sizeof {source} / sizeof {source}[0]); {name}_at++) {
+    {source.itemType} {name} = {source}[{name}_at];
+    {body}
+  }
+return                              := return;
+return(value)                       := return {value};
+return(inCoroutine)                 := return;
+// Each `try` puts its handler on the stack (Core.h): a throw comes back to its `setjmp` with the code thrown.
+try(body, name, handler) :=
+  {
+    Handler tried = {.outer = handlers};
+    handlers = &tried;
+
+    if (setjmp(tried.jump) == 0) {
+      {body}
+      handlers = tried.outer;
+    } else {
+      handlers = tried.outer;
+      const int64_t {name} = tried.code;
+      {handler}
+    }
+  }
+  uses: core
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  {
+    Handler tried = {.outer = handlers};
+    handlers = &tried;
+
+    if (setjmp(tried.jump) == 0) {
+      {body}
+      handlers = tried.outer;
+    } else {
+      handlers = tried.outer;
+      {cleanup}
+      throwCode(tried.code);
+    }
+  }
+  uses: core
+throw(value)                        := throwCode({value});
+  uses: core
+// A yield hands its value to the resume waiting for it, and hears whether the coroutine was closed: a closed one ends.
+yield(value) :=
+  if (coroutineGive(coroutine, ({value.ctype}[]){{value}})) {
+    return;
+  }
+// A switch of blocks, which `match` and `switch` lower to: C's `switch` for whole numbers and flags, an arm per `case`;
+// any other (a string, a sum) is written as its `if` chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool, arms) :=
+  switch ({value}) {
+    {arms}
+  }
+select(value: int bool, arms, else) :=
+  switch ({value}) {
+    {arms}
+    default: {
+      {else}
+      break;
+    }
+  }
+arm(keys, body) :=
+  case {keys|: case }: {
+    {body}
+    break;
+  }
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the cases of a loop around a switch on `label`; each case ends with a jump or a
+// return.
+machine(state, cases) :=
+  for (;;) {
+    switch ({state}) {
+      {cases}
+    }
+  }
+case(state, number, body)           := case {number}: {body}
+jump(state, number) :=
+  {state} = {number};
+  continue;
+
+## expressions
+int(value)                          := {value}
+int(value, type: u32 u64)           := {value}u
+float(value)                        := {value}
+float(value: float)                 := {value}f
+bool(value)                         := {value}
+string(value)                       := "{value}"
+unit                                := 0
+name(name)                          := {name}
+name(name, boxed)                   := (*{name})
+// Inside a closure (or a coroutine), what it captured is read from its environment.
+name(name, captured)                := env->{name}
+name(name, boxed, captured)         := (*env->{name})
+this                                := self
+this(captured)                      := env->self
+funcref(name)                       := {name}
+
+// The narrow integers are promoted to int by C, so their arithmetic is brought back to its type.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: i8, op: + - * / % << >> & | ^, right) := (int8_t) ({left} {op} {right})
+binary(left: i16, op: + - * / % << >> & | ^, right) := (int16_t) ({left} {op} {right})
+binary(left: u8, op: + - * / % << >> & | ^, right) := (uint8_t) ({left} {op} {right})
+binary(left: u16, op: + - * / % << >> & | ^, right) := (uint16_t) ({left} {op} {right})
+// `==` compares what two values hold: numbers, flags and pointers with `==`, strings by their text, a struct by its fields.
+binary(left: string, op: ==, right) := textSame({left}, {right})
+  uses: text
+binary(left: string, op: !=, right) := !textSame({left}, {right})
+  uses: text
+binary(left: string, op: +, right)  := textJoin({left}, {right})
+  uses: text
+binary(left: struct, op: ==, right) := {left.structName}_equal({left}, {right})
+binary(left: struct, op: !=, right) := !{left.structName}_equal({left}, {right})
+binary(left: array mutarray, op: ==, right) := listSame({left}, {right}, {left.itemSame})
+binary(left: array mutarray, op: !=, right) := !listSame({left}, {right}, {left.itemSame})
+binary(left: array mutarray, op: +, right) := listConcat({left}, {right})
+binary(left: float double, op: %, right) := fmod({left}, {right})
+  uses: math
+binary(left: vec, op: == !=, right) := memcmp(({left.ctype}[]){{left}}, ({right.ctype}[]){{right}}, sizeof({left.ctype})) {op} 0
+  uses: string
+binary(left: variant, op: ==, right) := variantSame({left}, {right})
+binary(left: variant, op: !=, right) := !variantSame({left}, {right})
+binary(left: either, op: ==, right) := eitherSame({left}, {right})
+binary(left: either, op: !=, right) := !eitherSame({left}, {right})
+
+unary(op, operand)                  := {op}{operand}
+unary(op: - ~, operand: i8)         := (int8_t) {op}{operand}
+unary(op: - ~, operand: i16)        := (int16_t) {op}{operand}
+unary(op: - ~, operand: u8)         := (uint8_t) {op}{operand}
+unary(op: - ~, operand: u16)        := (uint16_t) {op}{operand}
+
+// A pointer and a whole number turn into each other through intptr_t, as an address.
+cast(value, type)                   := ({type}) {value}
+cast(value, type: bool)             := {value} != 0
+cast(value: ptr, type)              := ({type}) (intptr_t) {value}
+cast(value, type: ptr)              := ({type}) (intptr_t) {value}
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := {cond} ? {then} : {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+// A method is its struct's function, called with the object first; an interface's dispatches by the struct's kind.
+methodcall(object, name, args)      := {owner}_{name}({object}, {args})
+// A closure's function is called as its own type, with its environment first.
+invoke(callee, args)                := {callee}({args})
+invoke(callee: closure, args)       := (({callee.callType}) {callee}.fn)({callee}.env, {args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object}->{name}
+
+// A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := LIST_AT({object}, {index}, {type})
+index(object: map mutmap, index, type) := MAP_GET({object}, {object.keyType}, {type}, {index}, {type.zero})
+index(object: vec ptr, index, type) := {object}[{index}]
+index(object: sparse, index, type)  := (*({type}*) sparseGet({object}, {index}, 0))
+index(object: grid matrix tensor, index, type) := GRID_AT({object}, {type}, {index})
+index(object, indices, type)        := GRID_AT({object}, {type}, {indices})
+index(object: sparse, indices, type) := (*({type}*) sparseGet({object}, {indices}))
+
+new(name, values)                   := {name}_new({values})
+new(name, typeArgs, values)         := {name}_new({values})
+init(name, value)                   := {value}
+list(values, type)                  := LIST_OF({type.item}, {values})
+list(values: empty, type)           := listNew(sizeof({type.item}))
+vec(values, type)                   := ({type}){{values}}
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+// A closure is its function, written apart with the environment of what it captures, and that environment.
+closure(params, result, body) :=
+  (Closure){(AnyFn) {name}, {name}_capture({captures.given})}
+  hoist: typedef struct {name}_Env {
+  hoist:   {captures.field}
+  hoist: } {name}_Env;
+  hoist:
+  hoist: static {name}_Env* {name}_capture({captures.param}) {
+  hoist:   {name}_Env* env = gcAlloc(sizeof({name}_Env));
+  hoist:   {captures.keep}
+  hoist:   return env;
+  hoist: }
+  hoist:
+  hoist: static {result} {name}(void* raw, {params}) {
+  hoist:   {name}_Env* env = raw;
+  hoist:   {body}
+  hoist: }
+  uses: closure, core
+closure(params, result, body, captures: empty) :=
+  (Closure){(AnyFn) {name}, NULL}
+  hoist: static {result} {name}(void* env, {params}) {
+  hoist:   (void) env;
+  hoist:   {body}
+  hoist: }
+  uses: closure
+capture.given(name, type, value)    := {value}
+capture.given(name, type, value: boxed) := {value.box}
+capture.field(name, type, value)    := {type} {name};
+capture.field(name, type, value: boxed) := {type}* {name};
+capture.field(name: this, type, value) := {type} self;
+capture.param(name, type, value)    := {type} {name}
+capture.param(name, type, value: boxed) := {type}* {name}
+capture.param(name: this, type, value) := {type} self
+capture.keep(name, type, value)     := env->{name} = {name};
+capture.keep(name: this, type, value) := env->self = self;
+// A boxed variable's box: the pointer, not the value it holds.
+any.box(value)                      := {value}
+name.box(name, boxed)               := {name}
+name.box(name, boxed, captured)     := env->{name}
+lambda(params, value)               := lower
+// An optional is a pointer to its value, NULL when it has none.
+some(type, value)                   := copyBytes(({value.ctype}[]){{value}}, sizeof({value.ctype}))
+  uses: core
+none(type)                          := NULL
+// An `either` holds its value on the heap, as ok or as an error; a variant its case's number and value.
+ok(type, value)                     := makeEither(true, ({value.ctype}[]){{value}}, sizeof({value.ctype}))
+  uses: either
+err(type, value)                    := makeEither(false, ({value.ctype}[]){{value}}, sizeof({value.ctype}))
+  uses: either
+variant(type, case, value)          := makeVariant({case}, ({value.ctype}[]){{value}}, sizeof({value.ctype}))
+  uses: variant
+interp(pieces)                      := lower
+text(value)                         := "{value}"
+hole(value)                         := {value}
+
+// What an expression's type is, and the parts of a collection's type, for the rules above.
+any.ctype(value, type)              := {type}
+any.itemType(value, type)           := {type.item}
+any.keyType(value, type)            := {type.key}
+any.itemSame(value, type)           := {type.itemSame}
+any.structName(value, type)         := {type.bare}
+any.callType(value, type)           := {type.callType}
+
+## builtins
+// Sizes are int64_t (i64) in the program; a string counts its bytes.
+len(object)                         := {object}->count
+len(object: string)                 := (int64_t) strlen({object})
+  uses: string
+len(object: vec)                    := (int64_t) (sizeof {object} / sizeof {object}[0])
+len(object: sparse)                 := {object}->values->count
+capacity(object)                    := {object}->count
+capacity(object: vec)               := (int64_t) (sizeof {object} / sizeof {object}[0])
+rows(object)                        := {object}->dims[0]
+cols(object)                        := {object}->dims[1]
+dim(object, axis)                   := {object}->dims[{axis}]
+
+// A push whose list is not used is a listPush; one used as a value gives the list.
+push(object, value)                 := listPushed({object}, ({object.itemType}[]){{value}})
+push.statement(object, value)       := listPush({object}, ({object.itemType}[]){{value}})
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := (int64_t) {value}
+hash(value: string)                 := textHash({value})
+  uses: text
+
+shuffle(object, lanes)              := __builtin_shufflevector({object}, {object}, {lanes})
+atomicLoad(object, order)           := atomic_load((_Atomic {object.itemType}*) {object})
+  uses: stdatomic
+atomicStore(object, value, order)   := atomic_store((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+// A read-modify-write gives the value it found; its operation is one of C's `atomic_fetch_` ones, or an exchange.
+atomicRmw(object, op, value, order) := atomic_fetch_add((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+atomicRmw(object, op: "sub", value, order) := atomic_fetch_sub((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+atomicRmw(object, op: "and", value, order) := atomic_fetch_and((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+atomicRmw(object, op: "or", value, order) := atomic_fetch_or((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+atomicRmw(object, op: "xor", value, order) := atomic_fetch_xor((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+atomicRmw(object, op: "xchg", value, order) := atomic_exchange((_Atomic {object.itemType}*) {object}, {value})
+  uses: stdatomic
+cmpxchg(object, expected, value, success, failure) := compareSwap({object}, {expected}, {value})
+  uses: atomics
+fence(order)                        := atomic_thread_fence(memory_order_seq_cst)
+  uses: stdatomic
+
+// A variant is a Variant (the number of its case and its value), an `either` an Either.
+tag(object)                         := {object}.tag
+isCase(object, case)                := {object}.tag == {case}
+unwrapAt(object, case, type)        := (*({type}*) {object}.value)
+isOk(object)                        := {object}.isOk
+isErr(object)                       := !{object}.isOk
+unwrapOk(object, type)              := (*({type}*) {object}.held)
+unwrapErr(object, type)             := (*({type}*) {object}.held)
+isSome(object)                      := {object} != NULL
+isNone(object)                      := {object} == NULL
+unwrap(object, type)                := (*({type}*) present({object}))
+  uses: core
+
+resume(object)                      := coroutineResume({object})
+done(object)                        := coroutineDone({object})
+close(object)                       := coroutineClose({object})
+yielded(value)                      := coroutineGive(coroutine, ({value.ctype}[]){{value}})
+
+// `copy`, `freeze` and `thaw` make a new list, map, set, grid or struct holding the same.
+copy(object)                        := copyBytes({object}, sizeof *{object})
+  uses: core
+copy(object: array mutarray fixed buffer) := listCopy({object})
+copy(object: map mutmap set mutset) := mapCopy({object})
+copy(object: grid matrix tensor)    := gridCopy({object})
+copy(object: sparse)                := sparseCopy({object})
+copy(object: vec)                   := {object}
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := listWith({object}, ({object.itemType}[]){{value}})
+with(object: set mutset, value)     := mapWith({object}, ({object.keyType}[]){{value}}, NULL)
+with(object, key, value)            := mapWith({object}, ({object.keyType}[]){{key}}, ({object.itemType}[]){{value}})
+has(object, key)                    := listHas({object}, ({object.itemType}[]){{key}}, {object.itemSame})
+has(object: map mutmap set mutset, key) := mapHas({object}, ({object.keyType}[]){{key}})
+add(object, value)                  := mapPut({object}, ({object.keyType}[]){{value}}, NULL)
+remove(object, key)                 := mapRemove({object}, ({object.keyType}[]){{key}})
+truncate(object, size)              := listTruncate({object}, {size})
+
+// `str` writes a value by its type (a flag as `true`, a char as its byte); `print` writes it and a line's end.
+str(value)                          := {value.text}
+charAt(object, index)               := textByte({object}, {index})
+  uses: text
+slice(object, from, to)             := textSlice({object}, {from}, {to})
+  uses: text
+find(object, part, from)            := textFind({object}, {part}, {from})
+  uses: text
+print(value)                        := puts({value.text})
+  uses: stdio
+fail(value)                         := fail({value})
+  uses: core
+any.text(value, type)               := {type.textOf}({value})
+  uses: text
+
+## types
+i8                                  := int8_t
+  uses: stdint
+i16                                 := int16_t
+  uses: stdint
+i32                                 := int32_t
+  uses: stdint
+i64                                 := int64_t
+  uses: stdint
+u8                                  := uint8_t
+  uses: stdint
+u16                                 := uint16_t
+  uses: stdint
+u32                                 := uint32_t
+  uses: stdint
+u64                                 := uint64_t
+  uses: stdint
+bool                                := bool
+  uses: stdbool
+float                               := float
+double                              := double
+string                              := const char*
+void                                := void
+struct(name)                        := {name}*
+  uses: core
+// An interface value is a pointer to a struct that implements it.
+struct(name, isInterface)           := void*
+instance(name, args)                := {name}*
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}
+array(elem)                         := List*
+  uses: list
+mutarray(elem)                      := List*
+  uses: list
+map(key, value)                     := Map*
+  uses: map
+mutmap(key, value)                  := Map*
+  uses: map
+set(elem)                           := Map*
+  uses: map
+mutset(elem)                        := Map*
+  uses: map
+optional(elem)                      := {elem}*
+  uses: core
+either(ok, err)                     := Either
+  uses: either
+variant(cases)                      := Variant
+  uses: variant
+closure(params, result)             := Closure
+  uses: closure
+// A function as a value is a C function pointer.
+func(params, result)                := __typeof__({result} (*)({params}))
+ptr(elem)                           := {elem}*
+ptr(elem: func)                     := {elem}
+coro(elem)                          := Coroutine*
+  uses: coroutine
+vec(elem, size)                     := {elem} __attribute__((vector_size({size} * sizeof({elem}))))
+matrix(elem, size)                  := Grid*
+  uses: grid
+fixed(elem, size)                   := List*
+  uses: list
+buffer(elem, size)                  := List*
+  uses: list
+grid(elem, rows, cols)              := Grid*
+  uses: grid
+tensor(elem, dims)                  := Grid*
+  uses: grid
+sparse(elem)                        := Sparse*
+  uses: sparse
+
+// The parts of a type the rules above write: an item's type, a key's type, the struct's own name, a closure's function type.
+any.item(value)                     := int64_t
+array.item(elem)                    := {elem}
+mutarray.item(elem)                 := {elem}
+fixed.item(elem, size)              := {elem}
+buffer.item(elem, size)             := {elem}
+ptr.item(elem)                      := {elem}
+vec.item(elem, size)                := {elem}
+grid.item(elem, rows, cols)         := {elem}
+matrix.item(elem, size)             := {elem}
+tensor.item(elem, dims)             := {elem}
+sparse.item(elem)                   := {elem}
+set.item(elem)                      := {elem}
+mutset.item(elem)                   := {elem}
+map.item(key, value)                := {value}
+mutmap.item(key, value)             := {value}
+optional.item(elem)                 := {elem}
+any.key(value)                      := int64_t
+map.key(key, value)                 := {key}
+mutmap.key(key, value)              := {key}
+set.key(elem)                       := {elem}
+mutset.key(elem)                    := {elem}
+struct.bare(name)                   := {name}
+closure.callType(params, result)    := {result} (*)(void*, {params})
+
+// How a list's items or a map's keys compare and hash: by their bytes, unless their type has functions of its own.
+any.itemSame(value)                 := NULL
+array.itemSame(elem)                := {elem.same}
+mutarray.itemSame(elem)             := {elem.same}
+any.same(value)                     := NULL
+string.same                         := sameTextKey
+struct.same(name)                   := {name}_sameKey
+  hoist: static bool {name}_sameKey(const void* a, const void* b, size_t size) {
+  hoist:   (void) size;
+  hoist:   return {name}_equal(*({name}* const*) a, *({name}* const*) b);
+  hoist: }
+any.hashOf(value)                   := NULL
+string.hashOf                       := hashTextKey
+struct.hashOf(name)                 := {name}_hashKey
+  hoist: static uint64_t {name}_hashKey(const void* key, size_t size) {
+  hoist:   (void) size;
+  hoist:   return {name}_hash(*({name}* const*) key);
+  hoist: }
+
+// The function that writes a value as text.
+any.textOf(value)                   := textOfInt
+u8.textOf                           := textOfChar
+i8.textOf                           := textOfChar
+u16.textOf                          := textOfUint
+u32.textOf                          := textOfUint
+u64.textOf                          := textOfUint
+bool.textOf                         := textOfBool
+float.textOf                        := textOfDouble
+double.textOf                       := textOfDouble
+string.textOf                       :=
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := 0
+bool.zero                           := false
+float.zero                          := 0.0f
+double.zero                         := 0.0
+string.zero                         := ""
+struct.zero(name)                   := NULL
+optional.zero(elem)                 := NULL
+ptr.zero(elem)                      := NULL
+coro.zero(elem)                     := NULL
+either.zero(ok, err)                := (Either){0}
+variant.zero(cases)                 := (Variant){0}
+closure.zero(params, result)        := (Closure){0}
+func.zero(params, result)           := NULL
+vec.zero(elem, size)                := ({elem} __attribute__((vector_size({size} * sizeof({elem}))))){0}
+array.zero(elem)                    := listNew(sizeof({elem}))
+mutarray.zero(elem)                 := listNew(sizeof({elem}))
+map.zero(key, value)                := mapNew(sizeof({key}), sizeof({value}), {key.hashOf}, {key.same})
+mutmap.zero(key, value)             := mapNew(sizeof({key}), sizeof({value}), {key.hashOf}, {key.same})
+set.zero(elem)                      := mapNew(sizeof({elem}), 0, {elem.hashOf}, {elem.same})
+mutset.zero(elem)                   := mapNew(sizeof({elem}), 0, {elem.hashOf}, {elem.same})
+fixed.zero(elem, size)              := listFilled(sizeof({elem}), {size}, ({elem}[]){{elem.zero}})
+buffer.zero(elem, size)             := listFilled(sizeof({elem}), {size}, ({elem}[]){{elem.zero}})
+grid.zero(elem, rows, cols)         := GRID_NEW({elem}, {elem.zero}, {rows}, {cols})
+matrix.zero(elem, size)             := GRID_NEW({elem}, {elem.zero}, {size}, {size})
+tensor.zero(elem, dims)             := GRID_NEW({elem}, {elem.zero}, {dims})
+sparse.zero(elem)                   := sparseNew(sizeof({elem}), ({elem}[]){{elem.zero}})
+
+## operators
+=== := ==
+!== := !=
+// `->` reaches a member through a pointer: it binds most tightly, not as `-` and `>`.
+levels: ?, ||, &&, |, ^, &, == !=, < <= > >=, << >>, + -, * / %, ->
+
+## reserved
+// C's own words, and the names its helpers and this page's code use: a name that is one of them gets a _ after it.
+auto break case char const continue default do double else enum extern float for goto if inline int long register restrict
+return short signed sizeof static struct switch typedef union unsigned void volatile while _Bool _Complex _Noreturn bool
+true false NULL main self env raw made kind same hash tried handlers coroutine unused
+remove rename exit abort system time clock rand srand atoi atof qsort bsearch printf fprintf sprintf snprintf scanf sscanf
+fgets fputs fputc fgetc memset memmove memcpy memcmp strcpy strncpy strcat strcmp strncmp strchr strrchr strstr strdup
+tolower toupper isalpha isdigit isspace signal raise assert stdin stdout stderr errno
+gcAlloc copyBytes fail throwCode checkFailed present sameBytes hashBytes sameTextKey hashTextKey Handler SameFn HashFn List
+listNew listAt listPush listOf listFilled listCopy listPushed listWith listConcat listTruncate listHas listSame Map mapNew
+mapPut mapHas mapGetOr mapRemove mapKeys mapCopy mapWith textJoin textSame textOfInt textOfUint textOfDouble textOfBool
+textOfChar textByte textSlice textFind textHash Closure AnyFn Variant makeVariant Either makeEither Coroutine coroutineNew
+coroutineResume coroutineGive coroutineDone coroutineClose Grid gridNew gridAt gridCopy Sparse sparseNew sparseGet sparseSet
+sparseCopy compareSwap variantSame eitherSame
+
+## imports
+// The headers, each written once at the top when a rule or a support file that uses it is written.
+math := #include <math.h>
+pthread := #include <pthread.h>
+setjmp := #include <setjmp.h>
+stdatomic := #include <stdatomic.h>
+stdbool := #include <stdbool.h>
+stdint := #include <stdint.h>
+stdio := #include <stdio.h>
+stdlib := #include <stdlib.h>
+string := #include <string.h>
+
+## support
+// Each file is written after the headers and files its `uses:` line names; each is guarded, so a file and the headers it
+// includes hold it once.
+core := runtime/Core.h
+  uses: setjmp, stdbool, stdint, stdio, stdlib, string
+list := runtime/List.h
+  uses: core
+map := runtime/Map.h
+  uses: list
+text := runtime/Text.h
+  uses: core
+closure := runtime/Closure.h
+variant := runtime/Variant.h
+  uses: core
+either := runtime/Either.h
+  uses: core
+coroutine := runtime/Coroutine.h
+  uses: pthread, variant
+grid := runtime/Grid.h
+  uses: core
+sparse := runtime/Sparse.h
+  uses: list
+atomics := runtime/Atomics.h
+  uses: stdatomic, stdint
+memory := runtime/Memory.h
+  uses: core
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code, then
+// the line that makes a compiler and a debugger name that source line.
+line := //# from {file}:{line}:{column} {code}\n#line {line} "{file}"

@@ -1,0 +1,110 @@
+// Biquad filters (ideas/audio/Biquad.poly). The gains are checked three ways: against exact properties of
+// the cookbook design (a low-pass has gain Q at its cutoff, a notch has gain 0 at its centre, a bell of
+// +6 dB has gain 10^(6/20) at its centre, a low shelf has that gain at 0 Hz), against numbers from an
+// independent Python evaluation of the same formulas, and against the amplitude measured by running a
+// tone through the filter.
+import "../Biquad.poly"
+import "../../../core/tests/programs/Check.poly"
+
+extern func calloc(count: i64, size: i64) -> i64
+extern func sin(x: double) -> double
+
+// A tone of `hz` (one second, `rate` samples a second) put through `filter`, and the amplitude of
+// what came out, measured over the last half second (the tones used here have a whole number of cycles in it).
+func measuredGain(filter: Biquad, hz: float, rate: i64) -> float {
+    let data: ptr<float> = calloc(rate, 4).toPtr()
+    for (i = 0; i < rate; i = i + 1) {
+        data[i] = sin(6.283185307179586 * hz.toDouble() * i.toDouble() / rate.toDouble()).toFloat()
+    }
+    filter.run(data, rate)
+    return amplitudeAt(data, rate / 2, rate / 2, rate, hz)
+}
+
+func checkLowPassGainAtCutoffIsQ() -> double { return off(biquadLowPass(44100, 1000.0, 0.7071).gain(1000.0, 44100), 0.7071) }
+
+func checkLowPassResonanceGainIsQ() -> double { return off(biquadLowPass(44100, 1000.0, 2.0).gain(1000.0, 44100), 2.0) }
+
+func checkLowPassPassesLowTones() -> double { return off(biquadLowPass(44100, 1000.0, 0.7071).gain(100.0, 44100), 0.99995015) }
+
+// Two octaves above the cutoff a 12 decibel per octave filter is down to about 1/16: here 0.0592.
+func checkLowPassStopsHighTones() -> double { return off(biquadLowPass(44100, 1000.0, 0.7071).gain(4000.0, 44100), 0.05924098) }
+
+func checkHighPassGainAtCutoffIsQ() -> double { return off(biquadHighPass(44100, 1000.0, 0.7071).gain(1000.0, 44100), 0.7071) }
+
+func checkHighPassStopsLowTones() -> double { return off(biquadHighPass(44100, 1000.0, 0.7071).gain(100.0, 44100), 0.00996603) }
+
+func checkHighPassPassesHighTones() -> double { return off(biquadHighPass(44100, 1000.0, 0.7071).gain(10000.0, 44100), 0.99997657) }
+
+func checkBandPassPeaksAtOne() -> double { return off(biquadBandPass(44100, 1000.0, 4.0).gain(1000.0, 44100), 1.0) }
+
+func checkBandPassRejectsOneOctaveAway() -> double {
+    return off(biquadBandPass(44100, 1000.0, 4.0).gain(500.0, 44100), 0.16406081) + off(biquadBandPass(44100, 1000.0, 4.0).gain(2000.0, 44100), 0.16304698)
+}
+
+func checkNotchRemovesCentre() -> double { return off(biquadNotch(44100, 1000.0, 4.0).gain(1000.0, 44100), 0.0) }
+
+func checkNotchKeepsOthers() -> double {
+    return off(biquadNotch(44100, 1000.0, 4.0).gain(100.0, 44100), 0.99968240) + off(biquadNotch(44100, 1000.0, 4.0).gain(5000.0, 44100), 0.99876329)
+}
+
+// +6 decibels is a factor of 10^(6/20) = 1.99526 in amplitude.
+func checkBellBoostsCentre() -> double { return off(biquadBell(44100, 1000.0, 2.0, 6.0).gain(1000.0, 44100), 1.99526231) }
+
+func checkBellLeavesFarTonesAlone() -> double {
+    return off(biquadBell(44100, 1000.0, 2.0, 6.0).gain(100.0, 44100), 1.00189479) + off(biquadBell(44100, 1000.0, 2.0, 6.0).gain(10000.0, 44100), 1.00129053)
+}
+
+func checkBellCutsCentre() -> double { return off(biquadBell(44100, 1000.0, 2.0, 0.0 - 6.0).gain(1000.0, 44100), 0.50118723) }
+
+func checkBellWithZeroGainIsFlat() -> double { return off(biquadBell(44100, 1000.0, 2.0, 0.0).gain(1000.0, 44100), 1.0) }
+
+// A shelf changes everything on one side of its corner by the full amount, and the corner itself by half the decibels.
+func checkLowShelfBoostsBass() -> double { return off(biquadLowShelf(44100, 1000.0, 6.0).gain(1.0, 44100), 1.99526231) }
+
+func checkLowShelfLeavesTrebleAlone() -> double { return off(biquadLowShelf(44100, 1000.0, 6.0).gain(20000.0, 44100), 1.0) }
+
+func checkLowShelfCornerIsHalfway() -> double { return off(biquadLowShelf(44100, 1000.0, 6.0).gain(1000.0, 44100), 1.41253754) }
+
+func checkHighShelfBoostsTreble() -> double { return off(biquadHighShelf(44100, 1000.0, 6.0).gain(20000.0, 44100), 1.99526230) }
+
+func checkHighShelfLeavesBassAlone() -> double { return off(biquadHighShelf(44100, 1000.0, 6.0).gain(1.0, 44100), 1.0) }
+
+func checkHighShelfCornerIsHalfway() -> double { return off(biquadHighShelf(44100, 1000.0, 6.0).gain(1000.0, 44100), 1.41253754) }
+
+// ── run() agrees with gain() ───────────────────────────────────────────────────────────────
+func checkRunMatchesGainLowPass() -> double {
+    let f: Biquad = biquadLowPass(44100, 1000.0, 0.7071)
+    return off(measuredGain(f, 440.0, 44100), f.gain(440.0, 44100)) + off(measuredGain(f, 2000.0, 44100), f.gain(2000.0, 44100))
+}
+
+func checkRunMatchesGainHighPass() -> double {
+    let f: Biquad = biquadHighPass(44100, 1000.0, 0.7071)
+    return off(measuredGain(f, 440.0, 44100), f.gain(440.0, 44100)) + off(measuredGain(f, 2000.0, 44100), f.gain(2000.0, 44100))
+}
+
+func checkRunMatchesGainBandPass() -> double {
+    let f: Biquad = biquadBandPass(44100, 882.0, 4.0)
+    return off(measuredGain(f, 882.0, 44100), f.gain(882.0, 44100)) + off(measuredGain(f, 440.0, 44100), f.gain(440.0, 44100))
+}
+
+func checkRunMatchesGainNotch() -> double {
+    let f: Biquad = biquadNotch(44100, 882.0, 4.0)
+    return off(measuredGain(f, 882.0, 44100), f.gain(882.0, 44100)) + off(measuredGain(f, 2000.0, 44100), f.gain(2000.0, 44100))
+}
+
+func checkRunMatchesGainBell() -> double {
+    let f: Biquad = biquadBell(44100, 882.0, 2.0, 6.0)
+    return off(measuredGain(f, 882.0, 44100), f.gain(882.0, 44100)) + off(measuredGain(f, 4410.0, 44100), f.gain(4410.0, 44100))
+}
+
+func checkRunMatchesGainShelves() -> double {
+    let low: Biquad = biquadLowShelf(44100, 2000.0, 0.0 - 6.0)
+    let high: Biquad = biquadHighShelf(44100, 2000.0, 6.0)
+    return off(measuredGain(low, 440.0, 44100), low.gain(440.0, 44100)) + off(measuredGain(high, 4410.0, 44100), high.gain(4410.0, 44100))
+}
+
+// A low-frequency centre with a high sample rate is where float arithmetic would fail; doubles keep the filter stable and accurate.
+func checkLowCentreStaysAccurate() -> double {
+    let f: Biquad = biquadLowPass(48000, 40.0, 0.7071)
+    return off(f.gain(40.0, 48000), 0.7071) + off(measuredGain(f, 120.0, 48000), f.gain(120.0, 48000))
+}

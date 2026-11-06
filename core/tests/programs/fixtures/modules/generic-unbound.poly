@@ -1,0 +1,8 @@
+func make<T>() -> mutarray<T> {
+  return mutarray<T>()
+}
+
+func main() -> void {
+  let xs: mutarray<i64> = make()
+  print(str(len(xs)))
+}

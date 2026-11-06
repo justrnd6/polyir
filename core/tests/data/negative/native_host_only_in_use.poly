@@ -1,0 +1,13 @@
+extern type Clock = java "java.time.Clock" | js "Date"
+
+extern interface Task = java "java.lang.Runnable" {
+  func run() -> i64
+}
+
+extern func now() -> Clock = java "java.time.Clock.systemUTC()"
+
+struct Job(id: i64) : Task {
+  func run() -> i64 { return this.id }
+}
+
+func main() -> i64 { return 0 }

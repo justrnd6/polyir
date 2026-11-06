@@ -1,0 +1,83 @@
+// REDUCTION WITH WORKGROUP MEMORY: far fewer passes than the pair-adding tree of shared/reduce.poly.
+//
+// The tree adds two numbers per thread and needs about 20 launches for a million numbers, each launch reading
+// and writing the whole list in slow memory. A GPU thread has a faster place to cooperate: WORKGROUP memory,
+// a small scratch array shared by the 256 threads of one group. `workgroup tile: ptr<float>` declares it (one slot
+// per thread of the group), and `barrier()` makes every thread of the group wait until all have finished
+// writing to it. With those two, a group of 256 threads can reduce 256 numbers by itself:
+//
+//   1. every thread copies its own number into `tile[lane]` (`lane` = its place in the group, 0 to 255),
+//      or into a neutral value (0 for a sum) if it is past the end of the data;
+//   2. barrier(): wait until all 256 have written;
+//   3. halve the active threads each round: with s = 128, 64, ..., 1, lane l < s adds tile[l + s] into tile[l];
+//      barrier() after every round;
+//   4. thread 0 now holds the group's total in tile[0] and writes it out.
+//
+// So ONE launch turns n numbers into n / 256 partial results: 1,048,579 numbers -> 4,097 -> 17 -> 1 in three
+// launches, instead of twenty. `total` goes one step further: thread 0 of every group adds its group's total
+// into a single slot with `atomicAddFloat`, so the whole sum comes out of ONE launch (the order of the adds
+// is not fixed, which is fine for a sum that float arithmetic can hold exactly, as the test data is).
+//
+// Rules the compiler checks: a `barrier()` may not sit inside an `if` (every thread must reach it), a kernel
+// with a `barrier()` may only `return` as its last statement, and a kernel with workgroup memory takes no element
+// inputs (it runs in WHOLE groups, so threads past the end of the data exist and must not read past it).
+// On the CPU a "group" has a single thread (`groupSize()` is 1), so the same kernel run once per element still
+// gives the right partial sums, one per element, which add up to the same total.
+extern func fmaxf(x: float, y: float) -> float
+
+// Each group writes the sum of its 256 numbers to partial[group].
+kernel func blockSum(index i: i32, uniform src: ptr<float>, uniform n: i32, workgroup tile: ptr<float>, writable partial: ptr<float>) -> i32 {
+    let lane: i32 = localIndex(i)
+    if (i < n) { tile[lane] = src[i] } else { tile[lane] = 0.0 }
+    barrier()
+    for (s = groupSize() / 2; s > 0; s = s / 2) {
+        if (lane < s) { tile[lane] = tile[lane] + tile[lane + s] }
+        barrier()
+    }
+    if (lane == 0) { partial[groupIndex(i)] = tile[0] }
+    return 0
+}
+
+// Each group writes the largest of its 256 numbers (the neutral value for a maximum is the first number).
+kernel func blockMax(index i: i32, uniform src: ptr<float>, uniform n: i32, workgroup tile: ptr<float>, writable partial: ptr<float>) -> i32 {
+    let lane: i32 = localIndex(i)
+    if (i < n) { tile[lane] = src[i] } else { tile[lane] = src[0] }
+    barrier()
+    for (s = groupSize() / 2; s > 0; s = s / 2) {
+        if (lane < s) { tile[lane] = fmaxf(tile[lane], tile[lane + s]) }
+        barrier()
+    }
+    if (lane == 0) { partial[groupIndex(i)] = tile[0] }
+    return 0
+}
+
+// The whole sum in ONE launch: every group adds its total into sum[0].
+kernel func total(index i: i32, uniform src: ptr<float>, uniform n: i32, workgroup tile: ptr<float>, writable sum: ptr<float>) -> i32 {
+    let lane: i32 = localIndex(i)
+    if (i < n) { tile[lane] = src[i] } else { tile[lane] = 0.0 }
+    barrier()
+    for (s = groupSize() / 2; s > 0; s = s / 2) {
+        if (lane < s) { tile[lane] = tile[lane] + tile[lane + s] }
+        barrier()
+    }
+    if (lane == 0) { atomicAddFloat(sum, 0, tile[0]) }
+    return 0
+}
+
+// How many partial results one launch over `n` numbers writes (one per group of 256).
+func groupsFor(n: i64) -> i64 {
+    return (n + 255) / 256
+}
+
+// Launches needed to shrink n numbers to one when each launch divides the count by 256 (rounding up).
+func launchCount(n: i64) -> i64 {
+    var launches: i64 = 0
+    var left: i64 = n
+    for (k = 0; k < 10; k = k + 1) {
+        if (left > 1) {
+            left = groupsFor(left)
+            launches = launches + 1
+        }
+    }
+    return launches
+}

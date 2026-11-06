@@ -1,0 +1,34 @@
+// Structs inside structs, static functions, field defaults, annotations and `@Builder`.
+//
+// A struct can hold structs and `static func`s of its own: they are named through it (`Shape.Size`, `Shape.square()`), and its own code
+// names them bare. A field may have a default (`name: string = "shape"`), which a struct literal that leaves it out takes. `@Builder` gives a
+// struct a builder: `Shape.builder().side(2).build()`. build() checks that every required field (one with no default, no container and no
+// optional) was set: a chain that visibly skips one is refused when the program is checked, and one filled in elsewhere stops when it runs.
+//
+//   polyir-check builder.poly --interp        prints `shape 2 4 [red, big] square 3 9`
+@Builder
+@Doc(text: "a square shape")
+struct Shape(side: i64, name: string = "shape", tags: mutarray<string>) {
+  static func square(side: i64) -> Shape {
+    return Shape.builder().side(side).name("square").build()
+  }
+
+  func size() -> Size {
+    return Size(area: this.side * this.side)
+  }
+
+  struct Size(area: i64)
+}
+
+// A builder handed on and filled in step by step.
+func tagged(b: Shape.Builder) -> Shape.Builder {
+  let tags: mutarray<string> = ["red", "big"]
+  return b.tags(tags)
+}
+
+func main() -> void {
+  let first: Shape = tagged(Shape.builder()).side(2).build()
+  let second: Shape = Shape.square(3)
+  let size: Shape.Size = second.size()
+  print("${first.name} ${first.side} ${first.size().area} [${first.tags[0]}, ${first.tags[1]}] ${second.name} ${second.side} ${size.area}")
+}

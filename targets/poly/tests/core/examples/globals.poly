@@ -1,0 +1,6 @@
+global counter: i64 = 0
+
+func bump() -> i64 {
+  counter = counter + 1
+  return counter
+}

@@ -1,0 +1,7 @@
+func main() -> i64 {
+  branch 5 ? yes() : no()
+  label yes():
+  return 1
+  label no():
+  return 2
+}

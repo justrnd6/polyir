@@ -1,0 +1,31 @@
+import "../Metal.poly"
+import "shared/pixels.poly"
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let source: string = metalReadFile("pixels.metal")
+  if (source == "") {
+    return 11
+  }
+  printTable(facePicture())
+  var code: i64 = scanDemo(device, source)
+  if (code != 0) {
+    return code
+  }
+  code = channelsDemo(device, source)
+  if (code != 0) {
+    return code
+  }
+  code = bitsDemo(device, source)
+  if (code != 0) {
+    return code
+  }
+  code = resizeDemo(device, source)
+  if (code != 0) {
+    return code
+  }
+  return enlargeDemo(device, source)
+}

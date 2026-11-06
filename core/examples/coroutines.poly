@@ -1,0 +1,58 @@
+// Real LLVM coroutine intrinsics (`llvm.coro.*`), surfaced as a `coro
+// func` that `yield`s values back to its caller one `.resume()` at a
+// time. AOT-ONLY — unlike every other example here, this one cannot
+// be run with `--jit`: `Jit.ensure` hands raw `.ll` text straight to
+// an in-process LLVM JIT engine with no `clang`/`opt` step at all, and
+// the mandatory `CoroSplit` legalization pass (which splits the one
+// function you write into the real `f`/`f.resume`/`f.destroy` trio)
+// only ever runs as part of `clang`'s own pipeline. Build and run it
+// for real instead:
+//
+//   polyir coroutines.poly --out /tmp/coroutines && /tmp/coroutines
+//   (prints the first 7 Fibonacci numbers: 0112358, exits 20 — their sum)
+
+extern func putchar(c: i64) -> i64
+
+// `ret` here is the YIELD type (what travels back out through each
+// `.resume()`), not the function's real LLVM return type — same
+// "the keyword changes what the trailing type means" convention
+// `closure(...)->T` already established. Completion is implicit
+// (falling off the end of the `for` loop) — a `coro func` cannot
+// contain a bare `return`.
+coro func fibonacci(count: i64) -> i64 {
+  var a: i64 = 0
+  var b: i64 = 1
+  for (i = 0; i < count; i = i + 1) {
+    yield a
+    let next: i64 = a + b
+    a = b
+    b = next
+  }
+}
+
+// `.resume()` returns the EXISTING `polyir_variant` shape (tag 0 =
+// yielded, payload = the value; tag 1 = done, no payload) — `.tag()`/
+// `.isCase(i)`/`.unwrapAt(i)` are the ordinary variant reader API,
+// not anything new. `.done()` checks completion WITHOUT resuming —
+// handy for a loop condition, used here just to confirm it agrees
+// with the final `.resume()`'s own tag.
+func main() -> i64 {
+  let fib: coro<i64> = fibonacci(7)
+  var sum: i64 = 0
+  var done: i1 = false
+  for (i = 0; i < 8 && done == false; i = i + 1) {
+    let step: variant<i64> = fib.resume()
+    if (step.isCase(1)) {
+      done = true
+    } else {
+      let value: i64 = step.unwrapAt(0)
+      putchar(48 + value)
+      sum = sum + value
+    }
+  }
+  putchar(10)
+  if (fib.done() == false) {
+    return -1
+  }
+  return sum
+}

@@ -1,0 +1,4 @@
+// A project with tasks of its own, in build.poly: `poly tasks` lists them.
+name tasks
+main src/main.poly
+targets native c python

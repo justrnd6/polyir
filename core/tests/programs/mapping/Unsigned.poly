@@ -1,0 +1,90 @@
+// `u8`, `u16`, `u32` and `u64`: unsigned integers. Each function checks one thing against the number it must give and returns 1 when
+// it does, so the program returns how many checks passed. In Java (which has no unsigned types) a u8, u16 or u32 is an `int` and a u64 a
+// `long`, and division, remainder, shifting right, comparing and widening use the `Integer` and `Long` methods made for it.
+
+struct Pixel(r: u8, g: u8, b: u8);
+
+func comparison() -> i64 {
+  let big: u32 = 4000000000
+  if (big > 3000000000 && big >= big && (big < 5) == false) { return 1 }
+  return 0
+}
+
+func division() -> i64 {
+  let big: u32 = 4000000000
+  let half: u32 = big / 2
+  let rest: u32 = big % 7
+  if (half.toI64() == 2000000000 && rest.toI64() == 3) { return 1 }
+  return 0
+}
+
+func shifting() -> i64 {
+  let big: u32 = 4000000000
+  let top: u64 = 0 - 1
+  if ((big >> 28).toI64() == 14 && (top >> 63).toI64() == 1) { return 1 }
+  return 0
+}
+
+func widening() -> i64 {
+  let big: u32 = 4000000000
+  let small: u8 = 200
+  if (big.toI64() == 4000000000 && small.toI64() == 200) { return 1 }
+  return 0
+}
+
+func wrapping() -> i64 {
+  let a: u8 = 200
+  let b: u8 = 100
+  let sum: u8 = a + b
+  let under: u8 = b - a
+  let product: u16 = 300
+  let wide: u16 = product * 300
+  if (sum.toI64() == 44 && under.toI64() == 156 && wide.toI64() == 24464) { return 1 }
+  return 0
+}
+
+func floats() -> i64 {
+  let big: u32 = 4000000000
+  if (big.toDouble().toI64() == 4000000000) { return 1 }
+  return 0
+}
+
+func largest() -> i64 {
+  let top: u64 = 0 - 1
+  if (top > 5 && top / 2 == 9223372036854775807) { return 1 }
+  return 0
+}
+
+// A hash of the kind that needs a 32-bit unsigned: multiply by a prime, wrap.
+func fnv(n: i64) -> u32 {
+  var h: u32 = 2166136261
+  for (i = 0; i < n; i = i + 1) {
+    h = (h ^ i.toU32()) * 16777619
+  }
+  return h
+}
+
+func hashing() -> i64 {
+  if (fnv(3).toI64() == 581859880) { return 1 }
+  return 0
+}
+
+func fields() -> i64 {
+  let a: Pixel = Pixel(r: 250, g: 128, b: 7)
+  let b: Pixel = Pixel(r: 250, g: 128, b: 7)
+  if (a == b && a.g.toI64() == 128 && a.r > a.b) { return 1 }
+  return 0
+}
+
+func keys() -> i64 {
+  let m: mutmap<u32, i64> = mutmap<u32, i64>(4)
+  let k: u32 = 4000000000
+  m[k] = 7
+  m[5] = 9
+  if (m[k] == 7 && m[5] == 9) { return 1 }
+  return 0
+}
+
+func main() -> i64 {
+  return comparison() + division() + shifting() + widening() + wrapping() + floats() + largest() + hashing() + fields() + keys()
+}

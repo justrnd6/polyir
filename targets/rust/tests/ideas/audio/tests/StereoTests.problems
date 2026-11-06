@@ -1,0 +1,1 @@
+targets/rust/Rust.translate:157: `extern(name, params, result)` is unsupported: this Rust keeps polyir's memory in its own types, and calls no C function

@@ -1,0 +1,89 @@
+// SOUND AS A SIGNAL. A sound is the pressure of the air at one place, measured many times a
+// second. A speaker moves its cone to reproduce that pressure curve, so the numbers we hand
+// it are simply the curve's height at evenly spaced moments: a signal (section 22 of the
+// guide). Sample number i happens at time t = i / rate seconds.
+//
+// The simplest sound, a PURE TONE, is a sine wave: height = amplitude * sin(2*pi * f * t),
+// with f the frequency in cycles per second (hertz, Hz). Every sound you can hear is a SUM
+// of such waves, and adding waves is simply adding their sample values.
+//
+// The oscillators and helpers (`sine`, `sign`, `fade`, `noteFrequency`) come from the Wave
+// library, ideas/audio/Wave.poly. These kernels compute one sample per GPU thread, so a whole second of sound (44,100
+// samples) is one launch. All the frequencies here are in Hz, all the times in seconds.
+import "../../../audio/Wave.poly"   // sine, sign, fade, noteFrequency ... (the Wave library)
+extern func sinf(x: float) -> float
+extern func floorf(x: float) -> float
+
+// ADDITIVE SYNTHESIS: a note built by adding sine waves ("partials").
+// p: 0 the sample rate      1 how many partials         2 attack time (fade in, seconds)
+//    3 release time (fade out)       4 total length (seconds)
+//    5 vibrato speed (Hz)   6 vibrato depth (radians)   7 overall volume
+//    from 8: pairs (frequency in Hz, amplitude), one per partial.
+// The ENVELOPE is a slow curve multiplied on to shape the note: it rises over the attack
+// time and falls over the release time, which avoids the click of an abrupt start or stop.
+// The VIBRATO wobbles every wave's phase a little with a slow sine (frequency modulation).
+kernel func synth(index i: i32, uniform p: ptr<float>) -> float {
+    let t: float = i.toFloat() / p[0]
+    let envelope: float = fade(t, p[2], p[3], p[4])
+    let wobble: float = p[6] * sine(p[5] * t)
+    var sum: float = 0.0
+    for (k = 0; k < p[1].toI32(); k = k + 1) {
+        let cycles: float = p[8 + 2 * k] * t
+        sum = sum + p[9 + 2 * k] * sinf(6.2831853 * (cycles - floorf(cycles)) + wobble)
+    }
+    return p[7] * envelope * sum
+}
+
+// A SQUARE WAVE made the quick way: the sign of a sine. p: 0 sample rate, 1 frequency.
+kernel func squareWave(index i: i32, uniform p: ptr<float>) -> float {
+    return sign(sine(p[1] * i.toFloat() / p[0]))
+}
+
+// The same shapes built the slow, instructive way, by ADDING SINES (their Fourier series):
+//   square    sine of 1x, 3x, 5x ... the speed, each divided by its number         (times 4/pi)
+//   sawtooth  sine of 1x, 2x, 3x ... the speed, divided by the number, signs alternating (2/pi)
+//   triangle  odd multiples only, divided by the number SQUARED, signs alternating   (8/pi^2)
+// p: 0 samples in one period   1 shape (0 square, 1 sawtooth, 2 triangle)   2 how many harmonics
+// Few harmonics give a rounded, wobbly approximation; more give sharper corners.
+kernel func partialSum(index i: i32, uniform p: ptr<float>) -> float {
+    let x: float = 6.2831853 * (i % p[0].toI32()).toFloat() / p[0]
+    var sum: float = 0.0
+    for (h = 1; h <= p[2].toI32(); h = h + 1) {
+        let number: float = h.toFloat()
+        let wave: float = sinf(number * x)
+        if (p[1] < 0.5) {
+            if (h % 2 == 1) { sum = sum + wave / number }
+        }
+        if (p[1] > 0.5 && p[1] < 1.5) {
+            if (h % 2 == 1) { sum = sum + wave / number }
+            if (h % 2 == 0) { sum = sum - wave / number }
+        }
+        if (p[1] > 1.5) {
+            if (h % 4 == 1) { sum = sum + wave / (number * number) }
+            if (h % 4 == 3) { sum = sum - wave / (number * number) }
+        }
+    }
+    if (p[1] < 0.5) { return 1.2732395 * sum }
+    if (p[1] < 1.5) { return 0.6366198 * sum }
+    return 0.8105695 * sum
+}
+
+// A MELODY: a list of notes (start time, length, frequency), mixed together by adding. Each
+// note has a little richness (its 2nd and 3rd harmonics, half and a quarter as loud) and its
+// own fade in and out. Notes that overlap in time simply add: that is how a chord is made.
+// notes: three numbers per note.   p: 0 sample rate   1 number of notes   2 volume
+kernel func melody(index i: i32, uniform notes: ptr<float>, uniform p: ptr<float>) -> float {
+    let t: float = i.toFloat() / p[0]
+    var sum: float = 0.0
+    for (n = 0; n < p[1].toI32(); n = n + 1) {
+        let start: float = notes[3 * n]
+        let length: float = notes[3 * n + 1]
+        let local: float = t - start
+        if (local >= 0.0 && local < length) {
+            let envelope: float = fade(local, 0.02, 0.08, length)
+            let f: float = notes[3 * n + 2]
+            sum = sum + envelope * (sine(f * t) + 0.5 * sine(2.0 * f * t) + 0.25 * sine(3.0 * f * t))
+        }
+    }
+    return p[2] * sum
+}

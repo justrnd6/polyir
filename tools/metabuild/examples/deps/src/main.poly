@@ -1,0 +1,12 @@
+// The checksums of a few words, with whatever library each target brings: the same answer everywhere.
+import "Checksum.poly"
+
+func main() -> i64 {
+  var total: i64 = 0
+  for (word in ["hello", "polyir", "café"]) {
+    let sum: i64 = checksum(word)
+    print("crc32(${word}) = ${str(sum)}")
+    total = (total + sum) % 1000003
+  }
+  return total % 251
+}

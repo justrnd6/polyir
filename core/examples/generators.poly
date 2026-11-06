@@ -1,0 +1,44 @@
+// for (x in gen): a loop over the values a coroutine yields, the way a Java for-each walks an Iterator.
+// The loop asks the coroutine for its next value each time round, and ends when it finishes. A `return` from
+// the body closes the coroutine before it leaves.
+
+coro func evens(limit: i64) -> i64 {
+  for (i = 0; i < limit; i = i + 2) {
+    yield i
+  }
+}
+
+// 0 + 2 + 4 + 6 + 8 = 20
+func sumOfEvens() -> i64 {
+  var total: i64 = 0
+  for (n in evens(10)) {
+    total = total + n
+  }
+  return total
+}
+
+// Stops at the first even number above `limit` (6 for 5); the coroutine is closed on the way out.
+func firstOver(limit: i64) -> i64 {
+  for (n in evens(100)) {
+    if (n > limit) {
+      return n
+    }
+  }
+  return -1
+}
+
+// Loops nest: each pair (a, b) adds a * 10 + b, for a in 0, 2, 4 and b in 0, 2: 126.
+func pairs() -> i64 {
+  var total: i64 = 0
+  for (a in evens(6)) {
+    for (b in evens(4)) {
+      total = total + a * 10 + b
+    }
+  }
+  return total
+}
+
+// 20 + 6 + 126 = 152
+func main() -> i64 {
+  return sumOfEvens() + firstOver(5) + pairs()
+}

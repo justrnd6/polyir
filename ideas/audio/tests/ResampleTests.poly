@@ -1,0 +1,93 @@
+// Resampling (ideas/audio/Resample.poly): the same sound at another sample rate.
+import "../Sound.poly"
+import "../../../core/tests/programs/Check.poly"
+
+extern func sin(x: double) -> double
+
+// A sine of `hz` lasting `seconds` at `rate` samples a second (a mono Sound).
+func sineSound(hz: float, seconds: float, rate: i64) -> Sound {
+    let s: Sound = soundNew(seconds, rate)
+    for (i = 0; i < s.count; i = i + 1) {
+        s.samples[i] = sin(6.283185307179586 * hz.toDouble() * i.toDouble() / rate.toDouble()).toFloat()
+    }
+    return s
+}
+
+func checkCountGoingUp() -> double { return offInt(resampledCount(44100, 44100, 48000), 48000) }
+
+func checkCountGoingDown() -> double { return offInt(resampledCount(1000, 8000, 4000), 500) }
+
+func checkCountRounds() -> double { return offInt(resampledCount(10, 3, 4), 13) }
+
+func checkSoundKeepsItsLength() -> double {
+    let s: Sound = sineSound(440.0, 0.5, 8000).resample(12000)
+    return offInt(s.rate, 12000) + offInt(s.count, 6000) + offInt(s.channels, 1) + off(s.seconds(), 0.5)
+}
+
+// Going UP: every new sample should be the sine's height at its own instant; the largest error over the middle of the sound.
+func checkUpsamplingFollowsTheWave() -> double {
+    let s: Sound = sineSound(440.0, 1.0, 8000).resample(12000)
+    var worst: double = 0.0
+    for (j = 1000; j < 11000; j = j + 7) {
+        let expected: double = sin(6.283185307179586 * 440.0 * j.toDouble() / 12000.0)
+        var gap: double = s.samples[j].toDouble() - expected
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > worst) { worst = gap }
+    }
+    return worst
+}
+
+// Going DOWN to a rate that cannot hold the tone: 3000 Hz at 4000 samples a second would alias (fold) to 1000 Hz at full
+// strength; the filtering in the resampler removes it instead.
+func checkDownsamplingRemovesAliases() -> double {
+    let s: Sound = sineSound(3000.0, 1.0, 8000).resample(4000)
+    return amplitudeAt(s.samples, 500, 2000, 4000, 1000.0).toDouble()
+}
+
+// A tone below the new Nyquist rate (1000 Hz, new rate 4000) survives with its full height.
+func checkDownsamplingKeepsLowTones() -> double {
+    let s: Sound = sineSound(1000.0, 1.0, 8000).resample(4000)
+    return off(amplitudeAt(s.samples, 500, 2000, 4000, 1000.0), 1.0)
+}
+
+// Up and back down again gives the original.
+func checkRoundTrip() -> double {
+    let original: Sound = sineSound(300.0, 1.0, 8000)
+    let back: Sound = original.resample(12000).resample(8000)
+    var worst: double = 0.0
+    for (j = 1000; j < 7000; j = j + 11) {
+        var gap: double = (back.samples[j] - original.samples[j]).toDouble()
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > worst) { worst = gap }
+    }
+    return worst
+}
+
+// The average level (a "DC" signal) is not changed.
+func checkConstantStaysConstant() -> double {
+    let s: Sound = soundNew(0.5, 8000)
+    for (i = 0; i < s.count; i = i + 1) { s.samples[i] = 1.0 }
+    let up: Sound = s.resample(22050)
+    let down: Sound = s.resample(3000)
+    return off(up.samples[up.count / 2], 1.0) + off(down.samples[down.count / 2], 1.0)
+}
+
+// Each channel is resampled on its own.
+func checkStereoResampling() -> double {
+    let left: Sound = sineSound(440.0, 0.5, 8000)
+    let right: Sound = sineSound(880.0, 0.5, 8000)
+    let out: Sound = soundStereo(left, right).resample(16000)
+    return offInt(out.channels, 2) + offInt(out.count, 8000) + off(amplitudeAt(out.channel(0).samples, 2000, 4000, 16000, 440.0), 1.0) + off(amplitudeAt(out.channel(1).samples, 2000, 4000, 16000, 880.0), 1.0)
+}
+
+func checkSameRateIsACopy() -> double {
+    let s: Sound = sineSound(440.0, 0.1, 8000)
+    let copy: Sound = s.resample(8000)
+    var worst: double = 0.0
+    for (i = 100; i < 700; i = i + 1) {
+        var gap: double = (copy.samples[i] - s.samples[i]).toDouble()
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > worst) { worst = gap }
+    }
+    return worst + offInt(copy.count, s.count)
+}

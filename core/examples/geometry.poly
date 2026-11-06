@@ -1,0 +1,13 @@
+// `import "path.poly"` — a plain file path, resolved relative to THIS
+// file's own directory (C's `#include "…"`, not a project/module
+// system: polyir keeps one flat global namespace, like LLVM IR itself —
+// a name collision across imported files is a compile error, not
+// something to qualify away).
+//
+//   polyir run geometry.poly --entry rectArea --args "3 4"   -> 12
+
+import "shapes.poly"
+
+func rectArea(w: i64, h: i64) -> i64 {
+  return area(Rect(width: w, height: h))
+}

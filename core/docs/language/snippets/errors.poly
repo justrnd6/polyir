@@ -1,0 +1,10 @@
+func distance(a: i64, b: i64) -> i64 {
+    return a - b
+}
+
+func main() -> i64 {
+    let total: i64 = 0
+    let x: float = 1.5
+    let bad: i64 = total + x
+    return distance(totl) + bad
+}

@@ -1,0 +1,48 @@
+extern func sin(x: double) -> double
+extern func cos(x: double) -> double
+extern func calloc(count: i64, size: i64) -> i64
+
+func resampledCount(count: i64, rate: i64, newRate: i64) -> i64 {
+  return (count * newRate + rate / 2) / rate
+}
+
+func resampleWindow(u: double) -> double {
+  let angle: double = 3.141592653589793 * u
+  let c: double = cos(angle)
+  return 0.42 + 0.5 * c + 0.08 * (2.0 * c * c - 1.0)
+}
+
+func resampleSinc(d: double, cutoff: double) -> double {
+  if (d > 0.0 - 0.000001 && d < 0.000001) {
+    return cutoff
+  }
+  return sin(3.141592653589793 * cutoff * d) / (3.141592653589793 * d)
+}
+
+func resampleAt(input: ptr<float>, count: i64, p: double, cutoff: double, reach: double) -> double {
+  let first: i64 = (p - reach).toI64()
+  let last: i64 = (p + reach).toI64() + 1
+  var sum: double = 0.0
+  for (k = first; k <= last; k = k + 1) {
+    if (k >= 0 && k < count) {
+      let d: double = p - k.toDouble()
+      sum = sum + input[k].toDouble() * resampleSinc(d, cutoff) * resampleWindow(d / reach)
+    }
+  }
+  return sum
+}
+
+func resampleArray(input: ptr<float>, count: i64, rate: i64, newRate: i64) -> ptr<float> {
+  let total: i64 = resampledCount(count, rate, newRate)
+  let out: ptr<float> = calloc(total + 1, 4).toPtr()
+  var cutoff: double = newRate.toDouble() / rate.toDouble()
+  if (cutoff > 1.0) {
+    cutoff = 1.0
+  }
+  let reach: double = 16.0 / cutoff
+  for (j = 0; j < total; j = j + 1) {
+    let p: double = j.toDouble() * rate.toDouble() / newRate.toDouble()
+    out[j] = resampleAt(input, count, p, cutoff, reach).toFloat()
+  }
+  return out
+}

@@ -1,0 +1,7 @@
+kernel func pick(x: float, uniform mode: i64) -> float {
+  return match (mode) {
+    0 => x
+    1 => x + x
+    else => x - x
+  }
+}

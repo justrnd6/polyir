@@ -1,0 +1,2 @@
+func f(a: i64, a: i64) -> i64 { return a }
+func main() -> i64 { return f(1, 2) }

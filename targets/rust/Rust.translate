@@ -1,0 +1,628 @@
+# Rust
+source: polyir
+target: rust
+style: indent 4, braces same-line, names keep, paths _, qualify full, modules flat, generics copies, extension rs
+
+// A checked .poly file as one Rust file that needs only the standard library. What polyir shares (a struct, a list, a map)
+// is a `Ref`, an `Rc<RefCell<T>>`: every name holding it reads and changes one value, and a read clones what it reads. A
+// module's declarations are named by their path (`Geometry_Point`) and a generic is written as its copies (`Box_i64`). A
+// struct's methods are a trait on its `RefCell`, as an interface is, so `p.area()` reaches either. A closure is an
+// `Rc<dyn Fn>`, given clones of what it captures (a variable it shares and changes is a `Ref`). A `throw` is a panic a
+// `try` catches. A whole number that overflows panics in a debug build (`-C overflow-checks=off` wraps it, as polyir does).
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+// The program's `main` is `main_`; Rust's own `main` gives its number back as the exit status.
+program(support, items, main) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  fn main() {
+      std::process::exit(main_() as i32);
+  }
+program(support, items, main: void) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  fn main() {
+      main_();
+  }
+any.include(value)                  :=
+
+module(name, items)                 := {items}
+
+// A struct is shared as a `Ref`; `new` makes one. Two are equal when their fields are, and its methods are a trait on its
+// `RefCell` (an interface's on the interface's own trait).
+struct(name, typeParams, fields, methods, nested, statics) :=
+  #[derive(Clone)]
+  pub struct {name} {
+      {fields}
+  }
+
+  impl PartialEq for {name} {
+      fn eq(&self, other: &Self) -> bool {
+          true
+              {fields.equal}
+      }
+  }
+
+  impl {name} {
+      pub fn new({fields.param}) -> Ref<{name}> {
+          share({name} { {fields.self} })
+      }
+  }
+
+  pub trait {name}Methods {
+      {methods.signature}
+  }
+
+  impl {name}Methods for RefCell<{name}> {
+      {methods}
+  }
+
+  {statics}
+
+  {nested}
+  uses: core
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  #[derive(Clone)]
+  pub struct {name} {
+      {fields}
+  }
+
+  impl PartialEq for {name} {
+      fn eq(&self, other: &Self) -> bool {
+          true
+              {fields.equal}
+      }
+  }
+
+  impl {name} {
+      pub fn new({fields.param}) -> Ref<{name}> {
+          share({name} { {fields.self} })
+      }
+  }
+
+  pub trait {name}Methods {
+      {methods.signature}
+  }
+
+  impl {name}Methods for RefCell<{name}> {
+      {methods}
+  }
+
+  {traits}
+
+  {statics}
+
+  {nested}
+  uses: core
+
+field(name, type)                   := pub {name}: {type},
+field(name, type, value)            := pub {name}: {type},
+field.param(name, type)             := {name}: {type}
+field.param(name, type, value)      := {name}: {type}
+field.self(name, type)              := {name}
+field.self(name, type, value)       := {name}
+field.equal(name, type)             := && self.{name} == other.{name}
+field.equal(name, type, value)      := && self.{name} == other.{name}
+// A closure, or an interface value, is only the same as itself; a variant compares by its case.
+field.equal(name, type: closure isInterface) := && Rc::ptr_eq(&self.{name}, &other.{name})
+field.equal(name, type: closure isInterface, value) := && Rc::ptr_eq(&self.{name}, &other.{name})
+field.equal(name, type: variant)    := && self.{name}.tag == other.{name}.tag
+field.equal(name, type: variant, value) := && self.{name}.tag == other.{name}.tag
+
+// A method reaches its struct as `self`, the `RefCell` that holds it; one that implements an interface is in that trait.
+method(name, params, result, body)  := fn {name}(&self, {params}) -> {result} {body}
+method(name, params, result, body, overrides) :=
+method.signature(name, params, result, body) := fn {name}(&self, {params}) -> {result};
+method.signature(name, params, result, body, overrides) :=
+// Each interface the struct implements is a trait implemented apart, with the methods that implement it.
+trait(name, methods) :=
+  impl {name} for RefCell<{owner}> {
+      {methods.override}
+  }
+method.override(name, params, result, body) := fn {name}(&self, {params}) -> {result} {body}
+static(name, params, result, body)  := pub fn {name}({params}) -> {result} {body}
+func(name, typeParams, params, result, body) := pub fn {name}({params}) -> {result} {body}
+coro(name, params, yields, body)    := unsupported "Rust has no coroutines to write here (its generators are not stable), and a Ref cannot go to a thread"
+kernel(stage, name, params, result, body) := pub fn {name}({params}) -> {result} {body}
+param(name, type)                   := {name}: {type}
+param.bare(name, type)              := {name}
+
+interface(name, methods) :=
+  pub trait {name} {
+      {methods}
+  }
+signature(name, params, result)     := fn {name}(&self, {params}) -> {result};
+
+// The C library's math has Rust methods; putchar and getchar are written here; any other C function Rust cannot call safely.
+extern(name, params, result)        := unsupported "this Rust keeps polyir's memory in its own types, and calls no C function"
+extern(name: sin cos tan sqrt floor ceil exp abs, params, result) := fn {name}({params}) -> {result} { {params.bare}.{name}() }
+extern(name: sinf, params, result)  := fn sinf({params}) -> {result} { {params.bare}.sin() }
+extern(name: cosf, params, result)  := fn cosf({params}) -> {result} { {params.bare}.cos() }
+extern(name: tanf, params, result)  := fn tanf({params}) -> {result} { {params.bare}.tan() }
+extern(name: sqrtf, params, result) := fn sqrtf({params}) -> {result} { {params.bare}.sqrt() }
+extern(name: floorf, params, result) := fn floorf({params}) -> {result} { {params.bare}.floor() }
+extern(name: ceilf, params, result) := fn ceilf({params}) -> {result} { {params.bare}.ceil() }
+extern(name: expf, params, result)  := fn expf({params}) -> {result} { {params.bare}.exp() }
+extern(name: labs, params, result)  := fn labs({params}) -> {result} { {params.bare}.abs() }
+extern(name: llabs, params, result) := fn llabs({params}) -> {result} { {params.bare}.abs() }
+extern(name: log, params, result)   := fn log({params}) -> {result} { {params.bare}.ln() }
+extern(name: logf, params, result)  := fn logf({params}) -> {result} { {params.bare}.ln() }
+extern(name: fabs, params, result)  := fn fabs({params}) -> {result} { {params.bare}.abs() }
+extern(name: fabsf, params, result) := fn fabsf({params}) -> {result} { {params.bare}.abs() }
+extern(name: pow, params, result)   := fn pow(x: f64, y: f64) -> f64 { x.powf(y) }
+extern(name: powf, params, result)  := fn powf(x: f32, y: f32) -> f32 { x.powf(y) }
+extern(name: fmax, params, result)  := fn fmax(x: f64, y: f64) -> f64 { x.max(y) }
+extern(name: fmaxf, params, result) := fn fmaxf(x: f32, y: f32) -> f32 { x.max(y) }
+extern(name: fmin, params, result)  := fn fmin(x: f64, y: f64) -> f64 { x.min(y) }
+extern(name: fminf, params, result) := fn fminf(x: f32, y: f32) -> f32 { x.min(y) }
+extern(name: putchar, params, result) := fn putchar({params}) -> {result} { print!("{}", {params.bare} as u8 as char); {params.bare} }
+extern(name: getchar, params, result) :=
+  fn getchar() -> {result} {
+      use std::io::Read;
+      let mut byte = [0u8];
+      if std::io::stdin().read(&mut byte).unwrap_or(0) == 1 { byte[0] as {result} } else { -1 }
+  }
+
+// A global is a thread-local cell, read and written through `with`.
+global(name, type, value)           := thread_local! { static {name}: RefCell<{type}> = RefCell::new({value}); }
+  uses: refcell
+import(module)                      := unsupported "Rust has no modules of another language to import"
+import(module, alias)               := unsupported "Rust has no modules of another language to import"
+// An imported .poly file is a module of its own, its file found by its path.
+use(name, path, names)              :=
+use.include(name, path, names) :=
+  #[path = "{path}.rs"]
+  mod {name};
+  use {name}::{{names}};
+
+## statements
+let(name, type, value)              := let {name}: {type} = {value};
+var(name, type)                     := let mut {name}: {type} = {type.zero};
+// A struct has no value to start with: the variable is given one before it is read.
+var(name, type: struct)             := let mut {name}: {type};
+var(name, type, value)              := let mut {name}: {type} = {value};
+// A variable a closure shares and changes is a Ref, so the closure and the code around it see one value.
+var(name, type, boxed)              := let {name}: Ref<{type}> = share({type.zero});
+  uses: core
+var(name, type, value, boxed)       := let {name}: Ref<{type}> = share({value});
+  uses: core
+// A value is worked out before it is stored, so no borrow of the place is held while it is.
+assign(target, value)               := {target.place} = {value};
+assign(target: get boxed, value) :=
+  let assigned = {value};
+  {target.place} = assigned;
+assign(target: global, value)       := {target.ref}.with(|cell| *cell.borrow_mut() = {value});
+store(object, index, value) :=
+  let stored = {value};
+  {object.ref}.borrow_mut()[{index} as usize] = stored;
+store(object: map mutmap, index, value) :=
+  let stored = {value};
+  {object.ref}.borrow_mut().insert({index}, stored);
+store(object: vec, index, value)    := {object.place}[{index} as usize] = {value};
+store(object: sparse, index, value) :=
+  let stored = {value};
+  {object.ref}.borrow_mut().set({index}, 0, stored);
+store(object: grid matrix tensor, index, value) :=
+  let stored = {value};
+  {object.ref}.borrow_mut().set(&[{index}], stored);
+store(object, indices, value) :=
+  let stored = {value};
+  {object.ref}.borrow_mut().set(&[{indices}], stored);
+store(object: sparse, indices, value) :=
+  let stored = {value};
+  {object.ref}.borrow_mut().set({indices}, stored);
+expr(value)                         := {value.statement};
+if(cond, then)                      := if {cond} {then}
+if(cond, then, else)                := if {cond} {then} else {else}
+if(cond, then, elseIf)              := if {cond} {then} else {elseIf}
+while(cond, body)                   := while {cond} {body}
+// A for loop's counters are declared before it, and its steps end each turn.
+for(counters, cond, steps, body) :=
+  {
+      {counters.declare}
+      while {cond} {
+          {body}
+          {steps.assign}
+      }
+  }
+for(counters, cond, steps, body, usedAfter) := lower
+counter(name, type, value)          := let mut {name}: {type} = {value}
+counter.declare(name, type, value)  := let mut {name}: {type} = {value};
+step(name, value)                   := {name} = {value}
+step.assign(name, value)            := {name} = {value};
+// A walk takes the items as they are first (so the body may change the collection), then goes over them.
+foreach(name, source, body) :=
+  let {name}_items = {source.ref}.borrow().clone();
+  for {name} in {name}_items {body}
+foreach(name, source: map mutmap, body) :=
+  let {name}_keys: Vec<_> = {source.ref}.borrow().keys().cloned().collect();
+  for {name} in {name}_keys {body}
+foreach(name, source: set mutset, body) :=
+  let {name}_keys: Vec<_> = {source.ref}.borrow().iter().cloned().collect();
+  for {name} in {name}_keys {body}
+foreach(name, source: vec, body)    := for {name} in {source} {body}
+return                              := return;
+return(value)                       := return {value};
+return(inCoroutine)                 := return;
+// A `try` runs its body as a closure that may panic with a Thrown (Thrown.rs); any other panic goes on.
+try(body, name, handler) :=
+  let tried = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {body}));
+  if let Err(caught) = tried {
+      let {name}: i64 = thrown_code(caught);
+      {handler}
+  }
+  uses: thrown
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  let tried = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {body}));
+  if let Err(caught) = tried {
+      {cleanup}
+      std::panic::resume_unwind(caught);
+  }
+throw(value)                        := throw_code({value});
+  uses: thrown
+yield(value)                        := unsupported "Rust has no coroutines to write here (its generators are not stable), and a Ref cannot go to a thread"
+// A switch of blocks, which `match` and `switch` lower to: Rust's `match` for whole numbers and flags, with `_` for what no
+// arm takes; a string or a sum is written as its `if` chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool, arms) :=
+  match {value} {
+      {arms}
+      _ => {}
+  }
+select(value: int bool, arms, else) :=
+  match {value} {
+      {arms}
+      _ => {else}
+  }
+arm(keys, body)                     := {keys| | } => {body}
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the arms of a match on `label` in a loop; each arm ends with a jump or a return.
+machine(state, cases) :=
+  loop {
+      match {state} {
+          {cases}
+          _ => unreachable!(),
+      }
+  }
+case(state, number, body)           := {number} => {body}
+jump(state, number) :=
+  {state} = {number};
+  continue;
+
+## expressions
+int(value)                          := {value}
+float(value)                        := {value}
+float(value: float)                 := {value}f32
+bool(value)                         := {value}
+string(value)                       := String::from("{value}")
+unit                                := ()
+// A name is read as a clone, so the value it holds stays its own; a number or a flag is copied as it is.
+name(name)                          := {name}
+name(name, type)                    := {name}.clone()
+name(name, type: number bool)       := {name}
+name(name, type, boxed)             := {name}.borrow().clone()
+name(name, type, global)            := {name}.with(|cell| cell.borrow().clone())
+// Inside a closure, what it captured is its own clone (`before:` the closure moves it in).
+name(name, type, captured)          := {name}_moved.clone()
+name(name, type: number bool, captured) := {name}_moved
+name(name, type, boxed, captured)   := {name}_moved.borrow().clone()
+this                                := self
+funcref(name)                       := {name}
+
+binary(left, op, right)             := {left} {op} {right}
+binary(left: string, op: +, right)  := format!("{}{}", {left}, {right})
+binary(left: array mutarray, op: +, right) := share([{left.ref}.borrow().clone(), {right.ref}.borrow().clone()].concat())
+  uses: core
+unary(op, operand)                  := {op}{operand}
+
+cast(value, type)                   := ({value} as {type})
+cast(value, type: bool)             := ({value} != 0)
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := if {cond} { {then} } else { {else} }
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+// A method is reached through the Rc and the RefCell, as a trait's: `p.area()`.
+methodcall(object, name, args)      := {object.ref}.{name}({args})
+invoke(callee, args)                := ({callee.ref})({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object.ref}.borrow().{name}.clone()
+get(object, name, type: number bool) := {object.ref}.borrow().{name}
+
+// A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := {object.ref}.borrow()[{index} as usize].clone()
+index(object: map mutmap, index, type) := {object.ref}.borrow().get(&{index}).cloned().unwrap_or_else(|| {type.zero})
+index(object: vec, index, type)     := {object.ref}[{index} as usize]
+index(object: sparse, index, type)  := {object.ref}.borrow().get({index}, 0)
+index(object: grid matrix tensor, index, type) := {object.ref}.borrow().get(&[{index}])
+index(object, indices, type)        := {object.ref}.borrow().get(&[{indices}])
+index(object: sparse, indices, type) := {object.ref}.borrow().get({indices})
+
+new(name, values)                   := {name}::new({values})
+new(name, typeArgs, values)         := {name}::new({values})
+init(name, value)                   := {value}
+list(values, type)                  := share(vec![{values}])
+  uses: core
+vec(values, type)                   := [{values}]
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+// A closure moves in its own clones of what it captures, made just before it.
+closure(params, result, body, type) := Rc::new(move |{params}| -> {result} {body}) as {type}
+  before: {captures.moved}
+  uses: rc
+capture.moved(name, type, value)    := let {name}_moved = {value.ref}.clone();
+// A boxed variable's clone is of its Ref, so the closure shares the one value.
+capture.moved(name, type, value: boxed) := let {name}_moved = {value.box}.clone();
+name.box(name, boxed)               := {name}
+name.box(name, boxed, captured)     := {name}_moved
+lambda(params, value)               := lower
+some(type, value)                   := Some({value})
+none(type)                          := None
+ok(type, value)                     := Ok({value})
+err(type, value)                    := Err({value})
+variant(type, case, value)          := Variant::new({case}, {value})
+  uses: variant
+interp(pieces)                      := lower
+text(value)                         := String::from("{value}")
+hole(value)                         := {value}
+
+// A value read as it is, not cloned: what a method, a field or an element is reached through, and a place to assign.
+any.ref(value)                      := {value}
+name.ref(name)                      := {name}
+name.ref(name, captured)            := {name}_moved
+name.ref(name, boxed)               := (*{name}.borrow())
+name.ref(name, boxed, captured)     := (*{name}_moved.borrow())
+any.place(value)                    := {value}
+name.place(name)                    := {name}
+name.place(name, boxed)             := *{name}.borrow_mut()
+name.place(name, captured)          := {name}_moved
+name.place(name, boxed, captured)   := *{name}_moved.borrow_mut()
+get.place(object, name)             := {object.ref}.borrow_mut().{name}
+
+## builtins
+// Sizes are i64 in the program; a string counts its bytes.
+len(object)                         := ({object.ref}.borrow().len() as i64)
+len(object: string vec)             := ({object.ref}.len() as i64)
+len(object: sparse)                 := ({object.ref}.borrow().cells.len() as i64)
+capacity(object)                    := ({object.ref}.borrow().len() as i64)
+capacity(object: vec)               := ({object.ref}.len() as i64)
+rows(object)                        := {object.ref}.borrow().dims[0]
+cols(object)                        := {object.ref}.borrow().dims[1]
+dim(object, axis)                   := {object.ref}.borrow().dims[{axis} as usize]
+
+// A push is given its value before the list is borrowed; one used as a value gives the list.
+push(object, value)                 := { let pushed = {value}; {object.ref}.borrow_mut().push(pushed); {object.ref}.clone() }
+push.statement(object, value)       := { let pushed = {value}; {object.ref}.borrow_mut().push(pushed) }
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := ({value} as i64)
+hash(value: string)                 := hash_text(&{value})
+  uses: hashText
+
+shuffle(object, lanes)              := unsupported "this Rust has no vector lanes to shuffle"
+atomicLoad(object, order)           := unsupported "this Rust keeps polyir's memory in its own types, not in C's"
+atomicStore(object, value, order)   := unsupported "this Rust keeps polyir's memory in its own types, not in C's"
+atomicRmw(object, op, value, order) := unsupported "this Rust keeps polyir's memory in its own types, not in C's"
+cmpxchg(object, expected, value, success, failure) := unsupported "this Rust keeps polyir's memory in its own types, not in C's"
+fence(order)                        := std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst)
+
+// A variant is a Variant (the number of its case and its value), an `either` a Result, an optional an Option.
+tag(object)                         := {object.ref}.tag
+isCase(object, case)                := ({object.ref}.tag == {case})
+unwrapAt(object, case, type)        := {object.ref}.get::<{type}>()
+isOk(object)                        := {object.ref}.is_ok()
+isErr(object)                       := {object.ref}.is_err()
+unwrapOk(object)                    := {object.ref}.clone().ok().unwrap()
+unwrapErr(object)                   := {object.ref}.clone().err().unwrap()
+isSome(object)                      := {object.ref}.is_some()
+isNone(object)                      := {object.ref}.is_none()
+unwrap(object)                      := {object.ref}.clone().unwrap()
+
+resume(object)                      := unsupported "Rust has no coroutines to write here"
+done(object)                        := unsupported "Rust has no coroutines to write here"
+close(object)                       := unsupported "Rust has no coroutines to write here"
+yielded(value)                      := unsupported "Rust has no coroutines to write here"
+
+// `copy`, `freeze` and `thaw` make a new list, map, set, grid or struct holding the same.
+copy(object)                        := share({object.ref}.borrow().clone())
+  uses: core
+copy(object: vec)                   := {object}
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := { let mut items = {object.ref}.borrow().clone(); items.push({value}); share(items) }
+  uses: core
+with(object: set mutset, value)     := { let mut items = {object.ref}.borrow().clone(); items.insert({value}); share(items) }
+  uses: core
+with(object, key, value)            := { let mut items = {object.ref}.borrow().clone(); items.insert({key}, {value}); share(items) }
+  uses: core
+has(object, key)                    := {object.ref}.borrow().contains(&{key})
+has(object: map mutmap, key)        := {object.ref}.borrow().contains_key(&{key})
+add(object, value)                  := {object.ref}.borrow_mut().insert({value})
+remove(object, key)                 := {object.ref}.borrow_mut().remove(&{key})
+remove(object: map mutmap, key)     := {object.ref}.borrow_mut().remove(&{key}).is_some()
+truncate(object, size)              := { {object.ref}.borrow_mut().truncate({size} as usize); {object.ref}.clone() }
+
+// `str` writes a value (a flag as `true`, a char as its byte, a float with six places); `print` writes it and a line's end.
+str(value)                          := {value}.to_string()
+str(value: string)                  := {value}
+str(value: float double)            := format!("{:.6}", {value})
+str(value: i8 u8)                   := (({value} as u8) as char).to_string()
+charAt(object, index)               := text_byte(&{object}, {index})
+  uses: text
+slice(object, from, to)             := text_slice(&{object}, {from}, {to})
+  uses: text
+find(object, part, from)            := text_find(&{object}, &{part}, {from})
+  uses: text
+print(value)                        := println!("{}", {value})
+fail(value)                         := fail(&{value})
+  uses: fail
+
+## types
+i8                                  := i8
+i16                                 := i16
+i32                                 := i32
+i64                                 := i64
+u8                                  := u8
+u16                                 := u16
+u32                                 := u32
+u64                                 := u64
+bool                                := bool
+float                               := f32
+double                              := f64
+string                              := String
+void                                := ()
+struct(name)                        := Ref<{name}>
+  uses: core
+// An interface value is the struct's RefCell as the interface's trait.
+struct(name, isInterface)           := Rc<dyn {name}>
+  uses: rc
+instance(name, args)                := Ref<{name}>
+  uses: core
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}<{args}>
+array(elem)                         := Ref<Vec<{elem}>>
+  uses: core
+mutarray(elem)                      := Ref<Vec<{elem}>>
+  uses: core
+map(key, value)                     := Ref<HashMap<{key}, {value}>>
+  uses: core, hashmap
+mutmap(key, value)                  := Ref<HashMap<{key}, {value}>>
+  uses: core, hashmap
+// A struct (a RefCell inside) and a float have no hash, so neither keys a map or a set here.
+map(key: struct float double, value) := unsupported "a struct or a float has no hash in Rust to key a map by"
+mutmap(key: struct float double, value) := unsupported "a struct or a float has no hash in Rust to key a map by"
+set(elem)                           := Ref<HashSet<{elem}>>
+  uses: core, hashset
+mutset(elem)                        := Ref<HashSet<{elem}>>
+  uses: core, hashset
+set(elem: struct float double)      := unsupported "a struct or a float has no hash in Rust to key a set by"
+mutset(elem: struct float double)   := unsupported "a struct or a float has no hash in Rust to key a set by"
+optional(elem)                      := Option<{elem}>
+either(ok, err)                     := Result<{ok}, {err}>
+variant(cases)                      := Variant
+  uses: variant
+closure(params, result)             := Rc<dyn Fn({params}) -> {result}>
+  uses: rc
+// A function as a value is a function pointer.
+func(params, result)                := fn({params}) -> {result}
+ptr(elem)                           := Ref<Vec<{elem}>>
+  uses: core
+ptr(elem: func)                     := {elem}
+coro(elem)                          := unsupported "Rust has no coroutines to write here (its generators are not stable), and a Ref cannot go to a thread"
+vec(elem, size)                     := [{elem}; {size}]
+matrix(elem, size)                  := Ref<Grid<{elem}>>
+  uses: grid
+fixed(elem, size)                   := Ref<Vec<{elem}>>
+  uses: core
+buffer(elem, size)                  := Ref<Vec<{elem}>>
+  uses: core
+grid(elem, rows, cols)              := Ref<Grid<{elem}>>
+  uses: grid
+tensor(elem, dims)                  := Ref<Grid<{elem}>>
+  uses: grid
+sparse(elem)                        := Ref<Sparse<{elem}>>
+  uses: sparse
+
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := 0
+bool.zero                           := false
+float.zero                          := 0.0f32
+double.zero                         := 0.0
+string.zero                         := String::new()
+struct.zero(name)                   := unreachable!("a struct has no zero value here")
+optional.zero(elem)                 := None
+either.zero(ok, err)                := unreachable!("an either has no zero value here")
+variant.zero(cases)                 := Variant::new(0, ())
+  uses: variant
+closure.zero(params, result)        := unreachable!("a closure has no zero value here")
+func.zero(params, result)           := unreachable!("a function has no zero value here")
+vec.zero(elem, size)                := [{elem.zero}; {size}]
+array.zero(elem)                    := share(Vec::new())
+mutarray.zero(elem)                 := share(Vec::new())
+ptr.zero(elem)                      := share(Vec::new())
+map.zero(key, value)                := share(HashMap::new())
+mutmap.zero(key, value)             := share(HashMap::new())
+set.zero(elem)                      := share(HashSet::new())
+mutset.zero(elem)                   := share(HashSet::new())
+fixed.zero(elem, size)              := share(vec![{elem.zero}; {size} as usize])
+buffer.zero(elem, size)             := share(vec![{elem.zero}; {size} as usize])
+grid.zero(elem, rows, cols)         := Grid::new(vec![{rows}, {cols}], {elem.zero})
+matrix.zero(elem, size)             := Grid::new(vec![{size}, {size}], {elem.zero})
+tensor.zero(elem, dims)             := Grid::new(vec![{dims}], {elem.zero})
+sparse.zero(elem)                   := Sparse::new({elem.zero})
+
+## operators
+=== := ==
+!== := !=
+~ := !
+// Rust's comparisons bind more loosely than its bit operators, and do not chain.
+levels: ||, &&, == != < <= > >=, |, ^, &, << >>, + -, * / %, as
+apart: == != < <= > >=
+
+## reserved
+// Rust's own words, and the names its helpers and this page's code use: a name that is one of them gets a _ after it.
+as break const continue crate else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self
+static struct super trait true type unsafe use where while async await dyn abstract become box do final macro override priv
+typeof unsized virtual yield try union main this assigned stored pushed items tried caught cell other
+Ref share fail Thrown throw_code thrown_code text_byte text_slice text_find hash_text Variant Grid Sparse Rc RefCell HashMap
+HashSet String Vec Option Some None Ok Err Result Box
+
+## imports
+// Each is written once at the top when a rule or a support file that uses it is written.
+rc := use std::rc::Rc;
+refcell := use std::cell::RefCell;
+hashmap := use std::collections::HashMap;
+hashset := use std::collections::HashSet;
+
+## support
+// Each file is written after the imports and files its `uses:` line names.
+core := runtime/Core.rs
+  uses: rc, refcell
+fail := runtime/Fail.rs
+thrown := runtime/Thrown.rs
+text := runtime/Text.rs
+hashText := runtime/HashText.rs
+variant := runtime/Variant.rs
+  uses: rc
+grid := runtime/Grid.rs
+  uses: core
+sparse := runtime/Sparse.rs
+  uses: core
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code.
+line := //# from {file}:{line}:{column} {code}

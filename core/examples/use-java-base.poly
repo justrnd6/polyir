@@ -1,0 +1,5 @@
+// Imports the hand-written declarations of a few java.base classes and checks them: `polyir use-java-base.poly --analyze`.
+// A native build refuses a program that uses one of them (there is no native binding); this one only imports them.
+import "../../targets/java/java.base.d.poly"
+
+func main() -> i64 { return 0 }

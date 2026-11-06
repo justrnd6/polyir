@@ -1,0 +1,20 @@
+$ --analyze
+exit 0
+warning:
+  lint_basic.poly:2:7: 'x' is declared `var` but never reassigned in 'main' — use `let` instead
+ok
+$ --analyze --strict
+exit 1
+lint failed:
+  lint_basic.poly:2:7: 'x' is declared `var` but never reassigned in 'main' — use `let` instead
+$ --emit-hir-json
+exit 0
+warning:
+  lint_basic.poly:2:7: 'x' is declared `var` but never reassigned in 'main' — use `let` instead
+[{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HVarDecl","name":"x","ty":{"k":"HInt","bits":64},"init":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[2,16]},"at":[2,7]},{"k":"HVarDecl","name":"y","ty":{"k":"HInt","bits":64},"init":{"k":"HConstInt","value":2,"ty":{"k":"HInt","bits":64},"at":[3,16]},"at":[3,7]},{"k":"HAssign","target":{"k":"HLoadSlot","name":"y","ty":{"k":"HInt","bits":64},"at":[4,3]},"value":{"k":"HBinary","op":"Add","left":{"k":"HLoadSlot","name":"y","ty":{"k":"HInt","bits":64},"at":[4,7]},"right":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[4,11]},"ty":{"k":"HInt","bits":64},"at":[4,9]},"at":[4,3]},{"k":"HReturn","value":{"k":"HBinary","op":"Add","left":{"k":"HLoadSlot","name":"x","ty":{"k":"HInt","bits":64},"at":[5,10]},"right":{"k":"HLoadSlot","name":"y","ty":{"k":"HInt","bits":64},"at":[5,14]},"ty":{"k":"HInt","bits":64},"at":[5,12]},"at":[5,12]}],"isCoroutine":false,"at":[1,6]}]
+$ --emit-msl
+exit 1
+warning:
+  lint_basic.poly:2:7: 'x' is declared `var` but never reassigned in 'main' — use `let` instead
+kernel check failed:
+  no `kernel func` found

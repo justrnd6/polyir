@@ -1,0 +1,894 @@
+import "Check.poly"
+
+struct Bag(items: mutarray<i64>, total: i64) {
+}
+
+struct Pt(x: i64, y: i64) {
+}
+
+func pushThree(xs: mutarray<i64>) -> i64 {
+  xs.push(3)
+  return xs.len()
+}
+
+func pushMany(xs: mutarray<i64>, count: i64) -> i64 {
+  for (i = 0; i < count; i = i + 1) {
+    xs.push(i * 2)
+  }
+  return xs.len()
+}
+
+func checkAPushInsideAFunctionIsSeenByTheCaller() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(1)
+  pushThree(xs)
+  return offInt(xs.len(), 2) + offInt(xs[1], 3)
+}
+
+func checkManyPushesInsideAFunctionLeaveTheCallerValid() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(7)
+  pushMany(xs, 100)
+  return offInt(xs.len(), 101) + offInt(xs[0], 7) + offInt(xs[1], 0) + offInt(xs[100], 198)
+}
+
+func checkTwoNamesForOneDarrayShareIt() -> double {
+  let a: mutarray<i64> = mutarray<i64>()
+  let b: mutarray<i64> = a
+  a.push(5)
+  b.push(6)
+  return offInt(a.len(), 2) + offInt(b.len(), 2) + offInt(a[1], 6) + offInt(b[0], 5)
+}
+
+func checkAnElementWrittenInAFunctionIsSeenByTheCaller() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(1)
+  xs.push(2)
+  overwriteFirst(xs, 40)
+  return offInt(xs[0], 40) + offInt(xs[1], 2)
+}
+
+func overwriteFirst(xs: mutarray<i64>, value: i64) -> i64 {
+  xs[0] = value
+  return 0
+}
+
+func makeFilled(count: i64) -> mutarray<i64> {
+  let xs: mutarray<i64> = mutarray<i64>()
+  for (i = 0; i < count; i = i + 1) {
+    xs.push(i + 1)
+  }
+  return xs
+}
+
+func checkAReturnedDarrayIsTheOneTheFunctionBuilt() -> double {
+  let xs: mutarray<i64> = makeFilled(4)
+  xs.push(50)
+  return offInt(xs.len(), 5) + offInt(xs[3], 4) + offInt(xs[4], 50)
+}
+
+func checkAStructFieldIsTheSameDarray() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  let bag: Bag = Bag(items: xs, total: 0)
+  xs.push(8)
+  bag.items.push(9)
+  return offInt(bag.items.len(), 2) + offInt(xs.len(), 2) + offInt(bag.items[1], 9)
+}
+
+func checkAMethodStylePushOnAFieldWorks() -> double {
+  let bag: Bag = Bag(items: mutarray<i64>(), total: 0)
+  bag.items.push(4)
+  bag.items.push(5)
+  return offInt(bag.items.len(), 2) + offInt(bag.items[1], 5)
+}
+
+func checkConcatenationMakesANewDarray() -> double {
+  let a: mutarray<i64> = mutarray<i64>()
+  let b: mutarray<i64> = mutarray<i64>()
+  a.push(1)
+  b.push(2)
+  let c: mutarray<i64> = a + b
+  a.push(99)
+  return offInt(c.len(), 2) + offInt(c[0], 1) + offInt(c[1], 2) + offInt(a.len(), 2)
+}
+
+func checkAClosureSharesTheDarrayItCaptures() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  let add: closure(i64) -> i64 = closure(v: i64) -> i64 {
+    xs.push(v)
+    return xs.len()
+  }
+  add(10)
+  add(20)
+  return offInt(xs.len(), 2) + offInt(xs[1], 20)
+}
+
+func checkPushGivesBackTheSameDarray() -> double {
+  var xs: mutarray<i64> = mutarray<i64>()
+  xs = xs.push(5)
+  xs = xs.push(6)
+  return offInt(xs.len(), 2) + offInt(xs[1], 6)
+}
+
+func checkReassigningAVarSwitchesDarrays() -> double {
+  var xs: mutarray<i64> = mutarray<i64>()
+  let other: mutarray<i64> = mutarray<i64>()
+  other.push(1)
+  other.push(2)
+  other.push(3)
+  xs = other
+  xs.push(4)
+  return offInt(other.len(), 4) + offInt(xs.len(), 4)
+}
+
+func checkAListOfListsSharesItsInnerLists() -> double {
+  let outer: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  let a: mutarray<i64> = mutarray<i64>()
+  a.push(1)
+  a.push(2)
+  outer.push(a)
+  let b: mutarray<i64> = mutarray<i64>()
+  b.push(10)
+  outer.push(b)
+  a.push(3)
+  let first: mutarray<i64> = outer[0]
+  let second: mutarray<i64> = outer[1]
+  return offInt(outer.len(), 2) + offInt(first.len(), 3) + offInt(first[2], 3) + offInt(second[0], 10)
+}
+
+func checkADarrayOfStructsKeepsTheStructs() -> double {
+  let ps: mutarray<Pt> = mutarray<Pt>()
+  ps.push(Pt(x: 1, y: 2))
+  ps.push(Pt(x: 3, y: 4))
+  let p: Pt = ps[1]
+  return offInt(ps.len(), 2) + offInt(p.x, 3) + offInt(p.y, 4)
+}
+
+func checkAThousandPushesKeepEveryElement() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  for (i = 0; i < 1000; i = i + 1) {
+    xs.push(i)
+  }
+  var total: i64 = 0
+  for (i = 0; i < xs.len(); i = i + 1) {
+    total = total + xs[i]
+  }
+  return offInt(xs.len(), 1000) + offInt(total, 499500)
+}
+
+func checkAListInsideAnEitherIsTheSameList() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(4)
+  let r: either<mutarray<i64>, i64> = eitherOk<mutarray<i64>, i64>(xs)
+  xs.push(5)
+  let back: mutarray<i64> = r.unwrapOk()
+  return offInt(back.len(), 2) + offInt(back[1], 5)
+}
+
+func fillSparse(sp: sparse<i64>) -> i64 {
+  sp[1, 1] = 5
+  sp[2, 3] = 7
+  return 0
+}
+
+func checkASparseWrittenInAFunctionIsSeenByTheCaller() -> double {
+  let sp: sparse<i64> = sparse<i64>()
+  fillSparse(sp)
+  return offInt(sp[1, 1], 5) + offInt(sp[2, 3], 7) + offInt(sp[9, 9], 0) + offInt(sp.len(), 2)
+}
+
+func checkLastWriteWinsForASparse() -> double {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[3, 3] = 1
+  sp[3, 3] = 2
+  sp[3, 3] = 3
+  return offInt(sp[3, 3], 3)
+}
+
+func checkOneDimensionalSparseSharesToo() -> double {
+  let sp: sparse<i64> = sparse<i64>()
+  let alias: sparse<i64> = sp
+  alias[0] = 100
+  sp[7] = 200
+  return offInt(sp[0], 100) + offInt(alias[7], 200)
+}
+
+func fillMap(hm: mutmap<i64, i64>) -> i64 {
+  hm[1] = 10
+  hm[2] = 20
+  hm[1] = 11
+  return 0
+}
+
+func checkAHashmapWrittenInAFunctionIsSeenByTheCaller() -> double {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(8)
+  fillMap(hm)
+  return offInt(hm[1], 11) + offInt(hm[2], 20) + offInt(hm[3], 0) + offInt(hm.len(), 2)
+}
+
+func checkTwoNamesForOneHashmapShareIt() -> double {
+  let a: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  let b: mutmap<i64, i64> = a
+  a[5] = 50
+  b[6] = 60
+  return offInt(a.len(), 2) + offInt(b[5], 50) + offInt(a[6], 60)
+}
+
+func checkAStringKeyedHashmapIsShared() -> double {
+  let hm: mutmap<string, i64> = mutmap<string, i64>(4)
+  addWord(hm, "one", 1)
+  addWord(hm, "two", 2)
+  return offInt(hm["one"], 1) + offInt(hm["two"], 2) + offInt(hm.len(), 2)
+}
+
+func addWord(hm: mutmap<string, i64>, word: string, value: i64) -> i64 {
+  hm[word] = value
+  return 0
+}
+
+func checkAHashmapOfListsKeepsTheLists() -> double {
+  let hm: mutmap<i64, mutarray<i64> > = mutmap<i64, mutarray<i64> >(4)
+  let l: mutarray<i64> = mutarray<i64>()
+  hm[7] = l
+  l.push(5)
+  l.push(6)
+  let got: mutarray<i64> = hm[7]
+  return offInt(got.len(), 2) + offInt(got[1], 6)
+}
+
+func fillGrid(g: grid<i64, 2, 3>) -> i64 {
+  for (r = 0; r < 2; r = r + 1) {
+    for (c = 0; c < 3; c = c + 1) {
+      g[r, c] = r * 10 + c
+    }
+  }
+  return 0
+}
+
+func checkAGridFilledInAFunctionIsSeenByTheCaller() -> double {
+  let g: grid<i64, 2, 3>
+  fillGrid(g)
+  return offInt(g[1, 2], 12) + offInt(g[0, 1], 1)
+}
+
+func checkTwoNamesForOneGridShareIt() -> double {
+  let a: grid<i64, 2, 3>
+  let b: grid<i64, 2, 3>
+  a[1, 1] = 9
+  return offInt(b[1, 1], 9)
+}
+
+func checkAGridStartsZeroed() -> double {
+  let t: tensor<i64, 2, 2, 2>
+  t[1, 1, 1] = 5
+  return offInt(t[0, 1, 0], 0) + offInt(t[1, 1, 1], 5)
+}
+
+func checkDarrayCopyIsIndependent() -> double {
+  let a: mutarray<i64> = mutarray<i64>()
+  a.push(1)
+  a.push(2)
+  let b: mutarray<i64> = a.copy()
+  b.push(3)
+  a.push(9)
+  return offInt(a.len(), 3) + offInt(b.len(), 3) + offInt(b[2], 3) + offInt(a[2], 9) + offInt(b[0], 1)
+}
+
+func checkGridAndTensorCopyAreIndependent() -> double {
+  let g: grid<i64, 2, 2>
+  g[1, 1] = 5
+  let h: grid<i64, 2, 2>
+  g[1, 1] = 6
+  let t: tensor<i64, 2, 2, 2>
+  t[1, 0, 1] = 7
+  let u: tensor<i64, 2, 2, 2>
+  t[1, 0, 1] = 8
+  return offInt(h[1, 1], 5) + offInt(g[1, 1], 6) + offInt(u[1, 0, 1], 7)
+}
+
+func checkSparseCopyIsIndependent() -> double {
+  let s: sparse<i64> = sparse<i64>()
+  s[1, 2] = 7
+  let c: sparse<i64> = s.copy()
+  s[3, 4] = 8
+  c[5, 6] = 9
+  return offInt(s.len(), 2) + offInt(c.len(), 2) + offInt(c[1, 2], 7)
+}
+
+func checkHashmapCopyIsIndependent() -> double {
+  let m: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  m[1] = 10
+  let c: mutmap<i64, i64> = m.copy()
+  m[2] = 20
+  c[3] = 30
+  return offInt(m.len(), 2) + offInt(c.len(), 2) + offInt(c[1], 10) + offInt(c[3], 30)
+}
+
+func checkCopyOfAStringKeyedHashmap() -> double {
+  let m: mutmap<string, i64> = mutmap<string, i64>(4)
+  m["a"] = 1
+  let c: mutmap<string, i64> = m.copy()
+  m["b"] = 2
+  return offInt(c["a"], 1) + offInt(c.len(), 1)
+}
+
+func makeBag(n: i64) -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  d.push(n)
+  d.push(n + 1)
+  return d
+}
+
+func sumGrid(g: grid<i64, 2, 2>) -> i64 {
+  return g[0, 0] + g[1, 1]
+}
+
+func holdsOnto(store: mutarray<mutarray<i64> >, d: mutarray<i64>) -> i64 {
+  store.push(d)
+  return 0
+}
+
+func checkAReturnedContainerSurvives() -> double {
+  let a: mutarray<i64> = makeBag(10)
+  let b: mutarray<i64> = makeBag(20)
+  return offInt(a[0] + a[1] + b[0] + b[1], 62)
+}
+
+func checkAContainerLentToACalleeIsStillUsableAfterwards() -> double {
+  var total: i64 = 0
+  for (i = 0; i < 50; i = i + 1) {
+    let g: grid<i64, 2, 2>
+    g[0, 0] = i
+    g[1, 1] = 1
+    total = total + sumGrid(g) + g[0, 0]
+  }
+  return offInt(total, 2 * 1225 + 50 + 0)
+}
+
+func checkAContainerGivenToACalleeThatKeepsItSurvives() -> double {
+  let store: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  for (i = 0; i < 3; i = i + 1) {
+    let d: mutarray<i64> = mutarray<i64>()
+    d.push(i * 10)
+    holdsOnto(store, d)
+  }
+  return offInt(store[0][0] + store[1][0] + store[2][0], 30)
+}
+
+func checkAContainerReturnedFromInsideAnIfSurvives() -> double {
+  let keep: mutarray<i64> = mutarray<i64>()
+  keep.push(4)
+  let other: mutarray<i64> = mutarray<i64>()
+  other.push(5)
+  var total: i64 = 0
+  for (i = 0; i < 20; i = i + 1) {
+    let scratch: mutarray<i64> = mutarray<i64>()
+    scratch.push(i)
+    if (i == 7) {
+      total = total + scratch[0]
+    }
+  }
+  return offInt(total + keep[0] + other[0], 16)
+}
+
+func earlyExit(n: i64) -> i64 {
+  let scratch: mutarray<i64> = mutarray<i64>()
+  scratch.push(n)
+  if (n > 5) {
+    return scratch[0] * 2
+  }
+  scratch.push(1)
+  return scratch.len() + scratch[0]
+}
+
+func checkAReturnInsideAnIfStillReleasesAndReturnsTheRightValue() -> double {
+  return offInt(earlyExit(9) * 100 + earlyExit(2), 18 * 100 + 4)
+}
+
+func greeting(name: string) -> string {
+  let hello: string = "hello, "
+  let full: string = hello + name + "!"
+  return full
+}
+
+func shout(s: string) -> i64 {
+  if (s == "hi!") {
+    return 1
+  }
+  return 0
+}
+
+func counterFrom(start: i64) -> closure() -> i64 {
+  var n: i64 = start
+  let next: closure() -> i64 = closure() -> i64 {
+    n = n + 1
+    return n
+  }
+  return next
+}
+
+func applyTwice(f: closure() -> i64) -> i64 {
+  f()
+  return f()
+}
+
+func checkAReturnedStringSurvives() -> double {
+  let a: string = greeting("ann")
+  let b: string = greeting("bo")
+  if (a != "hello, ann!") {
+    return 1.0
+  }
+  if (b != "hello, bo!") {
+    return 1.0
+  }
+  return 0.0
+}
+
+func checkAStringLentToACalleeIsUsableAfterwards() -> double {
+  var hits: i64 = 0
+  for (i = 0; i < 20; i = i + 1) {
+    let s: string = "h" + "i" + "!"
+    hits = hits + shout(s)
+    if (s == "hi!") {
+      hits = hits + 1
+    }
+  }
+  return offInt(hits, 40)
+}
+
+func checkAStringUsedAsAHashmapKeyIsKept() -> double {
+  let m: mutmap<string, i64> = mutmap<string, i64>(8)
+  for (i = 0; i < 3; i = i + 1) {
+    let key: string = "k" + "ey"
+    m[key] = i
+  }
+  return offInt(m["key"], 2) + offInt(m.len(), 1)
+}
+
+func checkAClosureThatIsReturnedKeepsItsBox() -> double {
+  let c: closure() -> i64 = counterFrom(10)
+  c()
+  return offInt(c(), 12)
+}
+
+func checkAClosureGivenToACalleeKeepsWorking() -> double {
+  var n: i64 = 0
+  let tick: closure() -> i64 = closure() -> i64 {
+    n = n + 5
+    return n
+  }
+  return offInt(applyTwice(tick), 10) + offInt(n, 10)
+}
+
+func checkAClosureOnlyCalledLocallyInALoop() -> double {
+  var total: i64 = 0
+  for (i = 0; i < 50; i = i + 1) {
+    var count: i64 = i
+    let bump: closure() -> i64 = closure() -> i64 {
+      count = count + 1
+      return count
+    }
+    bump()
+    total = total + bump() - i
+  }
+  return offInt(total, 100)
+}
+
+func checkTwoClosuresShareOneCapturedName() -> double {
+  var n: i64 = 0
+  let inc: closure() -> i64 = closure() -> i64 {
+    n = n + 1
+    return n
+  }
+  let read: closure() -> i64 = closure() -> i64 {
+    return n * 10
+  }
+  inc()
+  inc()
+  return offInt(read(), 20)
+}
+
+struct Pocket(var items: mutarray<i64>) {
+}
+
+func madeHere() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  d.push(1)
+  return d
+}
+
+func madeThroughAnother() -> mutarray<i64> {
+  let d: mutarray<i64> = madeHere()
+  d.push(2)
+  return d
+}
+
+func madeInPlace() -> mutarray<i64> {
+  return mutarray<i64>()
+}
+
+func sameAsArgument(d: mutarray<i64>) -> mutarray<i64> {
+  return d
+}
+
+func elementOf(xs: mutarray<mutarray<i64> >) -> mutarray<i64> {
+  return xs[0]
+}
+
+func fieldOf(p: Pocket) -> mutarray<i64> {
+  return p.items
+}
+
+func keptAndReturned(store: mutarray<mutarray<i64> >) -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  store.push(d)
+  return d
+}
+
+func sometimesTheArgument(flag: i64, d: mutarray<i64>) -> mutarray<i64> {
+  if (flag == 0) {
+    return d
+  }
+  return mutarray<i64>()
+}
+
+func checkAFreshResultIsUsableAndReleased() -> double {
+  var total: i64 = 0
+  for (i = 0; i < 100; i = i + 1) {
+    let a: mutarray<i64> = madeHere()
+    let b: mutarray<i64> = madeThroughAnother()
+    let c: mutarray<i64> = madeInPlace()
+    c.push(i)
+    total = total + a.len() + b.len() + c.len()
+  }
+  return offInt(total, 100 * 4)
+}
+
+func checkAnAliasReturnedByACallIsNotReleasedUnderItsOwner() -> double {
+  let src: mutarray<i64> = mutarray<i64>()
+  src.push(7)
+  let same: mutarray<i64> = sameAsArgument(src)
+  same.push(8)
+  let outer: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  outer.push(src)
+  let inner: mutarray<i64> = elementOf(outer)
+  let pocket: Pocket = Pocket(items: src)
+  let field: mutarray<i64> = fieldOf(pocket)
+  let maybe: mutarray<i64> = sometimesTheArgument(0, src)
+  return offInt(src.len(), 2) + offInt(inner.len(), 2) + offInt(field.len(), 2) + offInt(maybe.len(), 2)
+}
+
+func checkAnObjectKeptByTheCalleeSurvivesItsCaller() -> double {
+  let store: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  var total: i64 = 0
+  for (i = 0; i < 5; i = i + 1) {
+    let d: mutarray<i64> = keptAndReturned(store)
+    d.push(i)
+  }
+  for (j = 0; j < 5; j = j + 1) {
+    total = total + store[j][0]
+  }
+  return offInt(total, 10)
+}
+
+func handedOn() -> mutarray<i64> {
+  let a: mutarray<i64> = madeHere()
+  return a
+}
+
+func checkAResultHandedOnAgainIsStillFresh() -> double {
+  let a: mutarray<i64> = handedOn()
+  return offInt(a[0], 1)
+}
+
+func checkADiscardedFreshResultIsHarmless() -> double {
+  madeHere()
+  madeThroughAnother()
+  return 0.0
+}
+
+func madeStruct(n: i64) -> Pocket {
+  let p: Pocket = Pocket(items: mutarray<i64>())
+  p.items.push(n)
+  return p
+}
+
+func makeLabel(a: string) -> string {
+  let s: string = a + "-" + a
+  return s
+}
+
+func checkAStructAndAStringHandedOverByACall() -> double {
+  var total: i64 = 0
+  for (i = 0; i < 50; i = i + 1) {
+    let p: Pocket = madeStruct(i)
+    let s: string = makeLabel("x")
+    if (s == "x-x") {
+      total = total + p.items[0] + 1
+    }
+  }
+  return offInt(total, 1225 + 50)
+}
+
+struct Shelf(var books: mutarray<i64>, var tags: string) {
+}
+
+struct Cabinet(var drawer: mutarray<i64>) {
+}
+
+struct Crate(var items: mutarray<i64>) {
+}
+
+func stockedShelf(n: i64) -> Shelf {
+  let s: Shelf = Shelf(books: mutarray<i64>(), tags: "a" + "b")
+  s.books.push(n)
+  s.books.push(n + 1)
+  return s
+}
+
+func openDrawer(c: Cabinet) -> mutarray<i64> {
+  return c.drawer
+}
+
+func checkAnOwnedFieldIsUsableThenReleasedWithItsStruct() -> double {
+  var total: i64 = 0
+  for (i = 0; i < 100; i = i + 1) {
+    let s: Shelf = stockedShelf(i)
+    total = total + s.books.len() + s.books[0] - i
+    if (s.tags == "ab") {
+      total = total + 1
+    }
+  }
+  return offInt(total, 100 * 3)
+}
+
+func checkAReplacedFieldValueIsReleasedAndTheNewOneWorks() -> double {
+  let s: Shelf = stockedShelf(5)
+  s.books = mutarray<i64>()
+  s.books.push(40)
+  s.tags = "x" + "y"
+  if (s.tags != "xy") {
+    return 1.0
+  }
+  return offInt(s.books.len(), 1) + offInt(s.books[0], 40)
+}
+
+func checkAFieldThatIsReadOutIsNeverReleasedWithItsStruct() -> double {
+  let c: Cabinet = Cabinet(drawer: mutarray<i64>())
+  c.drawer.push(9)
+  let drawer: mutarray<i64> = openDrawer(c)
+  drawer.push(10)
+  return offInt(c.drawer.len(), 2) + offInt(drawer[1], 10)
+}
+
+func checkACopiedStructSharesNothingItMustNotFree() -> double {
+  let a: Crate = Crate(items: mutarray<i64>())
+  a.items.push(3)
+  let b: Crate = a.copy()
+  b.items.push(4)
+  return offInt(a.items.len(), 2) + offInt(b.items.len(), 2)
+}
+
+func checkAListOfListsReleasesItsElements() -> double {
+  var total: i64 = 0
+  for (i = 0; i < 100; i = i + 1) {
+    let outer: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+    for (j = 0; j < 3; j = j + 1) {
+      outer.push(mutarray<i64>())
+      outer[j].push(i + j)
+    }
+    total = total + outer.len() + outer[2].len() + outer[1][0] - i
+  }
+  return offInt(total, 100 * (3 + 1 + 1))
+}
+
+func firstOf(xs: mutarray<mutarray<i64> >) -> mutarray<i64> {
+  let first: mutarray<i64> = xs[0]
+  return first
+}
+
+func checkAnElementReadOutOfAListIsNotReleasedWithIt() -> double {
+  let store: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  store.push(mutarray<i64>())
+  store[0].push(6)
+  let got: mutarray<i64> = firstOf(store)
+  got.push(7)
+  return offInt(store[0].len(), 2) + offInt(got[1], 7)
+}
+
+func checkAMapPastItsStartingCapacityKeepsEveryEntry() -> double {
+  let m: mutmap<i64, i64> = mutmap<i64, i64>(2)
+  for (i = 0; i < 1000; i = i + 1) {
+    m[i] = i * 3
+  }
+  var wrong: i64 = 0
+  for (i = 0; i < 1000; i = i + 1) {
+    if (m[i] != i * 3) {
+      wrong = wrong + 1
+    }
+  }
+  return offInt(wrong, 0) + offInt(m.len(), 1000)
+}
+
+func checkAGrownMapIsStillTheSameMapForItsAliases() -> double {
+  let m: mutmap<i64, i64> = mutmap<i64, i64>(1)
+  let alias: mutmap<i64, i64> = m
+  for (i = 0; i < 20; i = i + 1) {
+    alias[i] = i
+  }
+  return offInt(m.len(), 20) + offInt(m[19], 19)
+}
+
+func checkStringKeysSurviveGrowing() -> double {
+  let m: mutmap<string, i64> = mutmap<string, i64>(1)
+  m["a"] = 1
+  m["b"] = 2
+  m["c"] = 3
+  m["d"] = 4
+  m["a"] = 10
+  return offInt(m["a"], 10) + offInt(m["b"], 2) + offInt(m["c"], 3) + offInt(m["d"], 4) + offInt(m.len(), 4)
+}
+
+struct GrowKey(a: i64, b: i64) {
+}
+
+func checkStructKeysSurviveGrowing() -> double {
+  let m: mutmap<GrowKey, i64> = mutmap<GrowKey, i64>(1)
+  for (i = 0; i < 50; i = i + 1) {
+    m[GrowKey(a: i, b: i + 1)] = i
+  }
+  var wrong: i64 = 0
+  for (i = 0; i < 50; i = i + 1) {
+    if (m[GrowKey(a: i, b: i + 1)] != i) {
+      wrong = wrong + 1
+    }
+  }
+  return offInt(wrong, 0) + offInt(m.len(), 50)
+}
+
+func checkASetPastItsStartingCapacityKeepsEveryMember() -> double {
+  let seen: mutset<i64> = mutset<i64>(1)
+  for (i = 0; i < 100; i = i + 1) {
+    seen.add(i % 40)
+  }
+  var absent: i64 = 0
+  if (seen.has(39) == false) {
+    absent = absent + 1
+  }
+  if (seen.has(40)) {
+    absent = absent + 1
+  }
+  return offInt(seen.len(), 40) + offInt(absent, 0)
+}
+
+func readAt(xs: mutarray<i64>, i: i64) -> i64 {
+  return xs[i]
+}
+
+func caughtCode(xs: mutarray<i64>, i: i64) -> i64 {
+  var code: i64 = 0
+  try {
+    code = readAt(xs, i)
+  } catch (c) {
+    code = c
+  }
+  return code
+}
+
+func checkAnIndexPastTheEndOfAListThrowsMinusOne() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(5)
+  return offInt(caughtCode(xs, 1), 0 - 1) + offInt(caughtCode(xs, 100000), 0 - 1)
+}
+
+func checkANegativeIndexThrowsMinusOne() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(5)
+  return offInt(caughtCode(xs, 0 - 1), 0 - 1)
+}
+
+func checkAnIndexInsideTheListStillReads() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(5)
+  xs.push(6)
+  return offInt(caughtCode(xs, 0), 5) + offInt(caughtCode(xs, 1), 6)
+}
+
+func checkAnEmptyListCannotBeRead() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  return offInt(caughtCode(xs, 0), 0 - 1)
+}
+
+func divideBy(a: i64, b: i64) -> i64 {
+  var out: i64 = 0
+  try {
+    out = a / b
+  } catch (c) {
+    out = c
+  }
+  return out
+}
+
+func checkDividingByZeroThrowsMinusFour() -> double {
+  return offInt(divideBy(10, 0), 0 - 4) + offInt(divideBy(10, 2), 5)
+}
+
+func checkAFixedArrayAndAGridAreCheckedPerDimension() -> double {
+  var code: i64 = 0
+  let g: grid<i64, 2, 2>
+  try {
+    g[0, 5] = 1
+  } catch (c) {
+    code = c
+  }
+  return offInt(code, 0 - 1)
+}
+
+struct OptPoint(x: i64, y: i64) {
+}
+
+func optionalFind(xs: mutarray<i64>, want: i64) -> optional<i64> {
+  for (i = 0; i < xs.len(); i = i + 1) {
+    if (xs[i] == want) {
+      return Some<i64>(i)
+    }
+  }
+  return None<i64>()
+}
+
+func optionalPoint(ok: i64) -> optional<OptPoint> {
+  if (ok == 1) {
+    return Some<OptPoint>(OptPoint(x: 7, y: 8))
+  }
+  return None<OptPoint>()
+}
+
+func optionalName(ok: i64) -> optional<string> {
+  if (ok == 1) {
+    return Some<string>("ann")
+  }
+  return None<string>()
+}
+
+func unwrapCode(o: optional<i64>) -> i64 {
+  var code: i64 = 0
+  try {
+    code = o.unwrap()
+  } catch (c) {
+    code = c
+  }
+  return code
+}
+
+func checkAnOptionalHoldsAValueOrNone() -> double {
+  let xs: mutarray<i64> = mutarray<i64>()
+  xs.push(10)
+  xs.push(20)
+  var seen: i64 = 0
+  if (optionalFind(xs, 20).isSome()) {
+    seen = seen + 1
+  }
+  if (optionalFind(xs, 99).isNone()) {
+    seen = seen + 10
+  }
+  return offInt(seen, 11) + offInt(optionalFind(xs, 20).unwrap(), 1)
+}
+
+func checkAnOptionalOfAStructAndOfAStringWork() -> double {
+  let p: optional<OptPoint> = optionalPoint(1)
+  var seen: i64 = 0
+  if (p.isSome()) {
+    seen = seen + p.unwrap().x + p.unwrap().y
+  }
+  if (optionalPoint(0).isNone()) {
+    seen = seen + 100
+  }
+  if (optionalName(1).isSome()) {
+    seen = seen + 1000
+  }
+  return offInt(seen, 1115)
+}
+
+func checkUnwrappingNoneThrowsMinusThree() -> double {
+  return offInt(unwrapCode(None<i64>()), 0 - 3) + offInt(unwrapCode(Some<i64>(42)), 42)
+}

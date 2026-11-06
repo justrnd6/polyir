@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  err_try_throw.poly:3:11: unknown name nothere
+$ --analyze --strict
+exit 1
+check failed:
+  err_try_throw.poly:3:11: unknown name nothere
+$ --emit-hir-json
+exit 1
+check failed:
+  err_try_throw.poly:3:11: unknown name nothere
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_try_throw.poly:3:11: unknown name nothere

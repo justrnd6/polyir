@@ -1,0 +1,17 @@
+interface Shape {
+  func area() -> f64
+  func scale(k: f64) -> f64
+}
+
+struct Pair<A, B> : Shape {
+  var first: A
+  var second: B
+  func area() -> f64 {
+    return 1.0
+  }
+}
+
+func main() -> i64 {
+  let p: Pair<i64, f64> = Pair { first: 1, second: 2.0 }
+  return p.first
+}

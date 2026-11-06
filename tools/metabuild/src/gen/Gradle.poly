@@ -1,0 +1,76 @@
+// The java and kotlin targets as a Gradle project: build/gradle/ with settings.gradle.kts, build.gradle.kts (the
+// `application` plugin, Maven Central, the maven deps) and the program polyir generates. Gradle resolves, downloads,
+// verifies and builds; `installDist` leaves a start script.
+import "../Project.poly"
+
+func gradlePlan(p: Project, target: string, out: Plan) -> void {
+  let dir: string = toolDir("gradle-${target}")
+  addFile(out, "${dir}/settings.gradle.kts", "rootProject.name = \"${programName(p)}\"\n")
+  addFile(out, "${dir}/build.gradle.kts", gradleBuild(p, target))
+  out.steps.push(emitStep(p, target, "${dir}/${gradleSource(p, target)}"))
+  out.steps.push(step("build", target, ["gradle", "-p", dir, "--quiet", "installDist"],
+    "install Gradle with SDKMAN (sdk install gradle), or from gradle.org"))
+  out.steps.push(step("run", target, ["${dir}/build/install/${programName(p)}/bin/${programName(p)}"], ""))
+}
+
+func gradleSource(p: Project, target: string) -> string {
+  if (target == "kotlin") {
+    return "src/main/kotlin/${className(p)}.kt"
+  }
+  return "src/main/java/${className(p)}.java"
+}
+
+func gradleBuild(p: Project, target: string) -> string {
+  return """
+    plugins {
+        ${gradlePlugin(target)}
+        application
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        ${gradleDeps(p)}
+    }
+
+    application {
+        mainClass.set("${gradleMainClass(p, target)}")
+    }
+
+    ${gradleRelease(target)}
+    """
+}
+
+// Class files for Java 17, so the program runs on any JDK from 17 on, whichever one Gradle itself runs on.
+func gradleRelease(target: string) -> string {
+  let java: string = "tasks.withType<JavaCompile> { options.release.set(17) }"
+  if (target == "kotlin") {
+    return "${java}\nkotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }"
+  }
+  return java
+}
+
+func gradlePlugin(target: string) -> string {
+  if (target == "kotlin") {
+    return "kotlin(\"jvm\") version \"2.0.21\""
+  }
+  return "java"
+}
+
+// A Kotlin file's top-level `main` lives in the class named after the file, with `Kt` added.
+func gradleMainClass(p: Project, target: string) -> string {
+  if (target == "kotlin") {
+    return "${className(p)}Kt"
+  }
+  return className(p)
+}
+
+func gradleDeps(p: Project) -> string {
+  let lines: mutarray<string>
+  for (d in depsFrom(p, "maven")) {
+    lines.push("implementation(\"${d.name}\")")
+  }
+  return lines.join("\n")
+}

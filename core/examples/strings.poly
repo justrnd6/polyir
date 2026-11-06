@@ -1,0 +1,35 @@
+// Strings and printing, the same on every target.
+//
+// A string is UTF-8 text. `len`, `s[i]`, `slice` and `find` count its bytes, so "é" is two long; `s[i]` is one byte
+// (an `i8` char), and `str(c)` is the character with that code. `print(x)` writes a line: a string as it is, a whole
+// number, bool or char as its `str`.
+//
+//   polyir strings.poly --run --all       every target prints the same lines and gives the same number
+
+func main() -> i64 {
+  print("hello from polyir")
+
+  // Interpolation, escapes and a text block.
+  let name: string = "café"
+  let n: i64 = 3
+  print("${name} has ${str(len(name))} bytes; ${str(n)} + 1 = ${str(n + 1)}")
+  print("a tab:\tand a quote: \"done\"")
+  print("""
+    a text block
+      keeps its inner indent
+    """.trim())
+
+  // Positions are bytes: the "é" of "café" starts at 3 and takes two.
+  print(name.slice(0, 3))
+  print(str(name.find("é")))
+  print(str(name.find("tea")))
+
+  // Any value `str` takes can be printed directly.
+  print(len(name) * 10)
+  print(name == "café")
+  let first: i8 = name[0]
+  print(first)
+  first.print()
+
+  return len(name) + name.find("é") * 10
+}

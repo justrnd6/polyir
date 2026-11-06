@@ -1,0 +1,40 @@
+// The targets polyir builds and runs itself: interp, jit, native, wasm, swift, objc (and any target with
+// `use direct for T`). `polyir main.poly --run --target T` builds with that language's compiler and runs the program.
+// The pkg-config and brew libraries' folders go on POLYIR_LIBRARY_PATH, where the interpreter and the JIT load
+// `import native` libraries from and the native build links them from.
+import "../Project.poly"
+
+func directPlan(p: Project, target: string, out: Plan) -> void {
+  out.steps.push(step("build", target, ["polyir", p.main, "--check"], "polyir is not on PATH"))
+  out.steps.push(step("run", target, runCommand(p, target), "polyir --run-targets says what to install"))
+}
+
+// `polyir … --run`, through the shell when the libraries' folders have to be asked of pkg-config and brew first.
+func runCommand(p: Project, target: string) -> mutarray<string> {
+  let run: mutarray<string> = ["polyir", p.main, "--run", "--target", target]
+  let folders: string = libraryFolders(p)
+  if (folders == "") {
+    return run
+  }
+  return ["sh", "-c", "POLYIR_LIBRARY_PATH=\"${folders}:\$POLYIR_LIBRARY_PATH\" exec ${shellLine(run)}"]
+}
+
+// Each pkg-config and brew library's folder, as the shell finds it.
+func libraryFolders(p: Project) -> string {
+  let folders: mutarray<string>
+  for (d in depsFrom(p, "pkg-config")) {
+    folders.push("\$(pkg-config --variable=libdir ${d.name})")
+  }
+  for (d in depsFrom(p, "brew")) {
+    folders.push("\$(brew --prefix ${d.name})/lib")
+  }
+  return folders.join(":")
+}
+
+func shellLine(words: mutarray<string>) -> string {
+  let quoted: mutarray<string>
+  for (w in words) {
+    quoted.push("'${w.replace("'", "'\\''")}'")
+  }
+  return quoted.join(" ")
+}

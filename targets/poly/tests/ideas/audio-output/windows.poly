@@ -1,0 +1,95 @@
+import "Stream.poly"
+extern func calloc(count: i64, size: i64) -> i64
+extern func waveOutOpen(wave: i64, device: i64, format: i64, callback: i64, instance: i64, flags: i64) -> i32
+extern func waveOutPrepareHeader(wave: i64, header: i64, size: i64) -> i32
+extern func waveOutWrite(wave: i64, header: i64, size: i64) -> i32
+extern func waveOutReset(wave: i64) -> i32
+extern func waveOutClose(wave: i64) -> i32
+extern func Sleep(milliseconds: i64) -> i32
+
+func audioWindowsFormat(rate: i64, channels: i64) -> i64 {
+  let block: i64 = calloc(1, 24)
+  let shorts: ptr<i16> = block.toPtr()
+  let ints: ptr<i32> = block.toPtr()
+  shorts[0] = 3
+  shorts[1] = channels.toI16()
+  ints[1] = rate.toI32()
+  ints[2] = (rate * channels * 4).toI32()
+  shorts[6] = (channels * 4).toI16()
+  shorts[7] = 32
+  return block
+}
+
+func audioWindowsHeader(wave: i64, stream: Stream) -> i64 {
+  let header: i64 = calloc(1, 48)
+  let words: ptr<i64> = header.toPtr()
+  let ints: ptr<i32> = header.toPtr()
+  words[0] = calloc(streamBufferFrames() * stream.channels, 4)
+  ints[2] = (streamBufferFrames() * stream.channels * 4).toI32()
+  waveOutPrepareHeader(wave, header, 48)
+  return header
+}
+
+func audioWindowsQueue(wave: i64, stream: Stream, header: i64) -> i64 {
+  let words: ptr<i64> = header.toPtr()
+  let memory: ptr<float> = words[0].toPtr()
+  let made: i64 = streamFeed(stream, memory, streamBufferFrames())
+  if (made == 0) {
+    return 0
+  }
+  let ints: ptr<i32> = header.toPtr()
+  ints[2] = (made * stream.channels * 4).toI32()
+  waveOutWrite(wave, header, 48)
+  return made
+}
+
+func audioWindowsDone(header: i64) -> bool {
+  let ints: ptr<i32> = header.toPtr()
+  return ints[6] & 1 == 1
+}
+
+func audioWindowsWait(header: i64) -> i64 {
+  for (nap = 0; nap < 30000; nap = nap + 1) {
+    if (audioWindowsDone(header)) {
+      return 0
+    }
+    Sleep(2)
+  }
+  return 1
+}
+
+func audioStreamRun(stream: Stream) -> i64 {
+  let slot: ptr<i64> = calloc(1, 8).toPtr()
+  let opened: i32 = waveOutOpen(slot.toI64(), 4294967295, audioWindowsFormat(stream.rate, stream.channels), 0, 0, 0)
+  if (opened != 0) {
+    return opened.toI64()
+  }
+  let wave: i64 = slot[0]
+  audioWindowsLoop(wave, stream)
+  waveOutReset(wave)
+  waveOutClose(wave)
+  return 0
+}
+
+func audioWindowsLoop(wave: i64, stream: Stream) -> i64 {
+  let headers: ptr<i64> = calloc(streamBufferCount(), 8).toPtr()
+  for (k = 0; k < streamBufferCount(); k = k + 1) {
+    headers[k] = audioWindowsHeader(wave, stream)
+    audioWindowsQueue(wave, stream, headers[k])
+  }
+  for (turn = 0; turn < 100000000; turn = turn + 1) {
+    let header: i64 = headers[turn % streamBufferCount()]
+    audioWindowsWait(header)
+    if (audioWindowsQueue(wave, stream, header) == 0) {
+      return audioWindowsDrain(headers)
+    }
+  }
+  return 1
+}
+
+func audioWindowsDrain(headers: ptr<i64>) -> i64 {
+  for (k = 0; k < streamBufferCount(); k = k + 1) {
+    audioWindowsWait(headers[k])
+  }
+  return 0
+}

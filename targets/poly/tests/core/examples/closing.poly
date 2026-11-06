@@ -1,0 +1,12 @@
+coro func count(n: i64) -> i64 {
+  for (i = 0; i < n; i = i + 1) {
+    yield i
+  }
+}
+
+func main() -> i64 {
+  let c: coro<i64> = count(5)
+  let first: variant<i64> = c.resume()
+  c.close()
+  return first.unwrapAt(0) + 40
+}

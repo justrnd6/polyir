@@ -1,0 +1,18 @@
+// `on OS[/CPU]`: which machines a Polyfile line is for. `macos`, `linux/x64` and `arm64` are all specs; a single word
+// that is a cpu (arm64, x64) names the cpu, any other single word the os.
+import "Project.poly"
+
+func matchesHost(spec: string, host: Host) -> bool {
+  let parts: mutarray<string> = spec.split("/")
+  if (len(parts) == 2) {
+    return parts[0] == host.os && parts[1] == host.cpu
+  }
+  if (isCpu(spec)) {
+    return spec == host.cpu
+  }
+  return spec == host.os
+}
+
+func isCpu(word: string) -> bool {
+  return word == "arm64" || word == "x64"
+}

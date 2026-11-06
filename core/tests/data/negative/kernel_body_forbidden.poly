@@ -1,0 +1,23 @@
+extern func sqrtf(x: float) -> float
+struct S(v: float);
+global g: float = 1.0
+func helper(x: float) -> float { return x }
+kernel func k1(x: float) -> float {
+  let s: string = "text"
+  return x
+}
+kernel func k2(x: float) -> float {
+  let a: float = g
+  let b: S = S { v: x }
+  return b.v + a
+}
+kernel func k3(x: float) -> float {
+  let r: float = helper(x)
+  let m: float = sqrtf(x)
+  return r + m + later(x)
+}
+kernel func k4(x: float) -> float {
+  let c: closure(float) -> float = closure(y: float) -> float { return y }
+  return c(x)
+}
+kernel func later(x: float) -> float { return x }

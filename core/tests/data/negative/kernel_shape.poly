@@ -1,0 +1,24 @@
+kernel func a(index x: i32, index y: i32, index z: i32) -> i32 { return x }
+kernel func b(index x: i32, index y: i32, workgroup t: ptr<float>) -> i32 { return x }
+kernel func c(v: float, index i: i32, workgroup t: ptr<float>) -> float { return v }
+kernel func d(index i: i32, workgroup t: ptr<float>) -> i32 {
+  if (i > 3) { barrier() }
+  return 0
+}
+kernel func e(index i: i32, workgroup t: ptr<float>) -> i32 {
+  if (i > 3) { return 1 }
+  barrier()
+  return 0
+}
+kernel func f(index i: i32, workgroup t: ptr<float>) -> i32 {
+  barrier()
+  for (j = 0; j < 4; j = j + 1) {
+    if (j == 2) { return 3 }
+  }
+  return 0
+}
+kernel func g(index i: i32, workgroup t: ptr<float>) -> i32 {
+  barrier()
+  return 0
+}
+kernel func h(index i: i32, workgroup t: ptr<float>) -> i32 { return g(i, t) }

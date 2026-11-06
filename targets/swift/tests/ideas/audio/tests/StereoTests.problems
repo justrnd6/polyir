@@ -1,0 +1,1 @@
+targets/swift/Swift.translate:192: `extern(name, params, result)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's

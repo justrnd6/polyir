@@ -1,0 +1,46 @@
+// REDUCTION on the GPU (Metal): the sum and the maximum of a million-plus numbers,
+// found by repeated pair-adding passes (see shared/reduce.poly), checked against a
+// one-number-at-a-time CPU loop.
+//
+//   polyir --emit-msl reduce.poly > reduce.metal
+//   polyir reduce.poly --out reduce && ./reduce        (Apple Silicon; run in this folder)
+//
+// Exit 0 means both answers equal the CPU's. 10 no GPU, 11 the Metal source is missing,
+// 12 a dispatch failed, 13 the sum differs, 14 the maximum differs.
+import "../Metal.poly"
+import "shared/reduce.poly"
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("reduce.metal")
+    // An odd count on purpose: the last number of every pass with an odd length has no partner.
+    let n: i64 = 1048579
+    let values: ptr<float> = calloc(n, 4).toPtr()
+    fillTestData(values, n)
+    let sum: float = reducePasses(device, source, "pairSum", values, n)
+    let biggest: float = reducePasses(device, source, "pairMax", values, n)
+    if (sum != cpuSum(values, n)) { return 13 }
+    if (biggest != cpuMax(values, n)) { return 14 }
+    return 0
+}
+
+// Run pass after pass, each shrinking the list to half (rounded up), until one number remains.
+func reducePasses(device: i64, source: string, name: string, values: ptr<float>, n: i64) -> float {
+    let pipeline: i64 = metalPipeline(device, source, name)
+    var current: i64 = metalBuffer(device, values.toI64(), n * 4)
+    var length: i64 = n
+    for (pass = 0; pass < 40; pass = pass + 1) {
+        if (length > 1) {
+            let next: i64 = (length + 1) / 2
+            let size: i32[1]
+            size[0] = length.toI32()
+            let out: i64 = metalEmptyBuffer(device, next * 4)
+            metalDispatch(device, pipeline, next, current, metalBuffer(device, size.toI64(), 4), out, 0)
+            current = out
+            length = next
+        }
+    }
+    let answer: ptr<float> = metalContents(current).toPtr()
+    return answer[0]
+}

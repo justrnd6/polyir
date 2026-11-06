@@ -1,0 +1,11 @@
+func reverse4(a: i64, b: i64, c: i64) -> i64 {
+  let v: vec<i64, 4> = vec[a, b, c, 40]
+  let r: vec<i64, 4> = v.shuffle(3, 2, 1, 0)
+  return r[0] * 1000 + r[1] * 100 + r[2] * 10 + r[3]
+}
+
+func duplicateFirstTwo(a: i64, b: i64, c: i64) -> i64 {
+  let v: vec<i64, 4> = vec[a, b, c, 4]
+  let r: vec<i64, 4> = v.shuffle(0, 0, 1, 1)
+  return r[0] * 1000 + r[1] * 100 + r[2] * 10 + r[3]
+}

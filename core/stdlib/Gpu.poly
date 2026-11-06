@@ -1,0 +1,65 @@
+// GPU: the CPU side of the functions a kernel uses to cooperate with its neighbours.
+//
+// A `kernel func` is written for ONE element and runs on thousands of GPU threads at once. Threads
+// that touch the same memory need help: an ATOMIC update that cannot lose another thread's write,
+// scratch memory shared by one WORKGROUP, and a BARRIER where the whole group waits for the slowest
+// thread. The GPU back ends (`--emit-msl`, `--emit-glsl`) turn calls to the functions below into the
+// real thing. On the CPU a kernel is just a function called once per element, one after another, so
+// nothing can race and these are plain functions that do the same job sequentially:
+//
+//   atomicAdd(counts, slot, n)         counts[slot] += n          (whole numbers); returns the old value
+//   atomicAddFloat(sums, slot, x)      sums[slot] += x            (floats); returns the old value
+//   atomicMin(values, slot, n)         values[slot] = smaller of the two; returns the old value
+//   atomicMax(values, slot, n)         values[slot] = larger of the two; returns the old value
+//
+//   groupSize()                        how many threads cooperate in one workgroup: 256 on the GPU, 1 here
+//   localIndex(i)                      this thread's place within its group: i % 256 on the GPU, 0 here
+//   groupIndex(i)                      the number of this thread's group: i / 256 on the GPU, i here
+//   barrier()                          every thread of the group waits here until all have arrived
+//
+// A CPU "group" therefore has exactly one thread, so a kernel written correctly for ANY group size
+// (as the examples are) gives the same answer here as on the GPU, which makes the CPU a reference.
+//
+// Like the Wave library these are BUILT IN: a program that calls them without defining or importing
+// them gets this file added by the compiler (src/Prelude.nina; after editing it run
+// `python3 stdlib/sync-prelude.py`). A program that defines one of the names itself keeps its own.
+
+func atomicAdd(counts: ptr<i32>, slot: i32, amount: i32) -> i32 {
+    let old: i32 = counts[slot]
+    counts[slot] = old + amount
+    return old
+}
+
+func atomicAddFloat(sums: ptr<float>, slot: i32, amount: float) -> float {
+    let old: float = sums[slot]
+    sums[slot] = old + amount
+    return old
+}
+
+func atomicMin(values: ptr<i32>, slot: i32, candidate: i32) -> i32 {
+    let old: i32 = values[slot]
+    if (candidate < old) { values[slot] = candidate }
+    return old
+}
+
+func atomicMax(values: ptr<i32>, slot: i32, candidate: i32) -> i32 {
+    let old: i32 = values[slot]
+    if (candidate > old) { values[slot] = candidate }
+    return old
+}
+
+func groupSize() -> i32 {
+    return 1
+}
+
+func localIndex(i: i32) -> i32 {
+    return 0
+}
+
+func groupIndex(i: i32) -> i32 {
+    return i
+}
+
+func barrier() -> i32 {
+    return 0
+}

@@ -1,0 +1,6 @@
+kernel func a(x: double) -> float { return 1.0 }
+kernel func b(x: float) -> double { return 1.0 }
+kernel func c(s: string) -> float { return 1.0 }
+kernel func d(x: u8) -> float { return 1.0 }
+kernel func e(uniform p: ptr<double>) -> float { return 1.0 }
+kernel func f(x: float) -> i1 { return true }

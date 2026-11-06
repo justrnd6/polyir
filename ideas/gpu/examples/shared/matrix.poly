@@ -1,0 +1,36 @@
+// 4 x 4 MATRICES, shared by the examples that move, turn and project points.
+// A matrix is 16 numbers, row after row. A point is written (x, y, z, 1).
+// A 4x4 matrix times a 3D point written as (x, y, z, 1). The matrix is `m`, 16 numbers
+// row after row; each output slot is one row of m dotted with the point. The extra 1
+// is what lets a matrix MOVE points as well as turn them (see the guide).
+kernel func transform(p: vec<float, 4>, uniform m: ptr<float>) -> vec<float, 4> {
+    return vec[m[0] * p[0] + m[1] * p[1] + m[2] * p[2] + m[3] * p[3],
+        m[4] * p[0] + m[5] * p[1] + m[6] * p[2] + m[7] * p[3],
+        m[8] * p[0] + m[9] * p[1] + m[10] * p[2] + m[11] * p[3],
+        m[12] * p[0] + m[13] * p[1] + m[14] * p[2] + m[15] * p[3]]
+}
+
+func identity(m: ptr<float>) -> i64 {
+    for (k = 0; k < 16; k = k + 1) {
+        m[k] = 0.0
+    }
+    m[0] = 1.0
+    m[5] = 1.0
+    m[10] = 1.0
+    m[15] = 1.0
+    return 0
+}
+
+// out = a times b: out[row][col] is row `row` of a dotted with column `col` of b.
+func multiply4(a: ptr<float>, b: ptr<float>, out: ptr<float>) -> i64 {
+    for (row = 0; row < 4; row = row + 1) {
+        for (col = 0; col < 4; col = col + 1) {
+            var sum: float = 0.0
+            for (k = 0; k < 4; k = k + 1) {
+                sum = sum + a[row * 4 + k] * b[k * 4 + col]
+            }
+            out[row * 4 + col] = sum
+        }
+    }
+    return 0
+}

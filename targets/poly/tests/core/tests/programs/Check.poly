@@ -1,0 +1,26 @@
+extern func sin(x: double) -> double
+extern func cos(x: double) -> double
+extern func sqrt(x: double) -> double
+
+func off(got: float, expected: float) -> double {
+  return (got - expected).toDouble()
+}
+
+func offInt(got: i64, expected: i64) -> double {
+  return (got - expected).toDouble()
+}
+
+func offRelative(got: float, expected: float) -> double {
+  return ((got - expected) / expected).toDouble()
+}
+
+func amplitudeAt(data: ptr<float>, start: i64, count: i64, rate: i64, hz: float) -> float {
+  var re: double = 0.0
+  var im: double = 0.0
+  for (k = 0; k < count; k = k + 1) {
+    let angle: double = 6.283185307179586 * hz.toDouble() * (start + k).toDouble() / rate.toDouble()
+    re = re + data[start + k].toDouble() * cos(angle)
+    im = im + data[start + k].toDouble() * sin(angle)
+  }
+  return (2.0 * sqrt(re * re + im * im) / count.toDouble()).toFloat()
+}

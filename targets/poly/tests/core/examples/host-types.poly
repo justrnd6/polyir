@@ -1,0 +1,13 @@
+interface Runnable {
+  func run() -> i64
+}
+
+struct Job(id: i64) : Runnable {
+  func run() -> i64 {
+    return this.id
+  }
+}
+
+func main() -> i64 {
+  return 0
+}

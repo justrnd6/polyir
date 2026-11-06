@@ -1,0 +1,5 @@
+ok   -- scaleAll --               5 values
+ok   -- primes below 10000 --     1 values
+ok   -- isPrime 2 to 29 --        28 values
+ok   -- transformAll --           12 values
+ok   -- axisDot --                3 values

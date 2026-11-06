@@ -1,0 +1,44 @@
+// A tiny RAY TRACER on the GPU (Metal): a camera, a sphere, a checkered floor,
+// one light and shadows. One GPU thread traces the ray for one pixel.
+//
+//   polyir --emit-msl raytrace.poly > raytrace.metal
+//   polyir raytrace.poly --out raytrace && ./raytrace      (Apple Silicon; run in this folder)
+//
+// The picture is also drawn by the CPU (the same kernel called in a loop) and the
+// two must agree. The GPU's picture is saved as raytrace.pgm (a plain grey image).
+// Exit 0 means the GPU and CPU pictures match; 10 no GPU, 11 the Metal source is
+// missing, 12 dispatch failed, 13 the pictures differ.
+import "../Metal.poly"
+import "shared/scene.poly"   // the camera, the scene and the kernels (hitSphere, hitFloor, trace)
+
+func main() -> i64 {
+    let w: i64 = 320
+    let h: i64 = 180
+    let n: i64 = w * h
+    let cam: ptr<float> = calloc(28, 4).toPtr()
+    // This picture uses plain checkers, so the texture is never read; a one-float stand-in will do.
+    let tex: ptr<float> = calloc(1, 4).toPtr()
+    buildCamera(cam, w, h)
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let pipeline: i64 = metalPipeline(device, metalReadFile("raytrace.metal"), "trace")
+    if (pipeline == 0) { return 11 }
+    let out: i64 = metalEmptyBuffer(device, n * 4)
+    if (metalDispatch(device, pipeline, n, metalBuffer(device, cam.toI64(), 112), metalBuffer(device, tex.toI64(), 4), out, 0) == 0) { return 12 }
+    let gpu: ptr<float> = metalContents(out).toPtr()
+    savePicture("raytrace.pgm", gpu, w, h)
+    return compareWithCpu(gpu, cam, tex, n)
+}
+
+// The same kernel, called in an ordinary loop. A handful of pixels exactly on the
+// edge of the sphere may differ in the last bit of rounding, so a few are allowed.
+func compareWithCpu(gpu: ptr<float>, cam: ptr<float>, tex: ptr<float>, n: i64) -> i64 {
+    var differ: i64 = 0
+    for (i = 0; i < n; i = i + 1) {
+        var gap: float = gpu[i] - trace(i, cam, tex)
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > 0.01) { differ = differ + 1 }
+    }
+    if (differ > 20) { return 13 }
+    return 0
+}

@@ -1,0 +1,85 @@
+import "../audio/Sound.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+struct Stream(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64 >, state: i64, channels: i64, rate: i64, limit: i64, volume: float, progress: ptr<i64>) {
+}
+
+func streamNew(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64 >, state: i64, channels: i64, rate: i64, seconds: float, volume: float) -> Stream {
+  let limit: i64 = (seconds * rate.toFloat()).toI64()
+  let counters: ptr<i64> = calloc(4, 8).toPtr()
+  return Stream(fill: fill, state: state, channels: channels, rate: rate, limit: limit, volume: volume, progress: counters)
+}
+
+func streamBufferFrames() -> i64 {
+  return 2048
+}
+
+func streamBufferCount() -> i64 {
+  return 3
+}
+
+func streamFeed(stream: Stream, buf: ptr<float>, frames: i64) -> i64 {
+  let first: i64 = stream.progress[0]
+  let wanted: i64 = streamWanted(stream, first, frames)
+  if (wanted <= 0) {
+    return streamFinish(stream)
+  }
+  let fill: ptr<func(i64, ptr<float>, i64, i64) -> i64 > = stream.fill
+  let made: i64 = fill(stream.state, buf, wanted, first)
+  if (made <= 0) {
+    return streamFinish(stream)
+  }
+  streamScale(buf, made * stream.channels, stream.volume)
+  stream.progress[0] = first + made
+  stream.progress[3] = stream.progress[3] + 1
+  return made
+}
+
+func streamWanted(stream: Stream, first: i64, frames: i64) -> i64 {
+  if (stream.limit > 0 && stream.limit - first < frames) {
+    return stream.limit - first
+  }
+  return frames
+}
+
+func streamFinish(stream: Stream) -> i64 {
+  stream.progress[1] = 1
+  return 0
+}
+
+func streamScale(buf: ptr<float>, count: i64, volume: float) -> i64 {
+  if (volume == 1.0) {
+    return 0
+  }
+  for (i = 0; i < count; i = i + 1) {
+    buf[i] = buf[i] * volume
+  }
+  return 0
+}
+
+func streamFinished(stream: Stream) -> bool {
+  return stream.progress[1] == 1
+}
+
+func soundFill(state: i64, buf: ptr<float>, frames: i64, first: i64) -> i64 {
+  let view: ptr<Sound> = state.toPtr()
+  let sound: Sound = view[0]
+  var made: i64 = frames
+  if (first + made > sound.count) {
+    made = sound.count - first
+  }
+  if (made <= 0) {
+    return 0
+  }
+  for (i = 0; i < made * sound.channels; i = i + 1) {
+    buf[i] = sound.samples[first * sound.channels + i]
+  }
+  return made
+}
+
+func soundStream(s: Sound, volume: float) -> Stream {
+  let slot: ptr<Sound> = calloc(1, 32).toPtr()
+  slot[0] = s
+  let fill: ptr<func(i64, ptr<float>, i64, i64) -> i64 > = soundFill
+  return streamNew(fill, slot.toI64(), s.channels, s.rate, 0.0, volume)
+}

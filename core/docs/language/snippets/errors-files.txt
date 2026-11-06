@@ -1,0 +1,4 @@
+compile failed:
+  fixtures/diagnostics/lib/helper.poly:2:16: unknown name missing
+  fixtures/diagnostics/lib/helper.poly:8:25: unknown name absent
+  fixtures/diagnostics/main.poly:4:24: unknown name nothere

@@ -1,0 +1,16 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HStructDef","name":"C","fieldNames":["n"],"fieldTypes":[{"k":"HInt","bits":64}],"fieldMutable":[false]},
+{"k":"HFuncDef","name":"C_a","paramNames":["this"],"paramTypes":[{"k":"HStruct","name":"C"}],"ret":{"k":"HInt","bits":64},"body":[{"k":"HReturn","value":{"k":"HFieldGet","base":{"k":"HLocal","name":"this","ty":{"k":"HStruct","name":"C"},"at":[2,28]},"index":0,"ty":{"k":"HInt","bits":64},"at":[2,33]},"at":[2,33]}],"isCoroutine":false,"at":[2,8]},
+{"k":"HFuncDef","name":"C_a","paramNames":["this"],"paramTypes":[{"k":"HStruct","name":"C"}],"ret":{"k":"HInt","bits":64},"body":[{"k":"HReturn","value":{"k":"HConstInt","value":2,"ty":{"k":"HInt","bits":64},"at":[3,28]},"at":[3,28]}],"isCoroutine":false,"at":[3,8]},
+{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HReturn","value":{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[5,29]},"at":[5,29]}],"isCoroutine":false,"at":[5,6]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  no `kernel func` found

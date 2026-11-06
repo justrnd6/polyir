@@ -1,0 +1,44 @@
+// Methods (UFCS): `receiver.method(args)` desugars to
+// `method(receiver, args...)` for any ordinary top-level `func` or
+// builtin — a static call, not dynamic dispatch (see interfaces.poly for that). `method` is a bare grammar-fixed
+// IDENT, so dispatch skips `env` entirely (unlike an ordinary call,
+// which can resolve to a local function pointer).
+
+func square(x: i64) -> i64 {
+  return x * x
+}
+
+func sub(a: i64, b: i64) -> i64 {
+  return a - b
+}
+
+// The free-function and method spellings of the SAME call give the
+// same answer.
+func equivalenceCheck(x: i64) -> i64 {
+  return square(x) - x.square()
+}
+
+// Two-argument method call — confirms receiver-then-args ordering
+// (`a.sub(b)` must desugar to `sub(a, b)` = `a - b`, not `sub(b, a)` =
+// `b - a` — only observable because subtraction ISN'T commutative,
+// unlike `add`).
+func orderingCheck(a: i64, b: i64) -> i64 {
+  return a.sub(b) - (a - b)
+}
+
+// `arr.push(x)` as a bare statement, called twice: the growth persists across both calls (the method spelling of
+// `push(arr, x)`; a push changes the mutarray itself, so `arr` can be a `let`).
+func pushViaMethodPersists() -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  arr.push(10)
+  arr.push(20)
+  return len(arr)
+}
+
+func pushViaMethodSum() -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  arr.push(1)
+  arr.push(2)
+  arr.push(3)
+  return arr[0] + arr[1] + arr[2]
+}

@@ -1,0 +1,56 @@
+// Sound output on Linux through ALSA (libasound). UNTESTED: this file was written from ALSA's documentation and is
+// type-checked by the test suite, but it has not been run on a Linux machine. Treat it as a starting point.
+//
+// ALSA is simpler to drive than macOS's AudioQueue: the program writes frames with a call that BLOCKS until
+// the hardware has room for them, so the "callback" is just a loop: ask the program's fill function for the next
+// buffer (through `streamFeed` in Stream.poly), write it, repeat. A native build links `-lasound`
+// (`sudo apt install libasound2-dev` on Debian and Ubuntu); `--jit` refuses it.
+import "Stream.poly"
+
+extern func snd_pcm_open(pcm: i64, name: string, stream: i64, mode: i64) -> i32
+extern func snd_pcm_set_params(pcm: i64, format: i64, access: i64, channels: i64, rate: i64, softResample: i64,
+        latencyMicroseconds: i64) -> i32
+extern func snd_pcm_writei(pcm: i64, buf: i64, frames: i64) -> i64
+extern func snd_pcm_recover(pcm: i64, error: i64, silent: i64) -> i32
+extern func snd_pcm_drain(pcm: i64) -> i32
+extern func snd_pcm_close(pcm: i64) -> i32
+extern func calloc(count: i64, size: i64) -> i64
+
+// Plays a stream through the default sound card and returns when it is over: 0 on success, or ALSA's error code.
+// (Every platform file defines this one function; `ideas/audio-output/Audio.poly` builds the rest on it.)
+func audioStreamRun(stream: Stream) -> i64 {
+    let slot: ptr<i64> = calloc(1, 8).toPtr()
+    let opened: i32 = snd_pcm_open(slot.toI64(), "default", 0, 0)
+    if (opened < 0) { return opened.toI64() }
+    let pcm: i64 = slot[0]
+    // 14 = 32-bit little-endian float samples, 3 = interleaved frames, 1 = let ALSA convert the rate if
+    // the card cannot play it, and half a second of buffering.
+    let configured: i32 = snd_pcm_set_params(pcm, 14, 3, stream.channels, stream.rate, 1, 500000)
+    if (configured < 0) {
+        snd_pcm_close(pcm)
+        return configured.toI64()
+    }
+    audioAlsaLoop(pcm, stream)
+    snd_pcm_drain(pcm)
+    snd_pcm_close(pcm)
+    return 0
+}
+
+// Ask for a buffer, write it, repeat until the sound is over (or, as a safety stop, many hours have passed).
+func audioAlsaLoop(pcm: i64, stream: Stream) -> i64 {
+    let buf: ptr<float> = calloc(streamBufferFrames() * stream.channels, 4).toPtr()
+    for (turn = 0; turn < 100000000; turn = turn + 1) {
+        let made: i64 = streamFeed(stream, buf, streamBufferFrames())
+        if (made == 0) { return 0 }
+        audioAlsaWrite(pcm, buf, made)
+    }
+    return 1
+}
+
+// Writes `frames` frames. ALSA reports a negative number when the sound ran dry (an "underrun") or was
+// interrupted; `snd_pcm_recover` gets the card going again and the next write carries on.
+func audioAlsaWrite(pcm: i64, buf: ptr<float>, frames: i64) -> i64 {
+    let written: i64 = snd_pcm_writei(pcm, buf.toI64(), frames)
+    if (written < 0) { snd_pcm_recover(pcm, written, 1) }
+    return written
+}

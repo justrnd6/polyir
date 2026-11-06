@@ -1,0 +1,10 @@
+func named(found: optional<i64>) -> string {
+  return match (found) {
+    Some(n) if n > 0 => "positive"
+    None => "none"
+  }
+}
+func flag(on: bool) -> i64 {
+  return match (on) { true => 1 }
+}
+func main() -> i64 { return 0 }

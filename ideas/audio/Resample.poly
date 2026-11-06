@@ -1,0 +1,74 @@
+// RESAMPLE: change the sample rate of a sound without changing how it sounds. A recording at
+// 44,100 samples a second played into a device that wants 48,000 must be re-measured at the new
+// rate. Part of the Sound library (Sound.resample uses it) but it works on any array of floats.
+//
+//   import "../Resample.poly"     (the path is relative to the importing file)
+//
+//   let n: i64 = resampledCount(count, 44100, 48000)         // how many samples come out
+//   let out: ptr<float> = resampleArray(samples, count, 44100, 48000)
+//
+// HOW IT WORKS. The samples are measurements of a smooth wave taken at regular instants. To get
+// the wave's height at some other instant, rebuild the smooth wave from the measurements. The
+// mathematically exact way to do that is to add up one SINC curve per measurement,
+// sinc(t) = sin(pi t) / (pi t), each scaled by its measurement (the sampling theorem: a wave
+// with no frequencies above half the sample rate is completely described by its samples). The
+// sinc curve goes on forever, so each output sample adds up only the nearest `crossings` curves
+// on each side, shaded by a smooth "window" (Blackman) so the cut-off does not ring.
+//
+// GOING DOWN (a lower rate) there is a second job: frequencies above half of the NEW rate cannot
+// be stored, and if they were kept they would fold back as false lower tones (aliasing, see the
+// guide). So the sinc curves are stretched by new rate / old rate, which low-pass filters the
+// sound at the same time. Going up needs no filtering.
+//
+// COST: about (2 * crossings / cutoff) multiplications per output sample, so a few seconds of
+// sound take a moment, not a blink.
+extern func sin(x: double) -> double
+extern func cos(x: double) -> double
+extern func calloc(count: i64, size: i64) -> i64
+
+// The number of samples a sound of `count` samples has after the change (rounded to the nearest).
+func resampledCount(count: i64, rate: i64, newRate: i64) -> i64 {
+    return (count * newRate + rate / 2) / rate
+}
+
+// The Blackman window: 1 in the middle (u = 0), falling smoothly to 0 at the ends (u = -1 and 1).
+func resampleWindow(u: double) -> double {
+    let angle: double = 3.141592653589793 * u
+    let c: double = cos(angle)
+    return 0.42 + 0.5 * c + 0.08 * (2.0 * c * c - 1.0)
+}
+
+// cutoff * sinc(cutoff * d): the sinc curve stretched by `cutoff` (1 = unstretched), at distance d.
+func resampleSinc(d: double, cutoff: double) -> double {
+    if (d > 0.0 - 0.000001 && d < 0.000001) { return cutoff }
+    return sin(3.141592653589793 * cutoff * d) / (3.141592653589793 * d)
+}
+
+// The height of the rebuilt wave at position `p`, measured in input samples (2.5 is halfway
+// between samples 2 and 3). `reach` is how many input samples to look at on each side.
+func resampleAt(input: ptr<float>, count: i64, p: double, cutoff: double, reach: double) -> double {
+    let first: i64 = (p - reach).toI64()
+    let last: i64 = (p + reach).toI64() + 1
+    var sum: double = 0.0
+    for (k = first; k <= last; k = k + 1) {
+        if (k >= 0 && k < count) {
+            let d: double = p - k.toDouble()
+            sum = sum + input[k].toDouble() * resampleSinc(d, cutoff) * resampleWindow(d / reach)
+        }
+    }
+    return sum
+}
+
+// A new array of resampledCount(count, rate, newRate) samples: the sound at the new rate.
+func resampleArray(input: ptr<float>, count: i64, rate: i64, newRate: i64) -> ptr<float> {
+    let total: i64 = resampledCount(count, rate, newRate)
+    let out: ptr<float> = calloc(total + 1, 4).toPtr()
+    var cutoff: double = newRate.toDouble() / rate.toDouble()
+    if (cutoff > 1.0) { cutoff = 1.0 }
+    let reach: double = 16.0 / cutoff
+    for (j = 0; j < total; j = j + 1) {
+        let p: double = j.toDouble() * rate.toDouble() / newRate.toDouble()
+        out[j] = resampleAt(input, count, p, cutoff, reach).toFloat()
+    }
+    return out
+}

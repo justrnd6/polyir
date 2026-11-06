@@ -1,0 +1,147 @@
+// CONFORMANCE (Metal): every kernel in shared/kernels.poly runs on the GPU
+// and on the CPU, and the results must agree.
+//
+//   polyir --emit-msl conformance.poly > conformance.metal
+//   polyir conformance.poly --out conformance && ./conformance     (Apple Silicon; run in this folder)
+//
+// Exit 0 means every kernel matched. Exit 10 means no GPU; 20 + n means kernel n
+// (1 scale, 2 norm, 3 sumTo, 4 lane, 5 smooth, 6 leftover) did not compile or differs from the CPU.
+import "../Metal.poly"
+import "shared/kernels.poly"
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("conformance.metal")
+    if (checkKernel(device, source, "scale", 1) != 0) { return 21 }
+    if (checkKernel(device, source, "norm", 2) != 0) { return 22 }
+    if (checkKernel(device, source, "sumTo", 3) != 0) { return 23 }
+    if (checkKernel(device, source, "lane", 4) != 0) { return 24 }
+    if (checkKernel(device, source, "smooth", 5) != 0) { return 25 }
+    if (checkKernel(device, source, "leftover", 6) != 0) { return 26 }
+    return 0
+}
+
+// Builds the pipeline and runs kernel number `which`; 0 means it matched the CPU,
+// anything else that it did not compile or differs.
+func checkKernel(device: i64, source: string, name: string, which: i64) -> i64 {
+    let pipeline: i64 = metalPipeline(device, source, name)
+    if (pipeline == 0) { return 11 }
+    if (which == 1) { return runScale(device, pipeline) }
+    if (which == 2) { return runNorm(device, pipeline) }
+    if (which == 3) { return runSumTo(device, pipeline) }
+    if (which == 4) { return runLane(device, pipeline) }
+    if (which == 5) { return runSmooth(device, pipeline) }
+    return runLeftover(device, pipeline)
+}
+
+func runScale(device: i64, pipeline: i64) -> i64 {
+    let xs: float[4]
+    xs[0] = 1.0
+    xs[1] = 2.5
+    xs[2] = 0.0
+    xs[3] = 8.0
+    let k: float[1]
+    k[0] = 3.0
+    let out: i64 = metalEmptyBuffer(device, 16)
+    metalDispatch(device, pipeline, 4, metalBuffer(device, xs.toI64(), 16), metalBuffer(device, k.toI64(), 4), out, 0)
+    let got: ptr<float> = metalContents(out).toPtr()
+    for (i = 0; i < 4; i = i + 1) {
+        if (close(got[i], scale(xs[i], k[0])) == 0) { return 1 }
+    }
+    return 0
+}
+
+func runNorm(device: i64, pipeline: i64) -> i64 {
+    let a: float[3]
+    a[0] = 1.0
+    a[1] = 4.0
+    a[2] = 0.5
+    let b: float[3]
+    b[0] = 2.0
+    b[1] = 0.0
+    b[2] = 7.0
+    let out: i64 = metalEmptyBuffer(device, 12)
+    metalDispatch(device, pipeline, 3, metalBuffer(device, a.toI64(), 12), metalBuffer(device, b.toI64(), 12), out, 0)
+    let got: ptr<float> = metalContents(out).toPtr()
+    for (i = 0; i < 3; i = i + 1) {
+        if (close(got[i], norm(a[i], b[i])) == 0) { return 1 }
+    }
+    return 0
+}
+
+func runSumTo(device: i64, pipeline: i64) -> i64 {
+    let n: i32[4]
+    n[0] = 0
+    n[1] = 5
+    n[2] = 10
+    n[3] = 101
+    let out: i64 = metalEmptyBuffer(device, 16)
+    metalDispatch(device, pipeline, 4, metalBuffer(device, n.toI64(), 16), out, 0, 0)
+    let got: ptr<i32> = metalContents(out).toPtr()
+    for (i = 0; i < 4; i = i + 1) {
+        if (got[i] != sumTo(n[i])) { return 1 }
+    }
+    return 0
+}
+
+func runLane(device: i64, pipeline: i64) -> i64 {
+    let v: float[8]
+    for (i = 0; i < 8; i = i + 1) {
+        v[i] = (i * 3 + 1).toFloat()
+    }
+    let out: i64 = metalEmptyBuffer(device, 8)
+    metalDispatch(device, pipeline, 2, metalBuffer(device, v.toI64(), 32), out, 0, 0)
+    let got: ptr<float> = metalContents(out).toPtr()
+    if (close(got[0], lane(vec[v[0], v[1], v[2], v[3]])) == 0) { return 1 }
+    if (close(got[1], lane(vec[v[4], v[5], v[6], v[7]])) == 0) { return 1 }
+    return 0
+}
+
+func runSmooth(device: i64, pipeline: i64) -> i64 {
+    let xs: float[6]
+    xs[0] = 3.0
+    xs[1] = 9.0
+    xs[2] = 0.0
+    xs[3] = 6.0
+    xs[4] = 12.0
+    xs[5] = 3.0
+    let n: i32[1]
+    n[0] = 6
+    let out: i64 = metalEmptyBuffer(device, 24)
+    metalDispatch(device, pipeline, 6, metalBuffer(device, xs.toI64(), 24), metalBuffer(device, n.toI64(), 4), out, 0)
+    let got: ptr<float> = metalContents(out).toPtr()
+    let cpu: ptr<float> = xs.toI64().toPtr()
+    for (i = 0; i < 6; i = i + 1) {
+        if (close(got[i], smooth(i, cpu, 6)) == 0) { return 1 }
+    }
+    return 0
+}
+
+// Remainders of floats. 2867 = 47 * 61, 5969 = 47 * 127 and 9409 = 97 * 97 divide evenly, and a GPU whose division is
+// a hair inexact would answer 47 (or 97) instead of 0 for them.
+func runLeftover(device: i64, pipeline: i64) -> i64 {
+    let a: float[7]
+    a[0] = 2867.0
+    a[1] = 5969.0
+    a[2] = 9409.0
+    a[3] = 7.5
+    a[4] = 0.0 - 7.5
+    a[5] = 100.0
+    a[6] = 0.0
+    let b: float[7]
+    b[0] = 47.0
+    b[1] = 47.0
+    b[2] = 97.0
+    b[3] = 2.0
+    b[4] = 2.0
+    b[5] = 7.0
+    b[6] = 5.0
+    let out: i64 = metalEmptyBuffer(device, 28)
+    metalDispatch(device, pipeline, 7, metalBuffer(device, a.toI64(), 28), metalBuffer(device, b.toI64(), 28), out, 0)
+    let got: ptr<float> = metalContents(out).toPtr()
+    for (i = 0; i < 7; i = i + 1) {
+        if (close(got[i], leftover(a[i], b[i])) == 0) { return 1 }
+    }
+    return 0
+}

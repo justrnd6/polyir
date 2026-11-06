@@ -1,0 +1,5 @@
+struct C(n: i64) {
+  func a() -> i64 { return this.n }
+  func a() -> i64 { return 2 }
+}
+func main() -> i64 { return 0 }

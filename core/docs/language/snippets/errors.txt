@@ -1,0 +1,3 @@
+compile failed:
+  errors.poly:8:28: expected an integer but found a float
+  errors.poly:9:12: distance takes 2 arguments but 1 were given

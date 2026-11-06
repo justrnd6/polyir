@@ -1,0 +1,54 @@
+// COMPOSING WITH THE SOUND LIBRARY: a short piece built from the Sound type's operations, with no
+// GPU involved. Native only (it can play through the speakers):
+//
+//   polyir compose.poly --out compose && ./compose              (run in this folder; writes compose.wav)
+//   POLYIR_PLAY=1 ./compose                                      (also plays it)
+//
+// The piece: a C major scale climbing in sine tones, a sawtooth bass line underneath, a held C
+// major chord at the end, and then an ECHO made by mixing a quieter, delayed copy back in.
+// Exit 0 means the piece was built and compose.wav was written; 11 the file could not be
+// written; 12 the loudness check failed; 15 playback failed.
+import "../../audio/Sound.poly"
+import "../Audio.poly"
+
+extern func getenv(name: string) -> i64
+
+// The step (in semitones above C) of the k-th note of the major scale: 0 2 4 5 7 9 11 12.
+func scaleStep(k: i64) -> float {
+    if (k == 0) { return 0.0 }
+    if (k == 1) { return 2.0 }
+    if (k == 2) { return 4.0 }
+    if (k == 3) { return 5.0 }
+    if (k == 4) { return 7.0 }
+    if (k == 5) { return 9.0 }
+    if (k == 6) { return 11.0 }
+    return 12.0
+}
+
+func main() -> i64 {
+    let rate: i64 = 44100
+    let song: Sound = soundNew(6.0, rate)
+    // The scale: eight sine notes of 0.4 seconds, MIDI key 60 (middle C) and up.
+    for (k = 0; k < 8; k = k + 1) {
+        song.tone(0, noteFrequency(60.0 + scaleStep(k)), 0.35, k.toFloat() * 0.4, 0.4)
+    }
+    // A sawtooth bass, C two octaves below middle C, under the scale.
+    song.tone(2, noteFrequency(36.0), 0.12, 0.0, 3.2)
+    // The held chord: C, E, G and the C above, all at once (a chord is just notes added together).
+    song.tone(0, noteFrequency(60.0), 0.2, 3.2, 2.6)
+    song.tone(0, noteFrequency(64.0), 0.2, 3.2, 2.6)
+    song.tone(0, noteFrequency(67.0), 0.2, 3.2, 2.6)
+    song.tone(0, noteFrequency(72.0), 0.2, 3.2, 2.6)
+    // An echo: a new, longer sound holding the song, plus a copy 0.25 seconds later at 40% volume.
+    let withEcho: Sound = soundNew(6.5, rate)
+    withEcho.add(song, 0.0, 1.0)
+    withEcho.add(song, 0.25, 0.4)
+    // Mixing can make the sum louder than a speaker can play: scale it so the loudest sample is 0.9.
+    withEcho.normalize(0.9)
+    if (withEcho.peak() < 0.89 || withEcho.peak() > 0.91) { return 12 }
+    if (withEcho.saveWav("compose.wav") == 0) { return 11 }
+    if (getenv("POLYIR_PLAY") != 0) {
+        if (soundPlay(withEcho) != 0) { return 15 }
+    }
+    return 0
+}

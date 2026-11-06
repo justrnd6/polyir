@@ -1,0 +1,670 @@
+# Python
+source: polyir
+target: python
+style: indent 4, blocks colon, empty pass, names snake, paths ., qualify full, generics kept, extension py
+
+// A checked program as one Python 3.12 file with nothing to install. A struct is a dataclass (polyir structs are shared, as
+// Python objects are), a module a class holding its declarations (`Geometry.Point`), an interface a Protocol, an absent optional
+// `None`. Python's whole numbers have no width, so the operators that can leave a type's range go through a helper named for
+// the type (`i64(a + b)`), and `/` and `%` truncate as polyir's do (`div`, `rem`).
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+program(support, items, main) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  if __name__ == "__main__":
+      main()
+program(support, items, main: int) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  if __name__ == "__main__":
+      raise SystemExit(main())
+
+// A module is a class holding its declarations; its functions are static.
+module(name, items) :=
+  class {name}:
+      {items.member}
+
+// A struct used as a dict's key or a set's member is hashed from its fields.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  @dataclass
+  class {name}[{typeParams}]:
+      {fields}
+
+      {methods}
+
+      {statics}
+
+      {nested}
+  uses: dataclass
+struct(name, typeParams, fields, methods, nested, statics, isKey) :=
+  @dataclass(unsafe_hash=True)
+  class {name}[{typeParams}]:
+      {fields}
+
+      {methods}
+
+      {statics}
+
+      {nested}
+  uses: dataclass
+struct(name, typeParams, fields: empty, methods: empty, nested: empty, statics: empty) :=
+  @dataclass
+  class {name}[{typeParams}]:
+      pass
+  uses: dataclass
+
+// A field's default is not written: every struct literal gives each field its value.
+field(name, type)                   := {name}: {type}
+field(name, type, value)            := {name}: {type}
+
+method(name, params, result, body)  := def {name}(self, {params}) -> {result}{body}
+// A struct's own `equals` is what `==` asks.
+method(name: equals, params, result, body) :=
+  def equals(self, {params}) -> {result}{body}
+
+  __eq__ = equals
+static(name, params, result, body)  :=
+  @staticmethod
+  def {name}({params}) -> {result}{body}
+func(name, typeParams, params, result, body) := def {name}[{typeParams}]({params}) -> {result}{body}
+func.member(name, typeParams, params, result, body) :=
+  @staticmethod
+  def {name}[{typeParams}]({params}) -> {result}{body}
+
+// A coroutine gives a Coroutine over a generator, which runs with the coroutine and the arguments.
+coro(name, params, yields, body) :=
+  def {name}({params}) -> Coroutine:
+      def run(coroutine: Coroutine, {params}):
+          {body}
+
+      return Coroutine(run, {params.arg})
+  uses: variant, coroutine
+coro.member(name, params, yields, body) :=
+  @staticmethod
+  def {name}({params}) -> Coroutine:
+      def run(coroutine: Coroutine, {params}):
+          {body}
+
+      return Coroutine(run, {params.arg})
+  uses: variant, coroutine
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) := def {name}({params}) -> {result}{body}
+param(name, type)                   := {name}: {type}
+param.arg(name, type)               := {name}
+param.bare(name, type)              := {name}
+
+// An interface is a Protocol: a struct has its methods without naming it.
+interface(name, methods)            := class {name}(Protocol){methods}
+  uses: protocol
+signature(name, params, result)     := def {name}(self, {params}) -> {result}: ...
+
+// The C functions Python has, through math; any other one it cannot call.
+extern(name, params, result)        := unsupported "Python cannot call a C function"
+extern(name: abs, params, result)   :=
+extern(name: sin cos tan sqrt log exp fabs pow fmod, params, result) := from math import {name}
+extern(name: floor ceil, params, result) :=
+  def {name}(x: float) -> float:
+      return float(math.{name}(x))
+  uses: math
+extern(name: fmax, params, result)  :=
+  def fmax(x: float, y: float) -> float:
+      return max(x, y)
+extern(name: fmin, params, result)  :=
+  def fmin(x: float, y: float) -> float:
+      return min(x, y)
+extern(name: sinf, params, result)  :=
+  def sinf(x: float) -> float:
+      return f32(math.sin(x))
+  uses: math, f32
+extern(name: cosf, params, result)  :=
+  def cosf(x: float) -> float:
+      return f32(math.cos(x))
+  uses: math, f32
+extern(name: tanf, params, result)  :=
+  def tanf(x: float) -> float:
+      return f32(math.tan(x))
+  uses: math, f32
+extern(name: sqrtf, params, result) :=
+  def sqrtf(x: float) -> float:
+      return f32(math.sqrt(x))
+  uses: math, f32
+extern(name: floorf, params, result) :=
+  def floorf(x: float) -> float:
+      return f32(math.floor(x))
+  uses: math, f32
+extern(name: ceilf, params, result) :=
+  def ceilf(x: float) -> float:
+      return f32(math.ceil(x))
+  uses: math, f32
+extern(name: logf, params, result)  :=
+  def logf(x: float) -> float:
+      return f32(math.log(x))
+  uses: math, f32
+extern(name: expf, params, result)  :=
+  def expf(x: float) -> float:
+      return f32(math.exp(x))
+  uses: math, f32
+extern(name: fabsf, params, result) :=
+  def fabsf(x: float) -> float:
+      return f32(abs(x))
+  uses: f32
+extern(name: powf, params, result)  :=
+  def powf(x: float, y: float) -> float:
+      return f32(math.pow(x, y))
+  uses: math, f32
+extern(name: fmaxf, params, result) :=
+  def fmaxf(x: float, y: float) -> float:
+      return f32(max(x, y))
+  uses: f32
+extern(name: fminf, params, result) :=
+  def fminf(x: float, y: float) -> float:
+      return f32(min(x, y))
+  uses: f32
+extern(name: getchar, params, result) :=
+  def getchar() -> int:
+      data = sys.stdin.buffer.read(1)
+      return data[0] if data else -1
+  uses: sys
+extern(name: putchar, params, result) :=
+  def putchar(c: int) -> int:
+      sys.stdout.write(chr(c & 255))
+      return c
+  uses: sys
+
+global(name, type, value)           := {name}: {type} = {value}
+import(module)                      := import {module}
+import(module, alias)               := import {module} as {alias}
+// An imported .poly file is its own module: the `include` pass, at the top, takes the names this file's code uses from it.
+use(name, path, names)              :=
+use.include(name, path, names)      := from {name} import {names}
+any.include(value)                  :=
+
+## statements
+let(name, type, value)              := {name}: {type} = {value}
+var(name, type)                     := {name}: {type} = {type.zero}
+var(name, type, value)              := {name}: {type} = {value}
+assign(target, value)               := {target} = {value}
+store(object, index, value)         := {object}[{index}] = {value}
+store(object: sparse, index, value) := {object}.set({index}, 0, {value})
+store(object, indices, value)       := {object}.set({indices}, {value})
+expr(value)                         := {value.statement}
+if(cond, then)                      := if {cond}{then}
+if(cond, then, else)                := if {cond}{then} else{else}
+if(cond, then, elseIf)              := if {cond}{then} el{elseIf}
+while(cond, body)                   := while {cond}{body}
+// Python has no counted loop: a `for` is its counters and a `while`.
+for(counters, cond, steps, body)    := lower
+counter(name, type, value)          := {name} = {value}
+step(name, value)                   := {name} = {value}
+foreach(name, source, body)         := for {name} in {source}{body}
+return                              := return
+return(value)                       := return {value}
+try(body, name, handler) :=
+  try{body}
+  except Thrown as thrown:
+      {name} = thrown.value
+      {handler}
+  uses: thrown
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  try{body}
+  except BaseException:
+      {cleanup}
+      raise
+throw(value)                        := raise Thrown({value})
+  uses: thrown
+yield(value)                        := yield {value}
+// A switch of blocks, which `match` and `switch` lower to: Python's `match`, an arm per `case`; a sum is written as its `if`
+// chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool string, arms) :=
+  match {value}:
+      {arms}
+select(value: int bool string, arms, else) :=
+  match {value}:
+      {arms}
+      case _:
+          {else}
+arm(keys, body) :=
+  case {keys| | }:
+      {body}
+arm(keys, body: empty)              := case {keys| | }: pass
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the cases of a loop, each ending with a jump or a return.
+machine(state, cases) :=
+  while True:
+      {cases}
+case(state, number, body)           := if {state} == {number}{body}
+jump(state, number) :=
+  {state} = {number}
+  continue
+
+## expressions
+// closure may also name the facts name, globals, outer (its body has them too)
+int(value)                          := {value}
+float(value)                        := {value}
+bool(value)                         := {value}
+bool(value: true)                   := True
+bool(value: false)                  := False
+string(value)                       := "{value}"
+unit                                := None
+name(name)                          := {name}
+this                                := self
+funcref(name)                       := {name}
+
+// The operators that can leave a whole number's range go through the helper of its type.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: i64, op: + - * <<, right) := i64({left} {op} {right})
+  uses: i64
+binary(left: i32, op: + - * <<, right) := i32({left} {op} {right})
+  uses: i32
+binary(left: i16, op: + - * <<, right) := i16({left} {op} {right})
+  uses: i16
+binary(left: i8, op: + - * <<, right) := i8({left} {op} {right})
+  uses: i8
+binary(left: u64, op: + - * <<, right) := u64({left} {op} {right})
+  uses: u64
+binary(left: u32, op: + - * <<, right) := u32({left} {op} {right})
+  uses: u32
+binary(left: u16, op: + - * <<, right) := u16({left} {op} {right})
+  uses: u16
+binary(left: u8, op: + - * <<, right) := u8({left} {op} {right})
+  uses: u8
+binary(left: int, op: /, right)     := div({left}, {right})
+  uses: div
+binary(left: int, op: %, right)     := rem({left}, {right})
+  uses: div
+binary(left: float, op: + - * /, right) := f32({left} {op} {right})
+  uses: f32
+binary(left: float double, op: %, right) := math.fmod({left}, {right})
+  uses: math
+binary(left: array mutarray, op: +, right) := [*{left}, *{right}]
+// A vector's operators work lane by lane (its lanes are not kept in an integer's range or rounded to a float).
+binary(left: vec, op: + - * / %, right) := lanes({left}, {right}, lambda x, y: x {op} y)
+  uses: lanes
+
+unary(op, operand)                  := {op}{operand}
+unary(op: !, operand)               := not {operand}
+unary(op: - ~, operand: u64)        := u64({op}{operand})
+  uses: u64
+unary(op: - ~, operand: u32)        := u32({op}{operand})
+  uses: u32
+unary(op: - ~, operand: u16)        := u16({op}{operand})
+  uses: u16
+unary(op: - ~, operand: u8)         := u8({op}{operand})
+  uses: u8
+
+// A number of one type as another, brought into the new type's range.
+cast(value, type)                   := {value}
+// A pointer is a list here, so it has no address to turn into a number, or back.
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: i64)              := i64({value})
+  uses: i64
+cast(value, type: i32)              := i32({value})
+  uses: i32
+cast(value, type: i16)              := i16({value})
+  uses: i16
+cast(value, type: i8)               := i8({value})
+  uses: i8
+cast(value, type: u64)              := u64({value})
+  uses: u64
+cast(value, type: u32)              := u32({value})
+  uses: u32
+cast(value, type: u16)              := u16({value})
+  uses: u16
+cast(value, type: u8)               := u8({value})
+  uses: u8
+cast(value: float double, type: i64) := i64(int({value}))
+  uses: i64
+cast(value: float double, type: i32) := i32(int({value}))
+  uses: i32
+cast(value: float double, type: i16) := i16(int({value}))
+  uses: i16
+cast(value: float double, type: i8) := i8(int({value}))
+  uses: i8
+cast(value: float double, type: u64) := u64(int({value}))
+  uses: u64
+cast(value: float double, type: u32) := u32(int({value}))
+  uses: u32
+cast(value: float double, type: u16) := u16(int({value}))
+  uses: u16
+cast(value: float double, type: u8) := u8(int({value}))
+  uses: u8
+// A cast that widens keeps the value as it is.
+cast(value: i8 i16 i32 u8 u16 u32, type: i64) := {value}
+cast(value: u8 u16 u32, type: u64)  := {value}
+cast(value: i8 i16 u8 u16, type: i32) := {value}
+cast(value: u8 u16, type: u32)      := {value}
+cast(value: i8 u8, type: i16)       := {value}
+cast(value: u8, type: u16)          := {value}
+cast(value: int bool, type: double) := float({value})
+cast(value, type: float)            := f32({value})
+  uses: f32
+cast(value: bool, type: int)        := int({value})
+cast(value, type: bool)             := {value} != 0
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := {then} if {cond} else {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+methodcall(object, name, args)      := {object}.{name}({args})
+invoke(callee, args)                := {callee}({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object}.{name}
+
+// A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := {object}[{index}]
+index(object: map mutmap, index, type) := {object}.get({index}, {type.zero})
+index(object: sparse, index, type)  := {object}.get({index}, 0)
+index(object, indices, type)        := {object}.get({indices})
+
+new(name, values)                   := {name}({values})
+new(name, typeArgs, values)         := {name}({values})
+init(name, value)                   := {value}
+list(values)                        := [{values}]
+vec(values)                         := [{values}]
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+// A closure of several statements is a `def` written before the statement that uses it.
+closure(params, result, body)       := {name}
+  before: def {name}({params}){body}
+lambda(params, value)               := lambda {params.bare}: {value}
+lambda(params: empty, value)        := lambda: {value}
+some(type, value)                   := {value}
+none(type)                          := None
+ok(type, value)                     := Ok({value})
+  uses: either
+err(type, value)                    := Err({value})
+  uses: either
+variant(type, case, value)          := Variant({case}, {value})
+  uses: variant
+
+// Text with holes is an f-string; a flag says `true` or `false`, a char (`i8`) is the character of its byte.
+interp(pieces)                      := f"{pieces}"
+text(value)                         := {value}
+  escape: { as {{
+  escape: } as }}
+hole(value)                         := {{value}}
+hole(value: bool)                   := {'true' if {value} else 'false'}
+hole(value: i8 u8)                  := {chr({value} & 255)}
+
+## builtins
+// A string counts its UTF-8 bytes, as on every target.
+len(object)                         := len({object})
+len(object: string)                 := text_length({object})
+  uses: text
+capacity(object)                    := len({object})
+rows(object)                        := {object}.dims[0]
+cols(object)                        := {object}.dims[1]
+dim(object, axis)                   := {object}.dims[{axis}]
+
+// A push whose list is not used is Python's append; one used as a value gives the list (`pushed`).
+push(object, value)                 := pushed({object}, {value})
+  uses: pushed
+push.statement(object, value)       := {object}.append({value})
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := {value}
+hash(value: bool)                   := int({value})
+hash(value: string)                 := hash_text({value})
+  uses: hashText
+
+shuffle(object, lanes)              := [{object}[lane] for lane in [{lanes}]]
+atomicLoad(object, order)           := unsupported "Python has no memory to share between threads"
+atomicStore(object, value, order)   := unsupported "Python has no memory to share between threads"
+atomicRmw(object, op, value, order) := unsupported "Python has no memory to share between threads"
+cmpxchg(object, expected, value, success, failure) := unsupported "Python has no memory to share between threads"
+fence(order)                        := unsupported "Python has no memory to share between threads"
+
+// A variant is a Variant (the number of its case and its value), an `either` an Ok or an Err.
+tag(object)                         := {object}.tag
+isCase(object, case)                := {object}.tag == {case}
+unwrapAt(object, case)              := {object}.value
+isOk(object)                        := isinstance({object}, Ok)
+isErr(object)                       := isinstance({object}, Err)
+unwrapOk(object)                    := {object}.value
+unwrapErr(object)                   := {object}.value
+isSome(object)                      := {object} is not None
+isNone(object)                      := {object} is None
+unwrap(object)                      := present({object})
+  uses: fail, present
+
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+yielded(value)                      := (yield from coroutine.give({value}))
+
+// `copy`, `freeze` and `thaw` make a new collection holding the same items.
+copy(object)                        := copy.copy({object})
+  uses: copy
+copy(object: array mutarray)        := list({object})
+copy(object: grid matrix tensor sparse) := {object}.copy()
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := [*{object}, {value}]
+with(object: set mutset, value)     := with_item({object}, {value})
+  uses: with
+with(object, key, value)            := with_entry({object}, {key}, {value})
+  uses: with
+has(object, key)                    := {key} in {object}
+add(object, value)                  := {object}.add({value})
+remove(object, key)                 := removed({object}, {key})
+  uses: removed
+truncate(object, size)              := truncate({object}, {size})
+  uses: truncate
+
+str(value)                          := str({value})
+str(value: bool)                    := ("true" if {value} else "false")
+str(value: i8 u8)                   := chr({value} & 255)
+str(value: string)                  := {value}
+charAt(object, index)               := text_byte({object}, {index})
+  uses: text
+slice(object, from, to)             := text_slice({object}, {from}, {to})
+  uses: text
+find(object, part, from)            := text_find({object}, {part}, {from})
+  uses: text
+print(value)                        := print({value})
+fail(value)                         := fail({value})
+  uses: fail
+
+## types
+// The types are written as hints.
+i8                                  := int
+i16                                 := int
+i32                                 := int
+i64                                 := int
+u8                                  := int
+u16                                 := int
+u32                                 := int
+u64                                 := int
+bool                                := bool
+float                               := float
+double                              := float
+string                              := str
+void                                := None
+// A struct named before it is declared needs the hints left unevaluated.
+struct(name)                        := {name}
+  uses: annotations
+instance(name, args)                := {name}[{args}]
+  uses: annotations
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+  uses: annotations
+host(name, binding, args)           := {binding}[{args}]
+  uses: annotations
+array(elem)                         := list[{elem}]
+mutarray(elem)                      := list[{elem}]
+map(key, value)                     := dict[{key}, {value}]
+mutmap(key, value)                  := dict[{key}, {value}]
+set(elem)                           := set[{elem}]
+mutset(elem)                        := set[{elem}]
+optional(elem)                      := {elem} | None
+either(ok, err)                     := Ok | Err
+variant(cases)                      := Variant
+closure(params, result)             := Callable[[{params}], {result}]
+  uses: callable
+func(params, result)                := Callable[[{params}], {result}]
+  uses: callable
+// A pointer is a kernel's buffer, indexed as a list.
+ptr(elem)                           := list[{elem}]
+coro(elem)                          := Coroutine
+vec(elem, size)                     := list[{elem}]
+matrix(elem, size)                  := Grid
+fixed(elem, size)                   := list[{elem}]
+buffer(elem, size)                  := list[{elem}]
+grid(elem, rows, cols)              := Grid
+tensor(elem, dims)                  := Grid
+sparse(elem)                        := Sparse
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := None
+i8.zero                             := 0
+i16.zero                            := 0
+i32.zero                            := 0
+i64.zero                            := 0
+u8.zero                             := 0
+u16.zero                            := 0
+u32.zero                            := 0
+u64.zero                            := 0
+bool.zero                           := False
+float.zero                          := 0.0
+double.zero                         := 0.0
+string.zero                         := ""
+array.zero(elem)                    := []
+mutarray.zero(elem)                 := []
+map.zero(key, value)                := {}
+map.zero(key: array mutarray set mutset map mutmap, value) := ValueDict()
+  uses: valueKeys
+mutmap.zero(key, value)             := {}
+mutmap.zero(key: array mutarray set mutset map mutmap, value) := ValueDict()
+  uses: valueKeys
+set.zero(elem)                      := set()
+set.zero(elem: array mutarray set mutset map mutmap) := ValueSet()
+  uses: valueKeys
+mutset.zero(elem)                   := set()
+mutset.zero(elem: array mutarray set mutset map mutmap) := ValueSet()
+  uses: valueKeys
+fixed.zero(elem, size)              := [{elem.zero} for _ in range({size})]
+buffer.zero(elem, size)             := [{elem.zero} for _ in range({size})]
+vec.zero(elem, size)                := [{elem.zero} for _ in range({size})]
+grid.zero(elem, rows, cols)         := Grid([{rows}, {cols}], {elem.zero})
+  uses: grid
+matrix.zero(elem, size)             := Grid([{size}, {size}], {elem.zero})
+  uses: grid
+tensor.zero(elem, dims)             := Grid([{dims}], {elem.zero})
+  uses: grid
+sparse.zero(elem)                   := Sparse({elem.zero})
+  uses: sparse
+
+## operators
+&& := and
+|| := or
+=== := is
+!== := is not
+// Python chains its comparisons (`a < b < c`), so one beside another is bracketed.
+apart: == != < <= > >= is in
+levels: lambda, if else, or, and, not, in is < <= > >= != ==, |, ^, &, << >>, + -, * / // %
+
+## reserved
+// Python's own words, and the names its helpers and built-ins use: a name that is one of them gets a _ after it.
+and as assert async await break class continue def del elif else except False finally for from global if import in is
+lambda None nonlocal not or pass raise return True try while with yield match case type self
+len print str int float bool list dict set range chr isinstance super object hash min max sum map filter iter next
+math sys copy struct dataclass Protocol Callable
+Coroutine Variant Ok Err Thrown Grid Sparse ValueDict ValueSet coroutine run fail present pushed truncate removed
+with_entry with_item text_length text_byte text_slice text_find hash_text frozen lanes div rem f32
+i8 i16 i32 i64 u8 u16 u32 u64
+
+## imports
+// Each is written once at the top when a rule or a support file that uses it is written; `__future__` must come first.
+annotations := from __future__ import annotations
+copy := import copy
+math := import math
+struct := import struct
+sys := import sys
+callable := from collections.abc import Callable
+dataclass := from dataclasses import dataclass
+protocol := from typing import Protocol
+
+## support
+// Each file is written after the imports and files its `uses:` line names.
+i8 := runtime/I8.py
+i16 := runtime/I16.py
+i32 := runtime/I32.py
+i64 := runtime/I64.py
+u8 := runtime/U8.py
+u16 := runtime/U16.py
+u32 := runtime/U32.py
+u64 := runtime/U64.py
+f32 := runtime/F32.py
+  uses: struct
+div := runtime/Div.py
+fail := runtime/Fail.py
+  uses: sys
+present := runtime/Present.py
+thrown := runtime/Thrown.py
+either := runtime/Either.py
+  uses: dataclass
+variant := runtime/Variant.py
+  uses: dataclass
+coroutine := runtime/Coroutine.py
+  uses: variant
+pushed := runtime/Pushed.py
+truncate := runtime/Truncate.py
+removed := runtime/Removed.py
+with := runtime/With.py
+text := runtime/Text.py
+hashText := runtime/HashText.py
+valueKeys := runtime/ValueKeys.py
+grid := runtime/Grid.py
+  uses: annotations
+sparse := runtime/Sparse.py
+  uses: annotations
+lanes := runtime/Lanes.py
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+// A body that gives a global, or an outer function's local, a new value says `global` or `nonlocal` first.
+body(statements, result)            := {statements}
+body(statements, result, globals)   :=
+  global {globals}
+  {statements}
+body(statements, result, outer)     :=
+  nonlocal {outer}
+  {statements}
+body(statements, result, outer, globals) :=
+  global {globals}
+  nonlocal {outer}
+  {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code.
+line := # from {file}:{line}:{column} {code}

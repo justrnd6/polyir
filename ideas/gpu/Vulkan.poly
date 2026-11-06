@@ -1,0 +1,615 @@
+// The Vulkan host runtime, written in polyir. It does for the GLSL shaders of
+// `polyir --emit-glsl` what `Metal.poly` does for Metal source: find the GPU,
+// load the compiled shader, put data in GPU-visible buffers, run the shader and
+// wait for it. Vulkan is a C library, so every call here is a plain `extern`.
+//
+// How to read the Vulkan calls below
+//   * Almost every Vulkan function takes a pointer to an "info" struct that
+//     describes what to create. Such a struct is a list of fields at fixed byte
+//     offsets (64-bit layout). Here each one is built in a block of memory
+//     made of 64-bit words (`words(n)`); `lo + hi * 4294967296` (see `pair`)
+//     packs two 32-bit fields into one word, and a comment above each builder
+//     names the fields in order.
+//   * Handles (an instance, a buffer, ...) are 64-bit numbers; the driver writes
+//     a new one into a one-word block we pass, and `first(block)` reads it.
+//   * A Vulkan function returning a `VkResult` is declared `-> i32`; 0 means
+//     success. All other arguments are passed as `i64` (this works on 64-bit
+//     Arm and x86, where integers and addresses share argument registers).
+//
+// What this runtime keeps simple: one queue family (number 0), buffers in
+// memory both the CPU and GPU can see (so there is no copying step), one
+// descriptor set per dispatch. (A driver may limit how many storage buffers one shader can use; the
+// Vulkan minimum is 4, and real GPUs allow far more.)
+//
+// The shader file is SPIR-V, made in one of two ways: `polyir --emit-glsl`, then `glslangValidator -V name.comp -o name.spv`;
+// or directly, `polyir --emit-spirv`, which writes each module as hex text that this runtime loads as it is (or that
+// `xxd -r -p` turns into the binary).
+//
+// Building: this program calls Vulkan, so it must be built natively
+// (`polyir file --out name`); the CLI links the Vulkan loader itself, and `--jit`
+// refuses it with a clear message. On a Mac the loader finds MoltenVK, which
+// runs Vulkan on top of Metal.
+//
+// Typical use (see examples/):
+//   let gpu: i64 = vulkanStart()
+//   let shader: i64 = vulkanPipeline(gpu, "scale.spv", 2, 8)   // 2 buffers, 8 bytes of push constants
+//   let input: i64 = vulkanBuffer(gpu, data.toI64(), byteCount)
+//   let output: i64 = vulkanEmptyBuffer(gpu, byteCount)
+//   vulkanDispatch(gpu, shader, count, pushAddress, input, output, 0, 0)
+// (more buffers, a grid of threads, and workgroups: see "running" below)
+extern func vkCreateInstance(info: i64, allocator: i64, out: i64) -> i32
+extern func vkEnumeratePhysicalDevices(instance: i64, count: i64, out: i64) -> i32
+extern func vkGetPhysicalDeviceProperties(physical: i64, out: i64) -> i64
+extern func vkGetPhysicalDeviceMemoryProperties(physical: i64, out: i64) -> i64
+extern func vkCreateDevice(physical: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkGetDeviceQueue(device: i64, family: i64, at: i64, out: i64) -> i64
+extern func vkCreateBuffer(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkGetBufferMemoryRequirements(device: i64, buf: i64, out: i64) -> i64
+extern func vkAllocateMemory(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkBindBufferMemory(device: i64, buf: i64, memory: i64, offset: i64) -> i32
+extern func vkMapMemory(device: i64, memory: i64, offset: i64, size: i64, flags: i64, out: i64) -> i32
+extern func vkCreateShaderModule(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkCreateDescriptorSetLayout(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkCreatePipelineLayout(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkCreateComputePipelines(device: i64, cache: i64, count: i64, infos: i64, allocator: i64, out: i64) -> i32
+extern func vkCreateDescriptorPool(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkAllocateDescriptorSets(device: i64, info: i64, out: i64) -> i32
+extern func vkUpdateDescriptorSets(device: i64, writeCount: i64, writes: i64, copyCount: i64, copies: i64) -> i64
+extern func vkCreateCommandPool(device: i64, info: i64, allocator: i64, out: i64) -> i32
+extern func vkAllocateCommandBuffers(device: i64, info: i64, out: i64) -> i32
+extern func vkBeginCommandBuffer(commands: i64, info: i64) -> i32
+extern func vkCmdBindPipeline(commands: i64, bindPoint: i64, pipeline: i64) -> i64
+extern func vkCmdBindDescriptorSets(commands: i64, bindPoint: i64, layout: i64, first: i64, count: i64, sets: i64, dynamicCount: i64, dynamic: i64) -> i64
+extern func vkCmdPushConstants(commands: i64, layout: i64, stages: i64, offset: i64, size: i64, data: i64) -> i64
+extern func vkCmdDispatch(commands: i64, x: i64, y: i64, z: i64) -> i64
+extern func vkEndCommandBuffer(commands: i64) -> i32
+extern func vkQueueSubmit(queue: i64, count: i64, submits: i64, fence: i64) -> i32
+extern func vkQueueWaitIdle(queue: i64) -> i32
+extern func fopen(path: string, mode: string) -> i64
+extern func fread(buf: i64, size: i64, count: i64, file: i64) -> i64
+extern func fclose(file: i64) -> i64
+extern func calloc(count: i64, size: i64) -> i64
+
+// ── memory blocks and packed fields ──────────────────────────────────────────
+// A zeroed block of `count` 64-bit words; its address is what Vulkan receives.
+func words(count: i64) -> i64 {
+    return calloc(count, 8)
+}
+
+func put(block: i64, at: i64, value: i64) -> i64 {
+    let w: ptr<i64> = block.toPtr()
+    w[at] = value
+    return 0
+}
+
+func word(block: i64, at: i64) -> i64 {
+    let w: ptr<i64> = block.toPtr()
+    return w[at]
+}
+
+// The 32-bit number at `at` of a block read as 32-bit numbers.
+func half(block: i64, at: i64) -> i64 {
+    let h: ptr<i32> = block.toPtr()
+    return h[at].toI64()
+}
+
+// Two 32-bit fields side by side in one 64-bit word (`lo` first in memory).
+func pair(lo: i64, hi: i64) -> i64 {
+    return lo + hi * 4294967296
+}
+
+// A block holding one word, for the handle a `vkCreate...` call hands back.
+func slot() -> i64 {
+    return words(1)
+}
+
+func first(block: i64) -> i64 {
+    return word(block, 0)
+}
+
+// ── starting up: instance, GPU, device, queue ───────────────────────────────
+// The context for every other call, or 0 when no Vulkan GPU is available. This starts on the first GPU; to use several,
+// make one instance (`vulkanInstance`), ask how many GPUs it offers (`vulkanGpuCount`) and start a context on each
+// (`vulkanStartOn`).
+// Layout of the context: 0 physical GPU, 1 device, 2 queue, 3 command pool.
+func vulkanStart() -> i64 {
+    let instance: i64 = vulkanInstance()
+    if (instance == 0) { return 0 }
+    return vulkanStartOn(instance, 0)
+}
+
+// A context on the GPU numbered `gpuNumber` (0 is the first). Every call makes a NEW logical device with its own queue and its
+// own memory, so calling it twice with the same number gives two independent contexts on one GPU.
+func vulkanStartOn(instance: i64, gpuNumber: i64) -> i64 {
+    let physical: i64 = vulkanPhysicalAt(instance, gpuNumber)
+    if (physical == 0) { return 0 }
+    let device: i64 = vulkanDevice(physical)
+    if (device == 0) { return 0 }
+    let ctx: i64 = words(4)
+    put(ctx, 0, physical)
+    put(ctx, 1, device)
+    let queue: i64 = slot()
+    vkGetDeviceQueue(device, 0, 0, queue)
+    put(ctx, 2, first(queue))
+    put(ctx, 3, vulkanCommandPool(device))
+    return ctx
+}
+
+// How many GPUs the instance knows (up to 4, the room this runtime leaves).
+func vulkanGpuCount(instance: i64) -> i64 {
+    let count: i64 = words(1)
+    put(count, 0, 4)
+    let found: i64 = words(4)
+    if (vkEnumeratePhysicalDevices(instance, count, found) < 0) { return 0 }
+    return half(count, 0)
+}
+
+// The name of the GPU a context runs on, such as "Apple M5". VkPhysicalDeviceProperties starts with five 32-bit numbers
+// (20 bytes), then the name as text.
+func vulkanGpuName(ctx: i64) -> string {
+    let properties: i64 = words(128)
+    vkGetPhysicalDeviceProperties(word(ctx, 0), properties)
+    let name: string = (properties + 20).toPtr()
+    return name
+}
+
+// VkInstanceCreateInfo: sType=1, pNext, flags, pApplicationInfo, layerCount,
+// layerNames, extensionCount, extensionNames. MoltenVK is a "portability"
+// driver, so that extension and its flag (1) are switched on.
+func vulkanInstance() -> i64 {
+    let extensions: i64 = words(1)
+    put(extensions, 0, "VK_KHR_portability_enumeration".toI64())
+    let info: i64 = words(8)
+    put(info, 0, 1)
+    put(info, 2, 1)
+    put(info, 6, 1)
+    put(info, 7, extensions)
+    let out: i64 = slot()
+    if (vkCreateInstance(info, 0, out) != 0) { return 0 }
+    return first(out)
+}
+
+// The GPU numbered `gpuNumber` that the instance knows (0 if there is none). `count` goes in as the room we have (4)
+// and comes back as how many were found.
+func vulkanPhysicalAt(instance: i64, gpuNumber: i64) -> i64 {
+    let count: i64 = words(1)
+    put(count, 0, 4)
+    let found: i64 = words(4)
+    if (vkEnumeratePhysicalDevices(instance, count, found) < 0) { return 0 }
+    if (gpuNumber >= half(count, 0)) { return 0 }
+    return word(found, gpuNumber)
+}
+
+// The logical device. The most capable setup is tried first and a simpler one is the fallback, because a GPU that lacks an
+// extra makes the whole call fail: first with 64-bit integers in shaders ("shaderInt64", which a kernel using `i64` needs)
+// and the "portability subset" extension that MoltenVK asks for; then without the 64-bit integers; then without the extension.
+func vulkanDevice(physical: i64) -> i64 {
+    var device: i64 = vulkanDeviceWith(physical, 1, 1)
+    if (device == 0) { device = vulkanDeviceWith(physical, 1, 0) }
+    if (device == 0) { device = vulkanDeviceWith(physical, 0, 1) }
+    if (device == 0) { device = vulkanDeviceWith(physical, 0, 0) }
+    return device
+}
+
+// VkDeviceQueueCreateInfo: sType=2, pNext, flags|family, queueCount, priorities.
+// VkDeviceCreateInfo: sType=3, pNext, flags|queueInfoCount, queueInfos,
+// layerCount, layerNames, extensionCount, extensionNames, features.
+// `features` points at a VkPhysicalDeviceFeatures: 55 32-bit on/off flags, of which number 40 is shaderInt64.
+func vulkanDeviceWith(physical: i64, subset: i64, int64: i64) -> i64 {
+    let priority: ptr<float> = words(1).toPtr()
+    priority[0] = 1.0
+    let queueInfo: i64 = words(5)
+    put(queueInfo, 0, 2)
+    put(queueInfo, 3, 1)
+    put(queueInfo, 4, priority.toI64())
+    let extensions: i64 = words(1)
+    put(extensions, 0, "VK_KHR_portability_subset".toI64())
+    let features: ptr<i32> = words(28).toPtr()
+    features[40] = 1
+    let info: i64 = words(10)
+    put(info, 0, 3)
+    put(info, 2, pair(0, 1))
+    put(info, 3, queueInfo)
+    put(info, 6, subset)
+    put(info, 7, extensions)
+    if (int64 == 1) { put(info, 8, features.toI64()) }
+    let out: i64 = slot()
+    if (vkCreateDevice(physical, info, 0, out) != 0) { return 0 }
+    return first(out)
+}
+
+// VkCommandPoolCreateInfo: sType=39, pNext, flags|queueFamily.
+func vulkanCommandPool(device: i64) -> i64 {
+    let info: i64 = words(3)
+    put(info, 0, 39)
+    let out: i64 = slot()
+    if (vkCreateCommandPool(device, info, 0, out) != 0) { return 0 }
+    return first(out)
+}
+
+// ── buffers ──────────────────────────────────────────────────────────────────
+// A buffer filled with `byteCount` bytes copied from `address`. A buffer is a
+// block: 0 the Vulkan buffer, 1 its memory, 2 where the CPU sees its bytes, 3 size.
+func vulkanBuffer(ctx: i64, address: i64, byteCount: i64) -> i64 {
+    let buf: i64 = vulkanEmptyBuffer(ctx, byteCount)
+    if (buf == 0) { return 0 }
+    copyBytes(address, word(buf, 2), byteCount)
+    return buf
+}
+
+func copyBytes(from: i64, to: i64, byteCount: i64) -> i64 {
+    let src: ptr<i8> = from.toPtr()
+    let dst: ptr<i8> = to.toPtr()
+    for (i = 0; i < byteCount; i = i + 1) {
+        dst[i] = src[i]
+    }
+    return 0
+}
+
+// An empty buffer, for a shader's results. VkBufferCreateInfo: sType=12, pNext,
+// flags, size, usage(0x20 = storage buffer)|sharingMode, queueFamilyCount, families.
+func vulkanEmptyBuffer(ctx: i64, byteCount: i64) -> i64 {
+    let device: i64 = word(ctx, 1)
+    let info: i64 = words(7)
+    put(info, 0, 12)
+    put(info, 3, byteCount)
+    put(info, 4, 32)
+    let out: i64 = slot()
+    if (vkCreateBuffer(device, info, 0, out) != 0) { return 0 }
+    return vulkanBackBuffer(ctx, first(out), byteCount)
+}
+
+// Gives the buffer memory the CPU can also read, and maps it.
+// VkMemoryRequirements: size, alignment, typeBits. VkMemoryAllocateInfo:
+// sType=5, pNext, size, memoryTypeIndex.
+func vulkanBackBuffer(ctx: i64, buf: i64, byteCount: i64) -> i64 {
+    let device: i64 = word(ctx, 1)
+    let need: i64 = words(3)
+    vkGetBufferMemoryRequirements(device, buf, need)
+    let kind: i64 = vulkanMemoryType(word(ctx, 0), half(need, 4))
+    if (kind < 0) { return 0 }
+    let alloc: i64 = words(4)
+    put(alloc, 0, 5)
+    put(alloc, 2, word(need, 0))
+    put(alloc, 3, kind)
+    let memory: i64 = slot()
+    if (vkAllocateMemory(device, alloc, 0, memory) != 0) { return 0 }
+    vkBindBufferMemory(device, buf, first(memory), 0)
+    return vulkanMapped(device, buf, first(memory), byteCount)
+}
+
+// Maps the memory (size -1 means "all of it") and records the buffer block.
+func vulkanMapped(device: i64, buf: i64, memory: i64, byteCount: i64) -> i64 {
+    let where: i64 = slot()
+    if (vkMapMemory(device, memory, 0, 0 - 1, 0, where) != 0) { return 0 }
+    let block: i64 = words(4)
+    put(block, 0, buf)
+    put(block, 1, memory)
+    put(block, 2, first(where))
+    put(block, 3, byteCount)
+    return block
+}
+
+// The first memory type the buffer may use that the CPU can see and that needs
+// no manual flushing (property bits 2 and 4). VkPhysicalDeviceMemoryProperties
+// starts with the count, then (flags, heap) pairs, read here as 32-bit numbers.
+func vulkanMemoryType(physical: i64, typeBits: i64) -> i64 {
+    let props: i64 = words(65)
+    vkGetPhysicalDeviceMemoryProperties(physical, props)
+    for (i = 0; i < half(props, 0); i = i + 1) {
+        let usable: i64 = (typeBits >> i) % 2
+        let flags: i64 = half(props, 1 + 2 * i)
+        if (usable == 1 && (flags % 8) >= 6) { return i }
+    }
+    return 0 - 1
+}
+
+// Where a buffer's bytes live, to read results with `.toPtr()`.
+func vulkanContents(buf: i64) -> i64 {
+    return word(buf, 2)
+}
+
+// ── the compiled shader ──────────────────────────────────────────────────────
+// Loads a SPIR-V file and builds the pipeline for its `main`. `bufferCount` is
+// how many storage buffers the shader declares; `pushBytes` the size of its
+// push-constant block (4 for the count, plus 4 per uniform). A pipeline is a
+// block: 0 pipeline, 1 pipeline layout, 2 descriptor-set layout, 3 push bytes.
+// Returns 0 if the file cannot be read or the driver rejects the shader.
+func vulkanPipeline(ctx: i64, spvPath: string, bufferCount: i64, pushBytes: i64) -> i64 {
+    let device: i64 = word(ctx, 1)
+    let module: i64 = vulkanShaderModule(device, spvPath)
+    if (module == 0) { return 0 }
+    let setLayout: i64 = vulkanSetLayout(device, bufferCount)
+    if (setLayout == 0) { return 0 }
+    let layout: i64 = vulkanPipelineLayout(device, setLayout, pushBytes)
+    if (layout == 0) { return 0 }
+    return vulkanCompute(device, module, layout, setLayout, pushBytes)
+}
+
+// Reads the file (up to 1 MiB) and wraps it: VkShaderModuleCreateInfo is
+// sType=16, pNext, flags, codeSize, code.
+func vulkanShaderModule(device: i64, path: string) -> i64 {
+    let code: i64 = calloc(1048576, 1)
+    let file: i64 = fopen(path, "rb")
+    if (file == 0) { return 0 }
+    let read: i64 = fread(code, 1, 1048576, file)
+    fclose(file)
+    let size: i64 = shaderBytes(code, read)
+    if (size == 0) { return 0 }
+    let info: i64 = words(5)
+    put(info, 0, 16)
+    put(info, 3, size)
+    put(info, 4, code)
+    let out: i64 = slot()
+    if (vkCreateShaderModule(device, info, 0, out) != 0) { return 0 }
+    return first(out)
+}
+
+// A SPIR-V binary starts with the bytes 03 02 23 07 (its "magic number"). A file that does not is taken to be the
+// text `polyir --emit-spirv` writes: pairs of hexadecimal digits, one pair per byte, with spaces and line breaks
+// anywhere between them. The text is turned into the bytes in place (the bytes take half the room); returns how many
+// bytes the module has.
+func shaderBytes(code: i64, size: i64) -> i64 {
+    let bytes: ptr<i8> = code.toPtr()
+    if (size == 0 || bytes[0] == 3) { return size }
+    var count: i64 = 0
+    var pending: i64 = 0 - 1
+    for (i = 0; i < size; i = i + 1) {
+        let digit: i64 = hexDigit(bytes[i].toI64())
+        if (digit >= 0 && pending < 0) {
+            pending = digit
+        } else {
+            if (digit >= 0) {
+                bytes[count] = pending * 16 + digit
+                count = count + 1
+                pending = 0 - 1
+            }
+        }
+    }
+    return count
+}
+
+// The value of one hexadecimal digit given as a character code, or -1 if the character is not one.
+func hexDigit(c: i64) -> i64 {
+    if (c >= 48 && c <= 57) { return c - 48 }
+    if (c >= 97 && c <= 102) { return c - 87 }
+    if (c >= 65 && c <= 70) { return c - 55 }
+    return 0 - 1
+}
+
+// One storage-buffer binding per buffer. VkDescriptorSetLayoutBinding is
+// (binding, type=7 storage buffer), (count=1, stages=0x20 compute), samplers.
+// VkDescriptorSetLayoutCreateInfo: sType=32, pNext, flags|bindingCount, bindings.
+func vulkanSetLayout(device: i64, bufferCount: i64) -> i64 {
+    let bindings: i64 = words(3 * bufferCount)
+    for (i = 0; i < bufferCount; i = i + 1) {
+        put(bindings, 3 * i, pair(i, 7))
+        put(bindings, 3 * i + 1, pair(1, 32))
+    }
+    let info: i64 = words(4)
+    put(info, 0, 32)
+    put(info, 2, pair(0, bufferCount))
+    put(info, 3, bindings)
+    let out: i64 = slot()
+    if (vkCreateDescriptorSetLayout(device, info, 0, out) != 0) { return 0 }
+    return first(out)
+}
+
+// VkPushConstantRange: stages=0x20, offset=0, size. VkPipelineLayoutCreateInfo:
+// sType=30, pNext, flags|setLayoutCount, setLayouts, rangeCount, ranges.
+func vulkanPipelineLayout(device: i64, setLayout: i64, pushBytes: i64) -> i64 {
+    let sets: i64 = words(1)
+    put(sets, 0, setLayout)
+    let range: i64 = words(2)
+    put(range, 0, pair(32, 0))
+    put(range, 1, pushBytes)
+    let info: i64 = words(6)
+    put(info, 0, 30)
+    put(info, 2, pair(0, 1))
+    put(info, 3, sets)
+    put(info, 4, 1)
+    put(info, 5, range)
+    let out: i64 = slot()
+    if (vkCreatePipelineLayout(device, info, 0, out) != 0) { return 0 }
+    return first(out)
+}
+
+// VkComputePipelineCreateInfo: sType=29, pNext, flags, then the stage
+// (sType=18, pNext, flags|stage=0x20, module, entry name, specialization),
+// then the pipeline layout and two "base pipeline" fields we do not use.
+func vulkanCompute(device: i64, module: i64, layout: i64, setLayout: i64, pushBytes: i64) -> i64 {
+    let info: i64 = words(12)
+    put(info, 0, 29)
+    put(info, 3, 18)
+    put(info, 5, pair(0, 32))
+    put(info, 6, module)
+    put(info, 7, "main".toI64())
+    put(info, 9, layout)
+    let out: i64 = slot()
+    if (vkCreateComputePipelines(device, 0, 1, info, 0, out) != 0) { return 0 }
+    let pipe: i64 = words(4)
+    put(pipe, 0, first(out))
+    put(pipe, 1, layout)
+    put(pipe, 2, setLayout)
+    put(pipe, 3, pushBytes)
+    return pipe
+}
+
+// ── running ──────────────────────────────────────────────────────────────────
+// There are four ways to start a shader, according to how its threads are laid out. `push` is the address
+// of the push-constant bytes: the size first (a 32-bit element count, or for a grid the width and then the
+// height), then the `uniform` values in declaration order. Buffers are bound in the order given (the
+// shader's binding 0 first). Each returns 1 when the GPU finished, 0 if it could not start.
+//
+//   vulkanDispatch          a LINE of `count` threads, up to four buffers (the original, kept as it was)
+//   vulkanDispatchBuffers   a line of `count` threads, any number of buffers (an array of them)
+//   vulkanDispatch2D        a GRID of width x height threads (a kernel with two `index` parameters)
+//   vulkanDispatchGroups    a line in whole WORKGROUPS of 256 threads (a kernel with `workgroup` memory)
+
+// Runs the shader for `count` elements and waits for it to finish; a 0 buffer is skipped.
+func vulkanDispatch(ctx: i64, pipe: i64, count: i64, push: i64, b0: i64, b1: i64, b2: i64, b3: i64) -> i64 {
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    var used: i64 = 0
+    if (b0 != 0) {
+        buffers[used] = b0
+        used = used + 1
+    }
+    if (b1 != 0) {
+        buffers[used] = b1
+        used = used + 1
+    }
+    if (b2 != 0) {
+        buffers[used] = b2
+        used = used + 1
+    }
+    if (b3 != 0) {
+        buffers[used] = b3
+        used = used + 1
+    }
+    return vulkanDispatchBuffers(ctx, pipe, count, push, buffers, used)
+}
+
+// A line of `count` threads in groups of 64 (the shader's group size) and `bufferCount` buffers.
+func vulkanDispatchBuffers(ctx: i64, pipe: i64, count: i64, push: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    return vulkanLaunch(ctx, pipe, (count + 63) / 64, 1, push, buffers, bufferCount)
+}
+
+// A grid of `width` x `height` threads in tiles of 8 x 8 (the shader's group size).
+func vulkanDispatch2D(ctx: i64, pipe: i64, width: i64, height: i64, push: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    return vulkanLaunch(ctx, pipe, (width + 7) / 8, (height + 7) / 8, push, buffers, bufferCount)
+}
+
+// A line of at least `count` threads in whole workgroups of 256, for a shader with `workgroup` memory. The
+// kernel must write the neutral value for threads past the real data; the shader guards the final write
+// into the result buffer, so that buffer needs room for `count` only.
+func vulkanDispatchGroups(ctx: i64, pipe: i64, count: i64, push: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    return vulkanLaunch(ctx, pipe, (count + 255) / 256, 1, push, buffers, bufferCount)
+}
+
+// Binds the buffers, records the dispatch of `groupsX` x `groupsY` workgroups, submits and waits.
+func vulkanLaunch(ctx: i64, pipe: i64, groupsX: i64, groupsY: i64, push: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    if (vulkanLaunchAsync(ctx, pipe, groupsX, groupsY, push, buffers, bufferCount) == 0) { return 0 }
+    return vulkanFinish(ctx)
+}
+
+// The same, but only SUBMITS the job and returns at once, so the CPU can start work on another GPU (or the same one) while
+// this one runs. Call `vulkanFinish(ctx)` before reading the results or reusing the buffers. Returns 1 when submitted.
+func vulkanLaunchAsync(ctx: i64, pipe: i64, groupsX: i64, groupsY: i64, push: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    let device: i64 = word(ctx, 1)
+    let dset: i64 = vulkanDescriptors(device, pipe, buffers, bufferCount)
+    if (dset == 0) { return 0 }
+    let commands: i64 = vulkanCommands(ctx, pipe, dset, groupsX, groupsY, push)
+    if (commands == 0) { return 0 }
+    return vulkanSubmitOnly(word(ctx, 2), commands)
+}
+
+// A line of `count` threads, submitted without waiting (see `vulkanLaunchAsync`).
+func vulkanDispatchBuffersAsync(ctx: i64, pipe: i64, count: i64, push: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    return vulkanLaunchAsync(ctx, pipe, (count + 63) / 64, 1, push, buffers, bufferCount)
+}
+
+// Waits until everything submitted to this context's queue has finished. Returns 1 on success.
+func vulkanFinish(ctx: i64) -> i64 {
+    if (vkQueueWaitIdle(word(ctx, 2)) != 0) { return 0 }
+    return 1
+}
+
+// A descriptor set pointing binding i at the i-th given buffer.
+// VkDescriptorPoolSize: (type=7, count). VkDescriptorPoolCreateInfo: sType=33,
+// pNext, flags|maxSets=1, poolSizeCount, sizes. VkDescriptorSetAllocateInfo:
+// sType=34, pNext, pool, setCount, setLayouts.
+func vulkanDescriptors(device: i64, pipe: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    let sizes: i64 = words(1)
+    put(sizes, 0, pair(7, bufferCount))
+    let poolInfo: i64 = words(5)
+    put(poolInfo, 0, 33)
+    put(poolInfo, 2, pair(0, 1))
+    put(poolInfo, 3, 1)
+    put(poolInfo, 4, sizes)
+    let pool: i64 = slot()
+    if (vkCreateDescriptorPool(device, poolInfo, 0, pool) != 0) { return 0 }
+    let layouts: i64 = words(1)
+    put(layouts, 0, word(pipe, 2))
+    let allocInfo: i64 = words(5)
+    put(allocInfo, 0, 34)
+    put(allocInfo, 2, first(pool))
+    put(allocInfo, 3, 1)
+    put(allocInfo, 4, layouts)
+    let dset: i64 = slot()
+    if (vkAllocateDescriptorSets(device, allocInfo, dset) != 0) { return 0 }
+    bindAll(device, first(dset), buffers, bufferCount)
+    return first(dset)
+}
+
+func bindAll(device: i64, dset: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    for (binding = 0; binding < bufferCount; binding = binding + 1) {
+        writeBinding(device, dset, binding, buffers[binding])
+    }
+    return 0
+}
+
+// One VkDescriptorBufferInfo (buffer, offset, range=-1 for all of it) and the
+// VkWriteDescriptorSet that uses it: sType=35, pNext, set, binding|arrayElement,
+// count|type=7, imageInfo, bufferInfo, texelView.
+func writeBinding(device: i64, dset: i64, binding: i64, buf: i64) -> i64 {
+    let info: i64 = words(3)
+    put(info, 0, word(buf, 0))
+    put(info, 2, 0 - 1)
+    let write: i64 = words(8)
+    put(write, 0, 35)
+    put(write, 2, dset)
+    put(write, 3, pair(binding, 0))
+    put(write, 4, pair(1, 7))
+    put(write, 6, info)
+    vkUpdateDescriptorSets(device, 1, write, 0, 0)
+    return 0
+}
+
+// Records: bind the pipeline and buffers, send the push constants, start the workgroups.
+// VkCommandBufferAllocateInfo: sType=40, pNext, pool, level=0|count=1.
+// VkCommandBufferBeginInfo: sType=42, pNext, flags=1 (use once), inheritance.
+func vulkanCommands(ctx: i64, pipe: i64, dset: i64, groupsX: i64, groupsY: i64, push: i64) -> i64 {
+    let alloc: i64 = words(4)
+    put(alloc, 0, 40)
+    put(alloc, 2, word(ctx, 3))
+    put(alloc, 3, pair(0, 1))
+    let out: i64 = slot()
+    if (vkAllocateCommandBuffers(word(ctx, 1), alloc, out) != 0) { return 0 }
+    let commands: i64 = first(out)
+    let begin: i64 = words(4)
+    put(begin, 0, 42)
+    put(begin, 2, 1)
+    if (vkBeginCommandBuffer(commands, begin) != 0) { return 0 }
+    record(commands, pipe, dset, groupsX, groupsY, push)
+    if (vkEndCommandBuffer(commands) != 0) { return 0 }
+    return commands
+}
+
+func record(commands: i64, pipe: i64, dset: i64, groupsX: i64, groupsY: i64, push: i64) -> i64 {
+    let sets: i64 = words(1)
+    put(sets, 0, dset)
+    vkCmdBindPipeline(commands, 1, word(pipe, 0))
+    vkCmdBindDescriptorSets(commands, 1, word(pipe, 1), 0, 1, sets, 0, 0)
+    vkCmdPushConstants(commands, word(pipe, 1), 32, 0, word(pipe, 3), push)
+    vkCmdDispatch(commands, groupsX, groupsY, 1)
+    return 0
+}
+
+// VkSubmitInfo: sType=4, pNext, waitCount, waitSemaphores, waitStages,
+// commandBufferCount, commandBuffers, signalCount, signalSemaphores.
+func vulkanSubmitOnly(queue: i64, commands: i64) -> i64 {
+    let list: i64 = words(1)
+    put(list, 0, commands)
+    let submit: i64 = words(9)
+    put(submit, 0, 4)
+    put(submit, 5, 1)
+    put(submit, 6, list)
+    if (vkQueueSubmit(queue, 1, submit, 0) != 0) { return 0 }
+    return 1
+}
+
+func vulkanSubmit(queue: i64, commands: i64) -> i64 {
+    if (vulkanSubmitOnly(queue, commands) == 0) { return 0 }
+    if (vkQueueWaitIdle(queue) != 0) { return 0 }
+    return 1
+}

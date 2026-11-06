@@ -1,0 +1,27 @@
+import "../Vulkan.poly"
+import "shared/pixels.poly"
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  printTable(facePicture())
+  var code: i64 = scanDemo(gpu, "")
+  if (code != 0) {
+    return code
+  }
+  code = channelsDemo(gpu, "")
+  if (code != 0) {
+    return code
+  }
+  code = bitsDemo(gpu, "")
+  if (code != 0) {
+    return code
+  }
+  code = resizeDemo(gpu, "")
+  if (code != 0) {
+    return code
+  }
+  return enlargeDemo(gpu, "")
+}

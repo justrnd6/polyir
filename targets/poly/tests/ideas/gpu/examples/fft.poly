@@ -1,0 +1,316 @@
+import "../../audio/Fft.poly"
+import "../../audio/Sound.poly"
+import "../../audio/Wave.poly"
+import "../FftGpu.poly"
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/print.poly"
+import "shared/spectrum.poly"
+extern func calloc(count: i64, size: i64) -> i64
+extern func sqrtf(x: float) -> float
+extern func cosf(x: float) -> float
+
+func magnitudes(device: i64, source: string, data: i64, total: i64) -> ptr<float> {
+  let pipeline: i64 = metalPipeline(device, source, "fftMagnitude")
+  if (pipeline == 0) {
+    return 0.toPtr()
+  }
+  let size: i32[1]
+  size[0] = total.toI32()
+  let out: i64 = metalEmptyBuffer(device, total * 4)
+  if (metalDispatch(device, pipeline, total, data, metalBuffer(device, size.toI64(), 4), out, 0) == 0) {
+    return 0.toPtr()
+  }
+  return metalContents(out).toPtr()
+}
+
+func plainTransform(device: i64, source: string, signal: ptr<float>, n: i64) -> ptr<float> {
+  let pipeline: i64 = metalPipeline(device, source, "dft")
+  if (pipeline == 0) {
+    return 0.toPtr()
+  }
+  let size: ptr<float> = calloc(2, 4).toPtr()
+  size[0] = n.toFloat()
+  let out: i64 = metalEmptyBuffer(device, n * 4)
+  if (metalDispatch(device, pipeline, n, metalBuffer(device, signal.toI64(), n * 4), metalBuffer(device, size.toI64(), 8), out, 0) == 0) {
+    return 0.toPtr()
+  }
+  return metalContents(out).toPtr()
+}
+
+func asComplex(signal: ptr<float>, n: i64) -> ptr<float> {
+  let c: ptr<float> = calloc(n * 2, 4).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    c[2 * i] = signal[i]
+  }
+  return c
+}
+
+func near(a: float, b: float, tolerance: float) -> i64 {
+  var gap: float = a - b
+  if (gap < 0.0) {
+    gap = (0.0 - gap)
+  }
+  if (gap <= tolerance) {
+    return 1
+  }
+  return 0
+}
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let source: string = metalReadFile("fft.metal")
+  let stage: i64 = metalPipeline(device, source, "fftStage")
+  if (stage == 0) {
+    return 11
+  }
+  let code: i64 = correctness(device, source, stage)
+  if (code != 0) {
+    return code
+  }
+  speed(device, source, stage)
+  return spectrogram(device, source, stage)
+}
+
+func correctness(device: i64, source: string, stage: i64) -> i64 {
+  let n: i64 = 2048
+  let tones: Sound = soundNew(0.25, 8192)
+  let data: ptr<float> = tones.samples
+  for (i = 0; i < n; i = i + 1) {
+    let t: float = i.toFloat() / 8192.0
+    data[i] = sine((200.0 * t)) + sine((1000.0 * t))
+  }
+  let input: ptr<float> = asComplex(data, n)
+  let a: i64 = metalBuffer(device, input.toI64(), n * 8)
+  let b: i64 = metalEmptyBuffer(device, n * 8)
+  let done: i64 = fftStagesGpu(device, stage, a, b, n, 1, 1)
+  if (done == 0) {
+    return 12
+  }
+  let fast: ptr<float> = magnitudes(device, source, done, n)
+  let plain: ptr<float> = plainTransform(device, source, data, n)
+  if (fast.toI64() == 0 || plain.toI64() == 0) {
+    return 12
+  }
+  if (near(fast[50], 1.0, 0.01) == 0 || near(fast[250], 1.0, 0.01) == 0) {
+    return 13
+  }
+  for (k = 0; k < n; k = k + 1) {
+    if (near(fast[k], plain[k], 0.002) == 0) {
+      return 13
+    }
+  }
+  let c: i64 = metalEmptyBuffer(device, n * 8)
+  let back: i64 = fftStagesGpu(device, stage, done, c, n, 1, 0 - 1)
+  if (back == 0) {
+    return 12
+  }
+  let restored: ptr<float> = metalContents(back).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    if (near(restored[2 * i] / n.toFloat(), data[i], 0.002) == 0) {
+      return 14
+    }
+  }
+  return 0
+}
+
+func fftOnCpu(signal: ptr<float>, n: i64) -> ptr<float> {
+  return fftBatchOnCpu(asComplex(signal, n), n, 1)
+}
+
+func fftBatchOnCpu(input: ptr<float>, n: i64, batch: i64) -> ptr<float> {
+  var from: ptr<float> = input
+  var to: ptr<float> = calloc(n * batch * 2, 4).toPtr()
+  let settings: i32[4]
+  settings[0] = n.toI32()
+  settings[3] = 1
+  var size: i64 = n
+  var stride: i64 = 1
+  for (pass = 0; pass < 30; pass = pass + 1) {
+    if (size > 1) {
+      settings[1] = size.toI32()
+      settings[2] = stride.toI32()
+      for (t = 0; t < batch * (n / 2); t = t + 1) {
+        fftStage(t.toI32(), from, settings.toI64().toPtr(), to)
+      }
+      let swap: ptr<float> = from
+      from = to
+      to = swap
+      size = size / 2
+      stride = stride * 2
+    }
+  }
+  return from
+}
+
+func speed(device: i64, source: string, stage: i64) -> i64 {
+  say("N          plain transform (GPU)   FFT (one CPU core)   FFT (GPU)")
+  newline()
+  for (round = 0; round < 5; round = round + 1) {
+    var n: i64 = 1024
+    for (k = 0; k < round; k = k + 1) {
+      n = n * 4
+    }
+    timeOne(device, source, stage, n)
+  }
+  timeBatch(device, stage, 4096, 2048)
+  return 0
+}
+
+func timeBatch(device: i64, stage: i64, n: i64, batch: i64) -> i64 {
+  let input: ptr<float> = calloc(n * batch * 2, 4).toPtr()
+  for (i = 0; i < n * batch; i = i + 1) {
+    input[2 * i] = sine((11.0 * (i % n).toFloat() / n.toFloat())) + (0.3 * sine((97.0 * (i % n).toFloat() / n.toFloat())))
+  }
+  say("batch of ")
+  sayNumber(batch)
+  say(" transforms of ")
+  sayNumber(n)
+  say(" numbers:  one CPU core ")
+  let cpuStart: i64 = wallMs()
+  fftBatchOnCpu(input, n, batch)
+  sayNumber(wallMs() - cpuStart)
+  say(" ms,  GPU ")
+  let gpuStart: i64 = wallMs()
+  let a: i64 = metalBuffer(device, input.toI64(), n * batch * 8)
+  let b: i64 = metalEmptyBuffer(device, n * batch * 8)
+  fftStagesGpu(device, stage, a, b, n, batch, 1)
+  sayNumber(wallMs() - gpuStart)
+  say(" ms")
+  newline()
+  return 0
+}
+
+func timeOne(device: i64, source: string, stage: i64, n: i64) -> i64 {
+  let signal: ptr<float> = calloc(n, 4).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    signal[i] = sine((50.0 * i.toFloat() / n.toFloat())) + (0.5 * sine((317.0 * i.toFloat() / n.toFloat())))
+  }
+  sayRight(n, 7)
+  if (n <= 16384) {
+    let start: i64 = wallMs()
+    plainTransform(device, source, signal, n)
+    say("          ")
+    sayRight(wallMs() - start, 12)
+  } else {
+    say("                         -")
+  }
+  let cpuStart: i64 = wallMs()
+  fftOnCpu(signal, n)
+  say("          ")
+  sayRight(wallMs() - cpuStart, 8)
+  let input: ptr<float> = asComplex(signal, n)
+  let gpuStart: i64 = wallMs()
+  let a: i64 = metalBuffer(device, input.toI64(), n * 8)
+  let b: i64 = metalEmptyBuffer(device, n * 8)
+  fftStagesGpu(device, stage, a, b, n, 1, 1)
+  say("          ")
+  sayRight(wallMs() - gpuStart, 6)
+  newline()
+  return 0
+}
+
+func makeMelodySignal() -> Sound {
+  let rate: i64 = 8000
+  let s: Sound = soundNew(4.5, rate)
+  let data: ptr<float> = s.samples
+  for (i = 0; i < 8000; i = i + 1) {
+    let t: float = i.toFloat() / 8000.0
+    data[i] = (0.7 * sine((200.0 * t + 800.0 * t * t)))
+  }
+  let keys: float[8]
+  keys[0] = 60.0
+  keys[1] = 62.0
+  keys[2] = 64.0
+  keys[3] = 65.0
+  keys[4] = 67.0
+  keys[5] = 69.0
+  keys[6] = 71.0
+  keys[7] = 72.0
+  for (k = 0; k < 8; k = k + 1) {
+    addNote(s, noteFrequency(keys[k]), (1.0 + (k.toFloat() * 0.3)), 0.3)
+  }
+  addNote(s, noteFrequency(60.0), 3.4, 1.1)
+  addNote(s, noteFrequency(64.0), 3.4, 1.1)
+  addNote(s, noteFrequency(67.0), 3.4, 1.1)
+  addNote(s, noteFrequency(72.0), 3.4, 1.1)
+  return s
+}
+
+func addNote(s: Sound, frequency: float, start: float, length: float) -> i64 {
+  s.tone(0, frequency, 0.25, start, length)
+  s.tone(0, (2.0 * frequency), 0.12, start, length)
+  s.tone(0, (3.0 * frequency), 0.06, start, length)
+  return 0
+}
+
+func spectrogram(device: i64, source: string, stage: i64) -> i64 {
+  let signal: Sound = makeMelodySignal()
+  let total: i64 = 512
+  let hop: i64 = 128
+  let frames: i64 = (signal.count - total) / hop + 1
+  let rows: i64 = 128
+  let framing: i64 = metalPipeline(device, source, "fftFrames")
+  let pixels: i64 = metalPipeline(device, source, "spectrogramPixel")
+  if (framing == 0 || pixels == 0) {
+    return 12
+  }
+  let settings: i32[3]
+  settings[0] = total.toI32()
+  settings[1] = hop.toI32()
+  let a: i64 = metalEmptyBuffer(device, frames * total * 8)
+  let b: i64 = metalEmptyBuffer(device, frames * total * 8)
+  let scratch: i64 = metalEmptyBuffer(device, frames * total * 4)
+  if (metalDispatch(device, framing, frames * total, metalBuffer(device, signal.samples.toI64(), signal.count * 4), metalBuffer(device, settings.toI64(), 12), a, scratch) == 0) {
+    return 12
+  }
+  let done: i64 = fftStagesGpu(device, stage, a, b, total, frames, 1)
+  if (done == 0) {
+    return 12
+  }
+  let picture: i32[3]
+  picture[0] = total.toI32()
+  picture[1] = frames.toI32()
+  picture[2] = rows.toI32()
+  let out: i64 = metalEmptyBuffer(device, frames * rows * 4)
+  if (metalDispatch(device, pixels, frames * rows, done, metalBuffer(device, picture.toI64(), 12), out, 0) == 0) {
+    return 12
+  }
+  let image: ptr<float> = metalContents(out).toPtr()
+  savePicture("spectrogram.pgm", image, frames, rows)
+  return checkSlices(done, signal, total, hop)
+}
+
+func checkSlices(done: i64, signal: Sound, total: i64, hop: i64) -> i64 {
+  let result: ptr<float> = metalContents(done).toPtr()
+  let slice: ptr<float> = calloc(total, 4).toPtr()
+  let size: ptr<float> = calloc(2, 4).toPtr()
+  size[0] = total.toFloat()
+  for (pick = 0; pick < 3; pick = pick + 1) {
+    let frame: i64 = 10 + 95 * pick
+    for (k = 0; k < total; k = k + 1) {
+      let window: float = (0.5 - 0.5 * cosOf((6.2831853 * k.toFloat() / (total - 1).toFloat())))
+      slice[k] = signal.samples[frame * hop + k] * window
+    }
+    for (bin = 0; bin < 256; bin = bin + 1) {
+      let re: float = result[frame * total * 2 + 2 * bin]
+      let im: float = result[frame * total * 2 + 2 * bin + 1]
+      let fast: float = (2.0 * sqrtOf(re * re + im * im) / total.toFloat())
+      if (near(fast, dft(bin.toI32(), slice, size), 0.01) == 0) {
+        return 15
+      }
+    }
+  }
+  return 0
+}
+
+func cosOf(x: float) -> float {
+  return cosf(x)
+}
+
+func sqrtOf(x: float) -> float {
+  return sqrtf(x)
+}

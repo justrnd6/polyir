@@ -1,0 +1,162 @@
+// REVERB BY CONVOLUTION on the GPU (Metal). A dry sound (a short beep) is convolved with a "room
+// response": the sound a room would make if you clapped once. Every sample of the beep is replaced
+// by a copy of the whole response, and all the copies are added, so the beep rings out in the room.
+// The direct sum costs (beep length) x (response length) multiplications: for a second of CD sound
+// and a second of response, nearly two billion. The CPU does it one at a time; the GPU gives every
+// output sample its own thread.
+//
+//   polyir --emit-msl convolve.poly > convolve.metal
+//   polyir convolve.poly --out convolve && ./convolve        (Apple Silicon; run in this folder)
+//
+// Prints a table of times, saves convolve-dry.wav, convolve-wet.wav and two plots. Exit 0 means
+// the GPU's sound equals the CPU's at every sample checked. 10 no GPU, 11 the Metal source is
+// missing, 12 a dispatch failed, 13 the GPU and CPU disagree.
+import "../Metal.poly"
+import "../SoundGpu.poly"
+import "shared/picture.poly"
+import "shared/plot.poly"
+import "shared/print.poly"
+import "../../audio/Fft.poly"
+
+extern func expf(x: float) -> float
+
+// A made-up room response, the standard cheap trick: the direct sound (a click of height 1), then
+// noise (the dense jumble of reflections) that fades away exponentially. It falls to a thousandth
+// (-60 decibels) after `seconds`: the room's "reverberation time".
+func roomResponse(seconds: float, rate: i64) -> Sound {
+    let room: Sound = soundNew(seconds, rate)
+    let data: ptr<float> = room.samples
+    for (j = 0; j < room.count; j = j + 1) {
+        let t: float = j.toFloat() / rate.toFloat()
+        data[j] = 0.5 * noise(j.toI32()) * expf(0.0 - 6.9 * t / seconds)
+    }
+    data[0] = 1.0
+    return room
+}
+
+// A beep (0.1 s of a 440 Hz tone) followed by silence, `seconds` long in all.
+func dryBeep(seconds: float, rate: i64) -> Sound {
+    let s: Sound = soundNew(seconds, rate)
+    s.tone(0, 440.0, 0.8, 0.0, 0.1)
+    return s
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let pipeline: i64 = metalPipeline(device, metalReadFile("convolve.metal"), "convolveSample")
+    if (pipeline == 0) { return 11 }
+    say("room response   output samples   CPU (ms)   GPU (ms)")
+    newline()
+    var code: i64 = 0
+    for (round = 0; round < 3; round = round + 1) {
+        if (code == 0) { code = compare(device, pipeline, 0.1 + 0.2 * round.toFloat()) }
+    }
+    if (code != 0) { return code }
+    code = compareFft(device, pipeline)
+    if (code != 0) { return code }
+    return save(device, pipeline)
+}
+
+// Long room responses: the direct sum on the GPU against the frequency-domain method (the FFT) on the
+// GPU. The direct sum grows with the product of the lengths; the FFT with only N log N.
+func compareFft(device: i64, direct: i64) -> i64 {
+    let rate: i64 = 44100
+    let pipelines: ptr<i64> = fftPipelines(device, metalReadFile("convolve.metal"))
+    say("room response   direct sum (GPU)   through the FFT (GPU)")
+    newline()
+    for (round = 0; round < 4; round = round + 1) {
+        var seconds: float = 0.5
+        for (k = 0; k < round; k = k + 1) {
+            seconds = seconds * 2.0
+        }
+        let dry: Sound = dryBeep(1.0, rate)
+        let room: Sound = roomResponse(seconds, rate)
+        let start: i64 = wallMs()
+        let viaDirect: Sound = soundConvolveGpu(device, direct, dry, room)
+        let directMs: i64 = wallMs() - start
+        let fftStart: i64 = wallMs()
+        let viaFft: Sound = soundConvolveFft(device, pipelines, dry, room)
+        let fftMs: i64 = wallMs() - fftStart
+        if (viaDirect.count == 0 || viaFft.count == 0) { return 12 }
+        say("   ")
+        sayRight((seconds * 1000.0).toI64(), 5)
+        say(" ms        ")
+        sayRight(directMs, 6)
+        say(" ms             ")
+        sayRight(fftMs, 6)
+        say(" ms")
+        newline()
+        // The two methods must agree (to within the rounding of single-precision floats, relative to the loudest sample).
+        let a: ptr<float> = viaDirect.samples
+        let b: ptr<float> = viaFft.samples
+        var loudest: float = 0.0
+        for (i = 0; i < viaDirect.count; i = i + 1) {
+            var level: float = a[i]
+            if (level < 0.0) { level = 0.0 - level }
+            if (level > loudest) { loudest = level }
+        }
+        for (i = 0; i < viaDirect.count; i = i + 53) {
+            var gap: float = a[i] - b[i]
+            if (gap < 0.0) { gap = 0.0 - gap }
+            if (gap > 0.002 * loudest) { return 13 }
+        }
+    }
+    return 0
+}
+
+// Convolve a 0.5 second beep with a room response of `roomSeconds`, both ways, and compare.
+func compare(device: i64, pipeline: i64, roomSeconds: float) -> i64 {
+    let rate: i64 = 44100
+    let dry: Sound = dryBeep(0.5, rate)
+    let room: Sound = roomResponse(roomSeconds, rate)
+    let cpuStart: i64 = wallMs()
+    let viaCpu: Sound = dry.convolve(room)
+    let cpuMs: i64 = wallMs() - cpuStart
+    let gpuStart: i64 = wallMs()
+    let viaGpu: Sound = soundConvolveGpu(device, pipeline, dry, room)
+    let gpuMs: i64 = wallMs() - gpuStart
+    if (viaGpu.count == 0) { return 12 }
+    say("   ")
+    sayNumber((roomSeconds * 1000.0).toI64())
+    say(" ms")
+    say("         ")
+    sayNumber(viaGpu.count)
+    say("          ")
+    sayNumber(cpuMs)
+    say("          ")
+    sayNumber(gpuMs)
+    newline()
+    // The sums are added in different orders, so allow a tiny difference; check every 37th sample.
+    let a: ptr<float> = viaCpu.samples
+    let b: ptr<float> = viaGpu.samples
+    for (i = 0; i < viaGpu.count; i = i + 37) {
+        var gap: float = a[i] - b[i]
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > 0.002) { return 13 }
+    }
+    return 0
+}
+
+// The sound and its reverb as WAV files, and pictures of the room response and the result.
+func save(device: i64, pipeline: i64) -> i64 {
+    let rate: i64 = 44100
+    let dry: Sound = dryBeep(0.5, rate)
+    let room: Sound = roomResponse(0.7, rate)
+    let wet: Sound = soundConvolveGpu(device, pipeline, dry, room)
+    if (wet.count == 0) { return 12 }
+    dry.saveWav("convolve-dry.wav")
+    wet.normalize(0.9)
+    wet.saveWav("convolve-wet.wav")
+    let pic: ptr<float> = calloc(320 * 96, 4).toPtr()
+    drawWave(pic, 320, 96, room.samples, room.count, 0.0 - 1.1, 1.1)
+    savePicture("convolve-1-room.pgm", pic, 320, 96)
+    // The dry beep, padded with silence to the same length as the result, for a fair comparison.
+    let dryLong: Sound = soundNew(wet.seconds(), rate)
+    dryLong.add(dry, 0.0, 1.0)
+    drawWave(pic, 320, 96, dryLong.samples, dryLong.count, 0.0 - 1.1, 1.1)
+    savePicture("convolve-2-dry.pgm", pic, 320, 96)
+    drawWave(pic, 320, 96, wet.samples, wet.count, 0.0 - 1.1, 1.1)
+    savePicture("convolve-3-wet.pgm", pic, 320, 96)
+    return 0
+}

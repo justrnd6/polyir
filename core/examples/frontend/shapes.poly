@@ -1,0 +1,27 @@
+// Local variables of every kind a debugger can print: numbers, a string, value structs (nested), a reference struct, an array
+// (`mutarray`) and a fixed array. demo.sh stops at line 18 of this file.
+struct Pt(x: i64, y: i64);
+
+struct Seg(a: Pt, b: Pt, tag: i64);
+
+struct Counter {
+    var hits: i64
+    name: string
+}
+
+func measure(s: Seg, c: Counter, word: string) -> i64 {
+    let dx: i64 = s.b.x - s.a.x
+    let xs: mutarray<i64> = mutarray<i64>()
+    push(xs, dx)
+    push(xs, 7)
+    let cells: i64[3]
+
+    c.hits = c.hits + dx
+    return len(xs) + c.hits
+}
+
+func main() -> i64 {
+    let seg: Seg = Seg(a: Pt(x: 1, y: 2), b: Pt(x: 4, y: 6), tag: 9)
+    let c: Counter = Counter(hits: 0, name: "ctr")
+    return measure(seg, c, "hello")
+}

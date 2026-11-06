@@ -1,0 +1,5 @@
+GPUs found: 1 (Apple M5)
+workers: 2  (only one GPU, so these are separate logical devices on it: separate queues and memory, shared hardware)
+Monte Carlo, 65,536 threads x 2,048 darts: one worker 146 ms, split over 2 workers 138 ms; every thread's count equals the single worker's
+Game of Life, 64 x 64 for 20 generations as 2 strips: the stitched board equals the whole board every generation
+    each generation the CPU carried 4 boundary rows between the workers' separate memories

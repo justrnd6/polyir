@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  duplicate func 'f'
+$ --analyze --strict
+exit 1
+check failed:
+  duplicate func 'f'
+$ --emit-hir-json
+exit 1
+check failed:
+  duplicate func 'f'
+$ --emit-msl
+exit 1
+kernel check failed:
+  duplicate func 'f'

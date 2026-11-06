@@ -1,0 +1,245 @@
+// The ray tracer's scene, camera and picture writer, shared by the ray tracer
+// examples (raytrace.poly draws one picture; camera.poly draws the same scene
+// from several camera positions). The kernels run on the GPU; everything else
+// runs on the CPU.
+import "picture.poly"   // savePicture, for the callers
+import "texture.poly"   // the floor can be covered with a texture (nearest, bilinear, mipmapped)
+extern func sqrtf(x: float) -> float
+extern func floorf(x: float) -> float
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+extern func fabsf(x: float) -> float
+extern func logf(x: float) -> float
+extern func calloc(count: i64, size: i64) -> i64
+
+// ── the scene: everything the kernel needs travels in ONE array, `cam` ───────
+//   0..2   eye position              3..5   camera "right" direction
+//   6..8   camera "up" direction     9..11  camera "forward" direction
+//   12     tan(half the field of view)          13  aspect ratio (width / height)
+//   14     image width               15     image height
+//   16..18 sphere centre             19     sphere radius
+//   20..22 direction TO the light    23     height of the floor plane
+//   24     floor look: 0 plain checkers, 1 texture (nearest), 2 texture (bilinear), 3 texture (mipmapped)
+//   25     the floor texture's width in texels   26  its number of mip levels
+//   27     how many world units one copy of the texture covers
+
+// Where a ray (origin o, direction d) first meets a sphere (centre c, radius r):
+// the distance along the ray, or -1 if it misses. Solving |o + t*d - c|^2 = r^2
+// for t is a quadratic equation, and `disc` is its discriminant (b*b - 4ac, with
+// the 2s cancelled because d has length 1).
+kernel func hitSphere(ox: float, oy: float, oz: float, dx: float, dy: float, dz: float,
+        cx: float, cy: float, cz: float, r: float) -> float {
+    let lx: float = ox - cx
+    let ly: float = oy - cy
+    let lz: float = oz - cz
+    let b: float = lx * dx + ly * dy + lz * dz
+    let disc: float = b * b - (lx * lx + ly * ly + lz * lz - r * r)
+    if (disc < 0.0) { return 0.0 - 1.0 }
+    let t: float = 0.0 - b - sqrtf(disc)
+    if (t > 0.001) { return t }
+    return 0.0 - 1.0
+}
+
+// Where a ray meets the horizontal floor plane y = floorY (or -1 if it never does).
+kernel func hitFloor(oy: float, dy: float, floorY: float) -> float {
+    if (dy >= 0.0 - 0.0001) { return 0.0 - 1.0 }
+    let t: float = (floorY - oy) / dy
+    if (t > 0.001) { return t }
+    return 0.0 - 1.0
+}
+
+// The brightness (0 to 1) of one pixel: build its ray from the camera, find what
+// it hits first, and light that point.
+kernel func trace(index i: i32, uniform cam: ptr<float>, uniform tex: ptr<float>) -> float {
+    let w: i32 = cam[14].toI32()
+    // 1. The pixel's place on the camera's image plane, from -1 to 1 across and up.
+    let u: float = (2.0 * ((i % w).toFloat() + 0.5) / cam[14] - 1.0) * cam[13] * cam[12]
+    let v: float = (1.0 - 2.0 * ((i / w).toFloat() + 0.5) / cam[15]) * cam[12]
+    // 2. The ray: forward, pushed sideways by u and up by v, scaled to length 1.
+    let rx: float = cam[9] + cam[3] * u + cam[6] * v
+    let ry: float = cam[10] + cam[4] * u + cam[7] * v
+    let rz: float = cam[11] + cam[5] * u + cam[8] * v
+    let len: float = sqrtf(rx * rx + ry * ry + rz * rz)
+    let dx: float = rx / len
+    let dy: float = ry / len
+    let dz: float = rz / len
+    // 3. What does it hit first, the sphere or the floor?
+    let ts: float = hitSphere(cam[0], cam[1], cam[2], dx, dy, dz, cam[16], cam[17], cam[18], cam[19])
+    let tf: float = hitFloor(cam[1], dy, cam[23])
+    if (ts > 0.0 && (tf < 0.0 || ts < tf)) {
+        // Sphere: brightness is how directly the surface faces the light.
+        let nx: float = (cam[0] + dx * ts - cam[16]) / cam[19]
+        let ny: float = (cam[1] + dy * ts - cam[17]) / cam[19]
+        let nz: float = (cam[2] + dz * ts - cam[18]) / cam[19]
+        let facing: float = nx * cam[20] + ny * cam[21] + nz * cam[22]
+        if (facing < 0.0) { return 0.15 }
+        return 0.15 + 0.85 * facing
+    }
+    if (tf > 0.0) {
+        // Floor: a checkerboard, darkened where the sphere blocks the light.
+        let hx: float = cam[0] + dx * tf
+        let hz: float = cam[2] + dz * tf
+        var tone: float = 0.85
+        if (cam[24] < 0.5) {
+            if ((floorf(hx).toI32() + floorf(hz).toI32()) % 2 != 0) { tone = 0.45 }
+        } else {
+            // The spot on the floor, as a position in the repeating texture.
+            let u: float = hx / cam[27]
+            let v: float = hz / cam[27]
+            let base: i32 = cam[25].toI32()
+            if (cam[24] < 1.5) { tone = nearest(tex, 0, base, u, v, 1) }
+            if (cam[24] > 1.5 && cam[24] < 2.5) { tone = bilinear(tex, 0, base, u, v, 1) }
+            if (cam[24] > 2.5) {
+                // How many texels one screen pixel covers here. Far away it is many,
+                // so use a smaller (blurrier) copy of the texture: level = log2(texels).
+                let worldPerPixel: float = tf * 2.0 * cam[12] / cam[15] / (0.0 - dy)
+                let texels: float = worldPerPixel * cam[25] / cam[27]
+                var level: float = 0.0
+                if (texels > 1.0) { level = logf(texels) * 1.442695 }
+                tone = mipSample(tex, base, cam[26].toI32(), u, v, level, 1)
+            }
+        }
+        let blocked: float = hitSphere(hx, cam[23], hz, cam[20], cam[21], cam[22], cam[16], cam[17], cam[18], cam[19])
+        if (blocked > 0.0) { return tone * 0.35 }
+        return tone
+    }
+    // Sky: a little brighter towards the top of the picture.
+    return 0.12 + 0.1 * v
+}
+
+// ── the CPU side: the camera and the picture file ────────────────────────────
+func normalize3(v: ptr<float>) -> i64 {
+    let len: float = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    v[0] = v[0] / len
+    v[1] = v[1] / len
+    v[2] = v[2] / len
+    return 0
+}
+
+// A "look-at" camera. forward points from the eye to the target; right is
+// perpendicular to forward and to the world's up direction (a cross product);
+// up is perpendicular to both (another cross product). Together they are the
+// camera's three axes, exactly like a rotation matrix.
+func buildCamera(cam: ptr<float>, w: i64, h: i64) -> i64 {
+    cam[0] = 0.0
+    cam[1] = 1.2
+    cam[2] = 2.5
+    let f: float[3]
+    f[0] = 0.0 - cam[0]
+    f[1] = 0.0 - 0.2 - cam[1]
+    f[2] = 0.0 - 3.0 - cam[2]
+    let forward: ptr<float> = f.toI64().toPtr()
+    normalize3(forward)
+    // right = forward x worldUp, where worldUp = (0, 1, 0)
+    let r: float[3]
+    r[0] = 0.0 - forward[2]
+    r[1] = 0.0
+    r[2] = forward[0]
+    let right: ptr<float> = r.toI64().toPtr()
+    normalize3(right)
+    // up = right x forward
+    cam[3] = right[0]
+    cam[4] = right[1]
+    cam[5] = right[2]
+    cam[6] = right[1] * forward[2] - right[2] * forward[1]
+    cam[7] = right[2] * forward[0] - right[0] * forward[2]
+    cam[8] = right[0] * forward[1] - right[1] * forward[0]
+    cam[9] = forward[0]
+    cam[10] = forward[1]
+    cam[11] = forward[2]
+    cam[12] = 0.6
+    cam[13] = w.toFloat() / h.toFloat()
+    cam[14] = w.toFloat()
+    cam[15] = h.toFloat()
+    cam[16] = 0.0
+    cam[17] = 0.0
+    cam[18] = 0.0 - 3.0
+    cam[19] = 1.0
+    // The light shines from the upper left, a little towards the viewer.
+    let l: float[3]
+    l[0] = 0.0 - 0.5
+    l[1] = 0.8
+    l[2] = 0.4
+    let light: ptr<float> = l.toI64().toPtr()
+    normalize3(light)
+    cam[20] = light[0]
+    cam[21] = light[1]
+    cam[22] = light[2]
+    cam[23] = 0.0 - 1.0
+    cam[24] = 0.0
+    cam[25] = 32.0
+    cam[26] = 6.0
+    cam[27] = 4.0
+    return 0
+}
+
+// A camera placed by an eye position and three turning angles, in DEGREES:
+//   yaw   turn left or right (like shaking your head "no")
+//   pitch look up or down (like nodding "yes")
+//   roll  tilt sideways (like touching your ear to your shoulder)
+// With all three zero the camera looks straight down the -z axis, with x to its
+// right and y up. The order is: turn by yaw and pitch to get the forward direction
+// and the sideways axis, then roll the picture around the forward direction.
+func poseCamera(cam: ptr<float>, ex: float, ey: float, ez: float, yaw: float, pitch: float, roll: float, w: i64, h: i64) -> i64 {
+    setScene(cam, w, h)
+    let toRadians: float = 0.0174533
+    let cy: float = cosf(yaw * toRadians)
+    let sy: float = sinf(yaw * toRadians)
+    let cp: float = cosf(pitch * toRadians)
+    let sp: float = sinf(pitch * toRadians)
+    let cr: float = cosf(roll * toRadians)
+    let sr: float = sinf(roll * toRadians)
+    // forward after yaw (around up) and pitch (around right)
+    let fx: float = cp * sy
+    let fy: float = sp
+    let fz: float = 0.0 - cp * cy
+    // sideways axis before rolling: yaw only, always level with the ground
+    let rx: float = cy
+    let rz: float = sy
+    // up before rolling = right x forward
+    let ux: float = 0.0 - rz * fy
+    let uy: float = rz * fx - rx * fz
+    let uz: float = rx * fy
+    cam[0] = ex
+    cam[1] = ey
+    cam[2] = ez
+    // roll: turn right and up around forward
+    cam[3] = rx * cr + ux * sr
+    cam[4] = uy * sr
+    cam[5] = rz * cr + uz * sr
+    cam[6] = ux * cr - rx * sr
+    cam[7] = uy * cr
+    cam[8] = uz * cr - rz * sr
+    cam[9] = fx
+    cam[10] = fy
+    cam[11] = fz
+    return 0
+}
+
+// The sphere, the light, the floor and the lens: the part of the scene that is
+// the same for every camera.
+func setScene(cam: ptr<float>, w: i64, h: i64) -> i64 {
+    cam[12] = 0.6
+    cam[13] = w.toFloat() / h.toFloat()
+    cam[14] = w.toFloat()
+    cam[15] = h.toFloat()
+    cam[16] = 0.0
+    cam[17] = 0.0
+    cam[18] = 0.0 - 3.0
+    cam[19] = 1.0
+    let l: float[3]
+    l[0] = 0.0 - 0.5
+    l[1] = 0.8
+    l[2] = 0.4
+    let light: ptr<float> = l.toI64().toPtr()
+    normalize3(light)
+    cam[20] = light[0]
+    cam[21] = light[1]
+    cam[22] = light[2]
+    cam[23] = 0.0 - 1.0
+    cam[24] = 0.0
+    cam[25] = 32.0
+    cam[26] = 6.0
+    cam[27] = 4.0
+    return 0
+}

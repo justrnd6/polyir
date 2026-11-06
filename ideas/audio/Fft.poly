@@ -1,0 +1,113 @@
+// THE FAST FOURIER TRANSFORM (FFT) as GPU kernels. The plain transform in shared/spectrum.poly
+// works out each of the N frequencies with a sum of N terms: N * N multiplications. The FFT gets the
+// same answer with about N * log2(N) by splitting the problem in two over and over (a "divide and
+// conquer"): the transform of N numbers is made from two transforms of N/2 numbers plus N/2
+// cheap "butterflies". For N = 65,536 that is 1 million steps instead of 4.3 billion.
+//
+// This is the Stockham form of the algorithm: log2(N) STAGES, each reading one array and writing
+// another, so on a GPU each stage is one launch (a thread per butterfly) and the output comes out
+// in the natural order with no shuffling at the end. N must be a power of two.
+//
+// Complex numbers are stored in ONE array as pairs (real, imaginary): number k is at 2k and 2k + 1.
+// Many independent transforms can run at once ("a batch"): transform b of N numbers starts at
+// 2 * N * b. A spectrogram (a picture of how the frequencies of a sound change over time) is
+// exactly such a batch: one short transform per slice of the sound.
+extern func sqrtf(x: float) -> float
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+extern func logf(x: float) -> float
+
+// ONE STAGE. Each thread does one butterfly: it reads two numbers a and b that are n/2 apart, writes
+// their sum, and their difference turned by a "twiddle factor" (a rotation, the complex number
+// e^(-2*pi*i*p/n), by the angle that depends on the position p). Together the N/2 butterflies of a
+// stage fill the whole destination array.
+// p: 0 N (numbers per transform)   1 n (the size of the pieces in this stage: N, N/2, N/4 ... 2)
+//    2 s (the stride: 1, 2, 4 ... N/2)   3 direction (+1 forward transform, -1 inverse)
+kernel func fftStage(index t: i32, uniform src: ptr<float>, uniform p: ptr<i32>, writable dst: ptr<float>) -> i32 {
+    let total: i32 = p[0]
+    let n: i32 = p[1]
+    let s: i32 = p[2]
+    let half: i32 = total / 2
+    let batch: i32 = t / half
+    let local: i32 = t % half
+    let position: i32 = local / s
+    let column: i32 = local % s
+    let base: i32 = batch * total * 2
+    let a: i32 = base + 2 * (column + s * position)
+    let b: i32 = base + 2 * (column + s * (position + n / 2))
+    let sumRe: float = src[a] + src[b]
+    let sumIm: float = src[a + 1] + src[b + 1]
+    let diffRe: float = src[a] - src[b]
+    let diffIm: float = src[a + 1] - src[b + 1]
+    let angle: float = (0.0 - 6.2831853) * p[3].toFloat() * position.toFloat() / n.toFloat()
+    let twiddleRe: float = cosf(angle)
+    let twiddleIm: float = sinf(angle)
+    let first: i32 = base + 2 * (column + s * (2 * position))
+    let second: i32 = base + 2 * (column + s * (2 * position + 1))
+    dst[first] = sumRe
+    dst[first + 1] = sumIm
+    dst[second] = diffRe * twiddleRe - diffIm * twiddleIm
+    dst[second + 1] = diffRe * twiddleIm + diffIm * twiddleRe
+    return 0
+}
+
+// The strength of frequency k of a finished transform, scaled so a sine of height 1 reads as 1 (the
+// same scale as `dft`): 2 * |X[k]| / N.   p: 0 N
+kernel func fftMagnitude(index k: i32, uniform data: ptr<float>, uniform p: ptr<i32>) -> float {
+    let total: i32 = p[0]
+    let re: float = data[2 * k]
+    let im: float = data[2 * k + 1]
+    return 2.0 * sqrtf(re * re + im * im) / total.toFloat()
+}
+
+// FRAMING for a spectrogram: slice `batch` overlapping pieces out of a real signal, each N samples
+// long, `hop` samples after the one before, and multiply each by a smooth "Hann" window (0 at both
+// ends, 1 in the middle) so the cut edges do not make false frequencies. Thread t makes sample k of
+// frame b. The output is complex (imaginary parts 0), ready for fftStage.
+// p: 0 N   1 hop
+kernel func fftFrames(index t: i32, uniform signal: ptr<float>, uniform p: ptr<i32>, writable dst: ptr<float>) -> i32 {
+    let total: i32 = p[0]
+    let frame: i32 = t / total
+    let k: i32 = t % total
+    let window: float = 0.5 - 0.5 * cosf(6.2831853 * k.toFloat() / (total - 1).toFloat())
+    dst[2 * t] = signal[frame * p[1] + k] * window
+    dst[2 * t + 1] = 0.0
+    return 0
+}
+
+// One pixel of a spectrogram picture. Column x is frame x; row y shows frequency bin (rows - 1 - y), so
+// low frequencies are at the BOTTOM. Brightness is the loudness in decibels, mapped from -70 dB (black)
+// to 0 dB (white) relative to a full-height sine: 20 * log10(magnitude).
+// p: 0 N   1 frames   2 rows (how many bins to show, from bin 0 up)
+kernel func spectrogramPixel(index i: i32, uniform data: ptr<float>, uniform p: ptr<i32>) -> float {
+    let total: i32 = p[0]
+    let frames: i32 = p[1]
+    let rows: i32 = p[2]
+    let x: i32 = i % frames
+    let bin: i32 = rows - 1 - i / frames
+    let at: i32 = x * total * 2 + 2 * bin
+    let re: float = data[at]
+    let im: float = data[at + 1]
+    // A Hann window shrinks a sine to half its height, hence the extra factor of 2.
+    let magnitude: float = 4.0 * sqrtf(re * re + im * im) / total.toFloat()
+    var level: float = (20.0 * logf(magnitude + 0.0000001) / 2.3025851 + 70.0) / 70.0
+    if (level < 0.0) { level = 0.0 }
+    if (level > 1.0) { level = 1.0 }
+    return level
+}
+
+// ── convolution through the frequency domain (section 22.5 of the guide) ─────────────────────
+// Convolving two sounds is multiplying their spectra, number by number (complex multiplication),
+// then transforming back. With the FFT that costs about N log N instead of nx * nh.
+// COMPLEX MULTIPLICATION: (ar + i ai) * (br + i bi) = (ar br - ai bi) + i (ar bi + ai br).
+kernel func complexMultiply(index k: i32, uniform a: ptr<float>, uniform b: ptr<float>, writable out: ptr<float>) -> i32 {
+    out[2 * k] = a[2 * k] * b[2 * k] - a[2 * k + 1] * b[2 * k + 1]
+    out[2 * k + 1] = a[2 * k] * b[2 * k + 1] + a[2 * k + 1] * b[2 * k]
+    return 0
+}
+
+// The real part of each complex number, divided by N (the inverse transform leaves a factor N).
+// p: 0 N, as a float.
+kernel func realScaled(index i: i32, uniform data: ptr<float>, uniform p: ptr<float>) -> float {
+    return data[2 * i] / p[0]
+}

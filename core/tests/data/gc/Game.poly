@@ -1,0 +1,55 @@
+// A game loop: a world of entities lives through every frame; each frame moves a few of them (replacing some, so references are stored
+// into the world) and makes a couple of thousand short-lived particles and lists that are dropped by the frame's end. With the incremental
+// collector no frame waits for a whole collection: the pauses stay short however big the world is (tests/NativeGcTest.cpp compares the
+// pauses with POLYIR_GC_MODE=stop; the benchmark in docs/memory.md runs it with a million entities and 10,000 frames, by changing WORLD and
+// FRAMES).
+
+struct Entity {
+    var x: i64
+    var v: i64
+    var near: optional<Entity>
+}
+
+struct Particle {
+    x: i64
+    y: i64
+}
+
+func makeWorld(n: i64) -> mutarray<Entity> {
+    let world: mutarray<Entity> = mutarray<Entity>()
+    for (i = 0; i < n; i = i + 1) {
+        push(world, Entity { x: i, v: 1, near: None<Entity>() })
+    }
+    return world
+}
+
+// One frame: `per` particles (and a list every eighth), then 16 entities moved and their neighbours replaced.
+func frame(world: mutarray<Entity>, f: i64, per: i64) -> i64 {
+    var total: i64 = 0
+    for (k = 0; k < per; k = k + 1) {
+        let p: Particle = Particle { x: k, y: f }
+        total = total + p.x + p.y
+        if (k % 8 == 0) {
+            let trail: array<i64> = array<i64>().with(k).with(f)
+            total = total + trail[1]
+        }
+    }
+    let n: i64 = len(world)
+    for (j = 0; j < 16; j = j + 1) {
+        let at: i64 = (f * 7919 + j * 104729) % n
+        let e: Entity = world[at]
+        e.x = e.x + e.v
+        world[(at + 1) % n] = Entity { x: e.x, v: 2, near: Some<Entity>(e) }
+    }
+    return total % 1000003
+}
+
+func main() -> i64 {
+    let world: mutarray<Entity> = makeWorld(200000)  // WORLD
+    var total: i64 = 0
+    for (f = 0; f < 400; f = f + 1) {  // FRAMES
+        total = (total + frame(world, f, 2000)) % 1000003
+    }
+    print(str(total + len(world)))
+    return 0
+}

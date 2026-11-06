@@ -1,0 +1,6 @@
+func main() -> i64 {
+  let s: string = "a" + 1
+  let t: string = "a" * 2
+  let n: i64 = s.len()
+  return n
+}

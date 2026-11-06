@@ -1,0 +1,12 @@
+pub fn bitwisePrecedenceCheck() -> i64 {
+    let a: i64 = 6;
+    let b: i64 = 3;
+    let c: i64 = 1;
+    let d: i64 = 2;
+    return a | b & c ^ d;
+}
+
+pub fn shiftPrecedenceCheck() -> i64 {
+    let x: i64 = 1;
+    return x << 2 & 3;
+}

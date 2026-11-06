@@ -1,0 +1,45 @@
+coro func fibonacci(count: i64) -> i64 {
+  var a: i64 = 0
+  var b: i64 = 1
+  for (i = 0; i < count; i = i + 1) {
+    yield a
+    let next: i64 = a + b
+    a = b
+    b = next
+  }
+}
+
+coro func countdown(from: i64) -> i64 {
+  var n: i64 = from
+  for (i = 0; i < from; i = i + 1) {
+    yield n
+    n = n - 1
+  }
+}
+
+func total(source: coro<i64>) -> i64 {
+  var sum: i64 = 0
+  var finished: bool = false
+  for (i = 0; i < 100 && finished == false; i = i + 1) {
+    let step: variant<i64> = source.resume()
+    if (step.isCase(1)) {
+      finished = true
+    } else {
+      sum = sum + step.unwrapAt(0)
+    }
+  }
+  return sum
+}
+
+func main() -> i64 {
+  var score: i64 = total(fibonacci(7))
+  score = score + total(countdown(4))
+  let two: coro<i64> = countdown(3)
+  let first: variant<i64> = two.resume()
+  let second: variant<i64> = two.resume()
+  score = score + first.unwrapAt(0) * 10 + second.unwrapAt(0)
+  if (two.done() == false) {
+    score = score + 100
+  }
+  return score
+}

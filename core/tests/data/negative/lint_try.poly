@@ -1,0 +1,10 @@
+func main() -> i64 {
+  var a: i64 = 1
+  try {
+    var b: i64 = 2
+    a = b
+  } catch (e) {
+    var c: i64 = 3
+  }
+  return a
+}

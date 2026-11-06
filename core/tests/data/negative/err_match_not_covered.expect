@@ -1,0 +1,20 @@
+$ --analyze
+exit 1
+check failed:
+  err_match_not_covered.poly:2:10: a `match` value needs an `else` arm: its arms do not cover every case
+  err_match_not_covered.poly:8:10: a `match` value needs an `else` arm: its arms do not cover every case
+$ --analyze --strict
+exit 1
+check failed:
+  err_match_not_covered.poly:2:10: a `match` value needs an `else` arm: its arms do not cover every case
+  err_match_not_covered.poly:8:10: a `match` value needs an `else` arm: its arms do not cover every case
+$ --emit-hir-json
+exit 1
+check failed:
+  err_match_not_covered.poly:2:10: a `match` value needs an `else` arm: its arms do not cover every case
+  err_match_not_covered.poly:8:10: a `match` value needs an `else` arm: its arms do not cover every case
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_match_not_covered.poly:2:10: a `match` value needs an `else` arm: its arms do not cover every case
+  err_match_not_covered.poly:8:10: a `match` value needs an `else` arm: its arms do not cover every case

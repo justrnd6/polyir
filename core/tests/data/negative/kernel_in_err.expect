@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  kernel_in_err.poly:2:29: unknown name nothere
+$ --analyze --strict
+exit 1
+check failed:
+  kernel_in_err.poly:2:29: unknown name nothere
+$ --emit-hir-json
+exit 1
+check failed:
+  kernel_in_err.poly:2:29: unknown name nothere
+$ --emit-msl
+exit 1
+kernel check failed:
+  kernel_in_err.poly:2:29: unknown name nothere

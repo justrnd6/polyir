@@ -1,0 +1,105 @@
+global visits: i64 = 0
+
+struct Account(var balance: i64, owner: string) {
+  func deposit(amount: i64) -> i64 {
+    this.balance = this.balance + amount
+    return this.balance
+  }
+
+  func depositTwice(amount: i64) -> i64 {
+    this.deposit(amount)
+    return this.deposit(amount)
+  }
+}
+
+struct Vec2(x: double, y: double) {
+  func length2() -> double {
+    return this.x * this.x + this.y * this.y
+  }
+
+  func scaled(k: double) -> Vec2 {
+    return Vec2(x: this.x * k, y: this.y * k)
+  }
+}
+
+func fib(n: i64) -> i64 {
+  if (n < 2) {
+    return n
+  } else {
+    return fib(n - 1) + fib(n - 2)
+  }
+}
+
+func classify(n: i64) -> i64 {
+  if (n < 0) {
+    return 1
+  } else if (n == 0) {
+    return 2
+  } else if (n < 10) {
+    return 3
+  } else {
+    return 4
+  }
+}
+
+func bump() -> i64 {
+  visits = visits + 1
+  return visits
+}
+
+func greeting(name: string) -> string {
+  return "hello, " + name
+}
+
+func narrow(a: i32, b: i32) -> i32 {
+  return a * b + 7
+}
+
+func apply(f: closure(i64) -> i64, x: i64) -> i64 {
+  return f(x) + f(x + 1)
+}
+
+func main() -> i64 {
+  var score: i64 = 0
+  score = score + fib(10)
+  let acct: Account = Account(balance: 100, owner: "ann")
+  score = score + acct.depositTwice(5)
+  let v: Vec2 = Vec2(x: 3.0, y: 4.0)
+  let w: Vec2 = v.scaled(2.0)
+  score = score + w.length2().toI64()
+  if (greeting("bo") == "hello, bo") {
+    score = score + 1
+  }
+  score = score + narrow(6, 7).toI64()
+  let seen: mutset<i64> = mutset<i64>(8)
+  for (i = 0; i < 20; i = i + 1) {
+    seen.add(i % 7)
+  }
+  score = score + seen.len()
+  let nums: mutarray<i64> = mutarray<i64>()
+  for (i = 0, j = 10; i < 5; i = i + 1, j = j - 1) {
+    nums.push(i * j)
+  }
+  nums[0] = 100
+  score = score + nums[0] + nums[4] + nums.len()
+  let ages: mutmap<string, i64> = mutmap<string, i64>(4)
+  ages["ann"] = 31
+  if (ages.has("ann")) {
+    score = score + ages["ann"]
+  }
+  if (ages.has("zed") == false) {
+    score = score + 1
+  }
+  let factor: i64 = 3
+  score = score + apply(closure(x: i64) -> i64 {
+    return x * factor
+  }, 4)
+  let b: Box<double> = Box(value: 2.5)
+  score = score + (b.value * 4.0).toI64()
+  score = score + classify(0 - 5) + classify(0) + classify(7) + classify(70)
+  score = score + bump() + bump()
+  return score
+}
+
+struct Box<T>(value: T) {
+}

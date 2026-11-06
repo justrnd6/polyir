@@ -1,0 +1,159 @@
+// CONFORMANCE (Vulkan): every kernel in shared/kernels.poly runs through Vulkan
+// and on the CPU, and the results must agree. Same kernels and data as
+// conformance.poly (Metal).
+//
+//   polyir --emit-glsl conformance-vulkan.poly       (one shader per kernel; tests/gpu.sh splits and compiles them)
+//   polyir conformance-vulkan.poly --out conformance-vulkan && ./conformance-vulkan    (run in this folder)
+//
+// Exit 0 means every kernel matched. Exit 10 means no Vulkan GPU; 20 + n means kernel n
+// (1 scale, 2 norm, 3 sumTo, 4 lane, 5 smooth, 6 leftover) did not compile or differs from the CPU.
+import "../Vulkan.poly"
+import "shared/kernels.poly"
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    if (runScale(gpu) != 0) { return 21 }
+    if (runNorm(gpu) != 0) { return 22 }
+    if (runSumTo(gpu) != 0) { return 23 }
+    if (runLane(gpu) != 0) { return 24 }
+    if (runSmooth(gpu) != 0) { return 25 }
+    if (runLeftover(gpu) != 0) { return 26 }
+    return 0
+}
+
+// A kernel's push constants are the element count, then each uniform value,
+// four bytes apiece. These two helpers fill a block that way.
+func pushCount(count: i64) -> i64 {
+    let push: i64 = words(2)
+    let slots: ptr<i32> = push.toPtr()
+    slots[0] = count.toI32()
+    return push
+}
+
+// Each run: build the pipeline from <name>.spv (bufferCount storage buffers, pushBytes of
+// push constants), upload, dispatch, then compare with the CPU. 0 means it matched.
+func runScale(gpu: i64) -> i64 {
+    let pipeline: i64 = vulkanPipeline(gpu, "scale.spv", 2, 8)
+    if (pipeline == 0) { return 1 }
+    let xs: float[4]
+    xs[0] = 1.0
+    xs[1] = 2.5
+    xs[2] = 0.0
+    xs[3] = 8.0
+    let push: i64 = pushCount(4)
+    let uniforms: ptr<float> = push.toPtr()
+    uniforms[1] = 3.0
+    let out: i64 = vulkanEmptyBuffer(gpu, 16)
+    vulkanDispatch(gpu, pipeline, 4, push, vulkanBuffer(gpu, xs.toI64(), 16), out, 0, 0)
+    let got: ptr<float> = vulkanContents(out).toPtr()
+    for (i = 0; i < 4; i = i + 1) {
+        if (close(got[i], scale(xs[i], 3.0)) == 0) { return 1 }
+    }
+    return 0
+}
+
+func runNorm(gpu: i64) -> i64 {
+    let pipeline: i64 = vulkanPipeline(gpu, "norm.spv", 3, 4)
+    if (pipeline == 0) { return 1 }
+    let a: float[3]
+    a[0] = 1.0
+    a[1] = 4.0
+    a[2] = 0.5
+    let b: float[3]
+    b[0] = 2.0
+    b[1] = 0.0
+    b[2] = 7.0
+    let out: i64 = vulkanEmptyBuffer(gpu, 12)
+    vulkanDispatch(gpu, pipeline, 3, pushCount(3), vulkanBuffer(gpu, a.toI64(), 12), vulkanBuffer(gpu, b.toI64(), 12), out, 0)
+    let got: ptr<float> = vulkanContents(out).toPtr()
+    for (i = 0; i < 3; i = i + 1) {
+        if (close(got[i], norm(a[i], b[i])) == 0) { return 1 }
+    }
+    return 0
+}
+
+func runSumTo(gpu: i64) -> i64 {
+    let pipeline: i64 = vulkanPipeline(gpu, "sumTo.spv", 2, 4)
+    if (pipeline == 0) { return 1 }
+    let n: i32[4]
+    n[0] = 0
+    n[1] = 5
+    n[2] = 10
+    n[3] = 101
+    let out: i64 = vulkanEmptyBuffer(gpu, 16)
+    vulkanDispatch(gpu, pipeline, 4, pushCount(4), vulkanBuffer(gpu, n.toI64(), 16), out, 0, 0)
+    let got: ptr<i32> = vulkanContents(out).toPtr()
+    for (i = 0; i < 4; i = i + 1) {
+        if (got[i] != sumTo(n[i])) { return 1 }
+    }
+    return 0
+}
+
+func runLane(gpu: i64) -> i64 {
+    let pipeline: i64 = vulkanPipeline(gpu, "lane.spv", 2, 4)
+    if (pipeline == 0) { return 1 }
+    let v: float[8]
+    for (i = 0; i < 8; i = i + 1) {
+        v[i] = (i * 3 + 1).toFloat()
+    }
+    let out: i64 = vulkanEmptyBuffer(gpu, 8)
+    vulkanDispatch(gpu, pipeline, 2, pushCount(2), vulkanBuffer(gpu, v.toI64(), 32), out, 0, 0)
+    let got: ptr<float> = vulkanContents(out).toPtr()
+    if (close(got[0], lane(vec[v[0], v[1], v[2], v[3]])) == 0) { return 1 }
+    if (close(got[1], lane(vec[v[4], v[5], v[6], v[7]])) == 0) { return 1 }
+    return 0
+}
+
+func runSmooth(gpu: i64) -> i64 {
+    let pipeline: i64 = vulkanPipeline(gpu, "smooth.spv", 2, 8)
+    if (pipeline == 0) { return 1 }
+    let xs: float[6]
+    xs[0] = 3.0
+    xs[1] = 9.0
+    xs[2] = 0.0
+    xs[3] = 6.0
+    xs[4] = 12.0
+    xs[5] = 3.0
+    let push: i64 = pushCount(6)
+    let sizes: ptr<i32> = push.toPtr()
+    sizes[1] = 6
+    let out: i64 = vulkanEmptyBuffer(gpu, 24)
+    vulkanDispatch(gpu, pipeline, 6, push, vulkanBuffer(gpu, xs.toI64(), 24), out, 0, 0)
+    let got: ptr<float> = vulkanContents(out).toPtr()
+    let cpu: ptr<float> = xs.toI64().toPtr()
+    for (i = 0; i < 6; i = i + 1) {
+        if (close(got[i], smooth(i, cpu, 6)) == 0) { return 1 }
+    }
+    return 0
+}
+
+// Remainders of floats. 2867 = 47 * 61, 5969 = 47 * 127 and 9409 = 97 * 97 divide evenly, and a GPU whose division is
+// a hair inexact would answer 47 (or 97) instead of 0 for them.
+func runLeftover(gpu: i64) -> i64 {
+    let pipeline: i64 = vulkanPipeline(gpu, "leftover.spv", 3, 4)
+    if (pipeline == 0) { return 1 }
+    let a: float[7]
+    a[0] = 2867.0
+    a[1] = 5969.0
+    a[2] = 9409.0
+    a[3] = 7.5
+    a[4] = 0.0 - 7.5
+    a[5] = 100.0
+    a[6] = 0.0
+    let b: float[7]
+    b[0] = 47.0
+    b[1] = 47.0
+    b[2] = 97.0
+    b[3] = 2.0
+    b[4] = 2.0
+    b[5] = 7.0
+    b[6] = 5.0
+    let out: i64 = vulkanEmptyBuffer(gpu, 28)
+    vulkanDispatch(gpu, pipeline, 7, pushCount(7), vulkanBuffer(gpu, a.toI64(), 28), vulkanBuffer(gpu, b.toI64(), 28), out, 0)
+    let got: ptr<float> = vulkanContents(out).toPtr()
+    for (i = 0; i < 7; i = i + 1) {
+        if (close(got[i], leftover(a[i], b[i])) == 0) { return 1 }
+    }
+    return 0
+}

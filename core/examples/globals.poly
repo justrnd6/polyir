@@ -1,0 +1,11 @@
+// `global name: Type = literal` — a module-level value that persists
+// ACROSS calls, the one thing impossible without this feature. A bare
+// reference `load`s on every read (it can change between reads, unlike
+// a local SSA value); as an assignment target it's the raw pointer.
+
+global counter: i64 = 0
+
+func bump() -> i64 {
+  counter = counter + 1
+  return counter
+}

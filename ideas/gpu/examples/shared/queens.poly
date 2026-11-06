@@ -1,0 +1,100 @@
+// THE N-QUEENS PROBLEM: place N chess queens on an N x N board so that no two attack each
+// other (no two in the same row, column or diagonal), and COUNT how many ways there are.
+//   N = 4: 2 ways     N = 8: 92 ways     N = 12: 14,200 ways     N = 14: 365,596 ways
+//
+// The search goes row by row. In each row, try every column that is not attacked; place a
+// queen there; go on to the next row; when no column is free, back up and try the next one
+// (BACKTRACKING). The whole search is a tree: every node is a partly filled board.
+//
+// Three whole numbers, used as lists of bits, remember which squares of the NEXT row are
+// attacked: `cols` (columns already used), `left` (squares attacked along a diagonal going
+// down-left) and `right` (down-right). Moving to the next row shifts the two diagonal
+// lists one step sideways, which is exactly how a diagonal moves. A square is free if its
+// bit is zero in all three, and `free & -free` picks out the lowest free square.
+//
+// WHY A GPU CAN HELP: the subtrees below different partial boards are completely
+// independent. The CPU lists every valid placement of the first few rows (the "prefixes");
+// each GPU thread then searches everything below ONE prefix, and the counts are added up.
+//
+// GPUs have no call stack, so the search is written without recursion: each thread keeps
+// its own stack of levels in a private slice of a `writable` scratch array.
+// p: 0 the board size n   1 how many rows each prefix already fills (depth)
+// prefixes: three whole numbers per prefix (cols, left, right) after its first rows.
+// stack: n + 1 levels of four numbers (cols, left, right, free) for every thread.
+kernel func queens(index t: i32, uniform prefixes: ptr<i32>, uniform p: ptr<i32>, writable stack: ptr<i32>) -> i32 {
+    let n: i32 = p[0]
+    let depth: i32 = p[1]
+    let full: i32 = (1 << n) - 1
+    let base: i32 = t * (n + 1) * 4
+    // Level 0 of this thread's stack is its prefix.
+    stack[base] = prefixes[t * 3]
+    stack[base + 1] = prefixes[t * 3 + 1]
+    stack[base + 2] = prefixes[t * 3 + 2]
+    stack[base + 3] = full & ~(prefixes[t * 3] | prefixes[t * 3 + 1] | prefixes[t * 3 + 2])
+    var level: i32 = 0
+    var count: i32 = 0
+    // Each pass either takes the lowest free square of the current level (placing a queen) or,
+    // when the level has none left, backs up one level. Level -1 means the search is finished.
+    for (step = 0; level >= 0; step = step + 1) {
+        let at: i32 = base + level * 4
+        let free: i32 = stack[at + 3]
+        if (free == 0) {
+            level = level - 1
+        } else {
+            let bit: i32 = free & (0 - free)
+            stack[at + 3] = free ^ bit
+            if (depth + level + 1 == n) {
+                // That queen filled the last row: one complete solution.
+                count = count + 1
+            } else {
+                // Go down a level: remember the new attacked squares for the next row.
+                let nextCols: i32 = stack[at] | bit
+                let nextLeft: i32 = ((stack[at + 1] | bit) << 1) & full
+                let nextRight: i32 = (stack[at + 2] | bit) >> 1
+                level = level + 1
+                let below: i32 = base + level * 4
+                stack[below] = nextCols
+                stack[below + 1] = nextLeft
+                stack[below + 2] = nextRight
+                stack[below + 3] = full & ~(nextCols | nextLeft | nextRight)
+            }
+        }
+    }
+    return count
+}
+
+// ── the CPU side: listing the prefixes ───────────────────────────────────────
+// Every way to put one queen in each of the first `depth` rows with none attacking another,
+// as three whole numbers each (cols, left, right). Returns how many there are.
+func listPrefixes(n: i64, depth: i64, out: ptr<i32>) -> i64 {
+    var total: i64 = 1
+    for (r = 0; r < depth; r = r + 1) {
+        total = total * n
+    }
+    let full: i32 = ((1 << n) - 1).toI32()
+    var found: i64 = 0
+    // Read a number 0 .. n^depth - 1 as `depth` columns (one per row) and test them in order.
+    for (code = 0; code < total; code = code + 1) {
+        var left: i32 = 0
+        var right: i32 = 0
+        var cols: i32 = 0
+        var ok: i64 = 1
+        var rest: i64 = code
+        for (r = 0; r < depth; r = r + 1) {
+            let column: i64 = rest % n
+            rest = rest / n
+            let bit: i32 = (1 << column).toI32()
+            if ((bit & (cols | left | right)) != 0) { ok = 0 }
+            cols = cols | bit
+            left = ((left | bit) << 1) & full
+            right = (right | bit) >> 1
+        }
+        if (ok == 1) {
+            out[found * 3] = cols
+            out[found * 3 + 1] = left
+            out[found * 3 + 2] = right
+            found = found + 1
+        }
+    }
+    return found
+}

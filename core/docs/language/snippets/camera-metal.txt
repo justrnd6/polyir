@@ -1,0 +1,16 @@
+the set: 62 corners, 55 edges
+common-sense checks: straight ahead is the centre; twice as far is half the offset; behind is unseen; the edge of the lens is the edge of the picture; turning the camera = turning the world the other way; moving right = moving the world left; a narrower lens magnifies
+worked example, the point (2, 1, -10) seen from (0, 1.5, 0):  pixel column 1147.052, row 586.763, depth 10.000 m
+a point straight ahead, (0, 1.5, -10), after turning the camera (it was at column 960, row 540):
+    yaw  +10, pitch   +0 -> pan right 10: column 795.088, row 540.000
+    yaw  -10, pitch   +0 -> pan left 10 : column 1124.912, row 540.000
+    yaw   +0, pitch  +10 -> look up 10  : column 960.000, row 704.912
+    yaw   +0, pitch  -10 -> look down 10: column 960.000, row 375.088
+which spot of the room each turn looks straight at (it must land in the middle, column 960, row 540):
+    yaw   +0, pitch   +0 -> the back wall, straight ahead: column 960.000, row 540.000
+    yaw  +90, pitch   +0 -> the wall on the right (+x): column 960.000, row 540.000
+    yaw  -90, pitch   +0 -> the wall on the left (-x): column 960.000, row 540.000
+    yaw +180, pitch   +0 -> the wall behind (+z): column 960.000, row 540.000
+    yaw   +0, pitch  +45 -> halfway up the back wall: column 960.000, row 540.000
+    yaw   +0, pitch  -45 -> halfway down, into the floor: column 960.000, row 540.000
+    yaw   +0, pitch  +90 -> straight up, the ceiling: column 960.000, row 540.000

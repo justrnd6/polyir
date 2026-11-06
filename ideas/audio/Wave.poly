@@ -1,0 +1,73 @@
+// WAVE: waveforms for sound. Small functions for building and shaping signals (sound, but also animation,
+// noise textures, easing curves).
+//
+//   import "../Wave.poly"       (from ideas/audio/examples: the path is relative to the importing file)
+//
+// Unlike `sign`, `fract`, `clamp` and `mix` (core/stdlib/Math.poly, built into the language), these are not part
+// of the standard library: a program imports this file to use them (Sound.poly does).
+//
+// Every function here is a `kernel func` on `float`s, so each one
+//   * runs on the CPU like any function (and can be tested there),
+//   * runs on a GPU inside other kernels (`--emit-msl`, `--emit-glsl`), and
+//   * is checked by the kernel rules, so it can never use anything a GPU cannot do.
+//
+// Oscillators take a PHASE measured in whole cycles, not in angles: phase 0 is the start of
+// a cycle, 0.5 is halfway through, 1 is the start of the next one, 2.25 is a quarter of the
+// way through the third. For a note of frequency f hertz at time t seconds the phase is
+// simply f * t, so `sine(f * t)` is a pure tone. Only the part after the decimal point matters.
+//
+//   sine       smooth wave, -1 .. +1                       (pure tone)
+//   square     +1 for the first half of a cycle, -1 for the second     (hollow, buzzy)
+//   sawtooth   rises from -1 to +1 over the cycle, then jumps back       (bright, brassy)
+//   triangle   rises from -1 to +1 in half a cycle, falls in the other half   (soft)
+//   noise      a pseudo-random number -1 .. +1 from a whole-number seed     (hiss, texture)
+//
+// Helpers: fade, noteFrequency.
+import "../../core/stdlib/Math.poly"
+
+extern func sinf(x: float) -> float
+extern func fabsf(x: float) -> float
+extern func powf(x: float, y: float) -> float
+
+// ── oscillators (phase in whole cycles) ──────────────────────────────────────
+kernel func sine(phase: float) -> float {
+    return sinf(6.2831853 * fract(phase))
+}
+
+kernel func square(phase: float) -> float {
+    if (fract(phase) < 0.5) { return 1.0 }
+    return 0.0 - 1.0
+}
+
+kernel func sawtooth(phase: float) -> float {
+    return 2.0 * fract(phase) - 1.0
+}
+
+kernel func triangle(phase: float) -> float {
+    return 1.0 - 4.0 * fabsf(fract(phase) - 0.5)
+}
+
+// A pseudo-random number from -1 to +1 for each whole-number seed: the same seed always gives
+// the same number, and neighbouring seeds look unrelated. (A tiny generator: fine for hiss and
+// texture, not for anything that needs real randomness.)
+kernel func noise(seed: i32) -> float {
+    let a: i32 = (seed * 75 + 74) % 65537
+    let b: i32 = (a * 75 + 74) % 65537
+    return 2.0 * b.toFloat() / 65537.0 - 1.0
+}
+
+// ── shaping a sound ──────────────────────────────────────────────────────────
+// A volume curve for a note `total` seconds long, at time t: rises over `attack` seconds,
+// holds at 1, and falls over the last `release` seconds. An abrupt start or end clicks.
+kernel func fade(t: float, attack: float, release: float, total: float) -> float {
+    var level: float = 1.0
+    if (t < attack) { level = t / attack }
+    if (total - t < release) { level = level * clamp((total - t) / release, 0.0, 1.0) }
+    return level
+}
+
+// The frequency of the piano key with MIDI number m (A above middle C is 69 = 440 Hz; middle C
+// is 60), in the usual equal-tempered tuning: each semitone multiplies the frequency by 2^(1/12).
+kernel func noteFrequency(m: float) -> float {
+    return 440.0 * powf(2.0, (m - 69.0) / 12.0)
+}

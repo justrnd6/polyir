@@ -1,0 +1,43 @@
+func atomicAdd(counts: ptr<i32>, slot: i32, amount: i32) -> i32 {
+  let old: i32 = counts[slot]
+  counts[slot] = old + amount
+  return old
+}
+
+func atomicAddFloat(sums: ptr<float>, slot: i32, amount: float) -> float {
+  let old: float = sums[slot]
+  sums[slot] = old + amount
+  return old
+}
+
+func atomicMin(values: ptr<i32>, slot: i32, candidate: i32) -> i32 {
+  let old: i32 = values[slot]
+  if (candidate < old) {
+    values[slot] = candidate
+  }
+  return old
+}
+
+func atomicMax(values: ptr<i32>, slot: i32, candidate: i32) -> i32 {
+  let old: i32 = values[slot]
+  if (candidate > old) {
+    values[slot] = candidate
+  }
+  return old
+}
+
+func groupSize() -> i32 {
+  return 1
+}
+
+func localIndex(i: i32) -> i32 {
+  return 0
+}
+
+func groupIndex(i: i32) -> i32 {
+  return i
+}
+
+func barrier() -> i32 {
+  return 0
+}

@@ -1,0 +1,148 @@
+// `&&` and `||`: they must SHORT-CIRCUIT (the right side runs only when the left side has not
+// already decided the answer) and `&&` must bind tighter than `||`, as in C.
+import "Check.poly"
+
+extern func calloc(count: i64, size: i64) -> i64
+
+global calls: i64 = 0
+
+// Counts how many times it is called, so a test can see whether a right-hand side ran.
+func tick() -> i1 {
+    calls = calls + 1
+    return true
+}
+
+func checkAndSkipsRightSideWhenLeftIsFalse() -> double {
+    calls = 0
+    if (1 == 2 && tick()) { return 1.0 }
+    return offInt(calls, 0)
+}
+
+func checkAndRunsRightSideWhenLeftIsTrue() -> double {
+    calls = 0
+    if (1 == 1 && tick()) { return offInt(calls, 1) }
+    return 1.0
+}
+
+func checkOrSkipsRightSideWhenLeftIsTrue() -> double {
+    calls = 0
+    if (1 == 1 || tick()) { return offInt(calls, 0) }
+    return 1.0
+}
+
+func checkOrRunsRightSideWhenLeftIsFalse() -> double {
+    calls = 0
+    if (1 == 2 || tick()) { return offInt(calls, 1) }
+    return 1.0
+}
+
+// The classic guard: a null pointer must never be read.
+func checkNullGuardWithAnd() -> double {
+    let p: ptr<i64> = 0.toPtr()
+    if (p.toI64() != 0 && p[0] == 5) { return 1.0 }
+    return 0.0
+}
+
+func checkNullGuardWithOr() -> double {
+    let p: ptr<i64> = 0.toPtr()
+    if (p.toI64() == 0 || p[0] == 5) { return 0.0 }
+    return 1.0
+}
+
+// A loop condition is re-tested every time round, and stops testing once it is false.
+func checkLoopConditionShortCircuits() -> double {
+    calls = 0
+    var rounds: i64 = 0
+    for (i = 0; i < 5 && tick(); i = i + 1) { rounds = rounds + 1 }
+    return offInt(rounds, 5) + offInt(calls, 5)
+}
+
+// A `&&` kept in a `let`, a `var`, an assignment and a `return` jumps too.
+func checkLetShortCircuits() -> double {
+    calls = 0
+    let ok: i1 = 1 == 2 && tick()
+    if (ok) { return 1.0 }
+    return offInt(calls, 0)
+}
+
+func checkVarAndAssignShortCircuit() -> double {
+    calls = 0
+    var ok: i1 = 1 == 2 && tick()
+    ok = 1 == 1 || tick()
+    if (ok) { return offInt(calls, 0) }
+    return 1.0
+}
+
+func bothTrue(a: i64, b: i64) -> i1 {
+    return a > 0 && b > 0
+}
+
+func checkReturnValue() -> double {
+    var wrong: i64 = 0
+    if (bothTrue(1, 1) == false) { wrong = wrong + 1 }
+    if (bothTrue(1, 0)) { wrong = wrong + 1 }
+    if (bothTrue(0, 1)) { wrong = wrong + 1 }
+    return offInt(wrong, 0)
+}
+
+func checkNotOfAnd() -> double {
+    let p: ptr<i64> = 0.toPtr()
+    if (!(p.toI64() != 0 && p[0] == 5)) { return 0.0 }
+    return 1.0
+}
+
+// `a || b && c` is `a || (b && c)`: with all the equal-precedence grouping `(a || b) && c` this would be false.
+func checkAndBindsTighterThanOr() -> double {
+    if (1 == 1 || 1 == 2 && 1 == 2) { return 0.0 }
+    return 1.0
+}
+
+func checkAndBindsTighterThanOrOnTheLeft() -> double {
+    if (1 == 2 && 1 == 2 || 1 == 1) { return 0.0 }
+    return 1.0
+}
+
+// A chain of three: all must hold.
+func checkChain() -> double {
+    var wrong: i64 = 0
+    if (!(1 == 1 && 2 == 2 && 3 == 3)) { wrong = wrong + 1 }
+    if (1 == 1 && 2 == 2 && 3 == 4) { wrong = wrong + 1 }
+    if (1 == 2 || 2 == 3 || 3 == 4) { wrong = wrong + 1 }
+    if (!(1 == 2 || 2 == 3 || 3 == 3)) { wrong = wrong + 1 }
+    return offInt(wrong, 0)
+}
+
+// `else if` chains pick the first branch whose condition holds.
+func gradeOf(n: i64) -> i64 {
+    if (n > 90) {
+        return 4
+    } else if (n > 80) {
+        return 3
+    } else if (n > 70) {
+        return 2
+    } else {
+        return 1
+    }
+}
+
+func checkElseIfChain() -> double {
+    return offInt(gradeOf(95) * 1000 + gradeOf(85) * 100 + gradeOf(75) * 10 + gradeOf(10), 4321)
+}
+
+global noted: i64 = 0
+
+// A `void` function may leave early with a bare `return`.
+func note(n: i64) -> void {
+    if (n < 0) {
+        return
+    }
+    noted = noted + n
+}
+
+func checkBareReturn() -> double {
+    noted = 0
+    note(5)
+    note(0 - 3)
+    note(7)
+    return offInt(noted, 12)
+}

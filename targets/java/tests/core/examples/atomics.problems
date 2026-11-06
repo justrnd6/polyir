@@ -1,0 +1,6 @@
+targets/java/Java.translate:164: `extern(name, params, result)` is unsupported: Java cannot call a C function
+targets/java/Java.translate:432: `atomicLoad(object, order)` is unsupported: this Java has no memory shared with C to read atomically
+targets/java/Java.translate:433: `atomicStore(object, value, order)` is unsupported: this Java has no memory shared with C to write atomically
+targets/java/Java.translate:434: `atomicRmw(object, op, value, order)` is unsupported: this Java has no memory shared with C to change atomically
+targets/java/Java.translate:435: `cmpxchg(object, expected, value, success, failure)` is unsupported: this Java has no memory shared with C to change atomically
+targets/java/Java.translate:436: `fence(order)` is unsupported: this Java has no memory shared with C to order

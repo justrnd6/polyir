@@ -1,0 +1,68 @@
+import "../audio/Sound.poly"
+import "FftGpu.poly"
+import "Metal.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func soundConvolveGpu(device: i64, pipeline: i64, a: Sound, response: Sound) -> Sound {
+  let n: i64 = a.count + response.count - 1
+  let sizes: i32[2]
+  sizes[0] = a.count.toI32()
+  sizes[1] = response.count.toI32()
+  let out: i64 = metalEmptyBuffer(device, n * 4)
+  let ok: i64 = metalDispatch(device, pipeline, n, metalBuffer(device, a.samples.toI64(), a.count * 4), metalBuffer(device, response.samples.toI64(), response.count * 4), metalBuffer(device, sizes.toI64(), 8), out)
+  if (ok == 0) {
+    return Sound(samples: a.samples, count: 0, rate: a.rate, channels: 1)
+  }
+  return Sound(samples: metalContents(out).toPtr(), count: n, rate: a.rate, channels: 1)
+}
+
+func fftPipelines(device: i64, source: string) -> ptr<i64> {
+  let handles: ptr<i64> = calloc(3, 8).toPtr()
+  handles[0] = metalPipeline(device, source, "fftStage")
+  handles[1] = metalPipeline(device, source, "complexMultiply")
+  handles[2] = metalPipeline(device, source, "realScaled")
+  return handles
+}
+
+func soundAsComplex(a: Sound, size: i64) -> ptr<float> {
+  let c: ptr<float> = calloc(size * 2, 4).toPtr()
+  let data: ptr<float> = a.samples
+  for (i = 0; i < a.count; i = i + 1) {
+    c[2 * i] = data[i]
+  }
+  return c
+}
+
+func soundConvolveFft(device: i64, pipelines: ptr<i64>, a: Sound, response: Sound) -> Sound {
+  let length: i64 = a.count + response.count - 1
+  var size: i64 = 1
+  for (k = 0; k < 30; k = k + 1) {
+    if (size < length) {
+      size = size * 2
+    }
+  }
+  let bytes: i64 = size * 8
+  let left: ptr<float> = soundAsComplex(a, size)
+  let right: ptr<float> = soundAsComplex(response, size)
+  let scratch: i64 = metalEmptyBuffer(device, bytes)
+  let spectrumA: i64 = fftStagesGpu(device, pipelines[0], metalBuffer(device, left.toI64(), bytes), scratch, size, 1, 1)
+  let spareB: i64 = metalEmptyBuffer(device, bytes)
+  let spectrumB: i64 = fftStagesGpu(device, pipelines[0], metalBuffer(device, right.toI64(), bytes), spareB, size, 1, 1)
+  if (spectrumA == 0 || spectrumB == 0) {
+    return Sound(samples: a.samples, count: 0, rate: a.rate, channels: 1)
+  }
+  let product: i64 = metalEmptyBuffer(device, bytes)
+  let unused: i64 = metalEmptyBuffer(device, size * 4)
+  if (metalDispatch(device, pipelines[1], size, spectrumA, spectrumB, product, unused) == 0) {
+    return Sound(samples: a.samples, count: 0, rate: a.rate, channels: 1)
+  }
+  let spare: i64 = metalEmptyBuffer(device, bytes)
+  let back: i64 = fftStagesGpu(device, pipelines[0], product, spare, size, 1, 0 - 1)
+  let scale: ptr<float> = calloc(2, 4).toPtr()
+  scale[0] = size.toFloat()
+  let out: i64 = metalEmptyBuffer(device, length * 4)
+  if (back == 0 || metalDispatch(device, pipelines[2], length, back, metalBuffer(device, scale.toI64(), 8), out, 0) == 0) {
+    return Sound(samples: a.samples, count: 0, rate: a.rate, channels: 1)
+  }
+  return Sound(samples: metalContents(out).toPtr(), count: length, rate: a.rate, channels: 1)
+}

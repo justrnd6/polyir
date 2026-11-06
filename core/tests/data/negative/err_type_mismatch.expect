@@ -1,0 +1,28 @@
+$ --analyze
+exit 1
+check failed:
+  err_type_mismatch.poly:3:16: expected an integer but found a string
+  err_type_mismatch.poly:4:19: expected a string but found an integer
+  err_type_mismatch.poly:5:19: expected a float but found an integer
+  err_type_mismatch.poly:6:15: expected a string but found an integer
+$ --analyze --strict
+exit 1
+check failed:
+  err_type_mismatch.poly:3:16: expected an integer but found a string
+  err_type_mismatch.poly:4:19: expected a string but found an integer
+  err_type_mismatch.poly:5:19: expected a float but found an integer
+  err_type_mismatch.poly:6:15: expected a string but found an integer
+$ --emit-hir-json
+exit 1
+check failed:
+  err_type_mismatch.poly:3:16: expected an integer but found a string
+  err_type_mismatch.poly:4:19: expected a string but found an integer
+  err_type_mismatch.poly:5:19: expected a float but found an integer
+  err_type_mismatch.poly:6:15: expected a string but found an integer
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_type_mismatch.poly:3:16: expected an integer but found a string
+  err_type_mismatch.poly:4:19: expected a string but found an integer
+  err_type_mismatch.poly:5:19: expected a float but found an integer
+  err_type_mismatch.poly:6:15: expected a string but found an integer

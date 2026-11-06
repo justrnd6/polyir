@@ -1,0 +1,94 @@
+// The CPU side of the GPU functions (stdlib/Gpu.poly), which are BUILT IN: nothing here defines or imports them.
+// A kernel is also an ordinary function, so the CPU can run the real kernels of the examples and give a reference answer:
+// a CPU "group" has one thread, and the reduction kernels are written to be right for any group size.
+import "Check.poly"
+import "../../../ideas/gpu/examples/shared/reduce1.poly"
+
+extern func calloc(count: i64, size: i64) -> i64
+
+func checkAtomicAdd() -> double {
+    let counts: ptr<i32> = calloc(2, 4).toPtr()
+    atomicAdd(counts, 1, 5)
+    let old: i32 = atomicAdd(counts, 1, 3)
+    return offInt(old.toI64(), 5) + offInt(counts[1].toI64(), 8) + offInt(counts[0].toI64(), 0)
+}
+
+func checkAtomicAddFloat() -> double {
+    let sums: ptr<float> = calloc(1, 4).toPtr()
+    atomicAddFloat(sums, 0, 0.5)
+    let old: float = atomicAddFloat(sums, 0, 0.25)
+    return off(old, 0.5) + off(sums[0], 0.75)
+}
+
+func checkAtomicMin() -> double {
+    let values: ptr<i32> = calloc(1, 4).toPtr()
+    values[0] = 10
+    let first: i32 = atomicMin(values, 0, 4)
+    let second: i32 = atomicMin(values, 0, 7)
+    return offInt(first.toI64(), 10) + offInt(second.toI64(), 4) + offInt(values[0].toI64(), 4)
+}
+
+func checkAtomicMax() -> double {
+    let values: ptr<i32> = calloc(1, 4).toPtr()
+    values[0] = 3
+    let first: i32 = atomicMax(values, 0, 9)
+    let second: i32 = atomicMax(values, 0, 5)
+    return offInt(first.toI64(), 3) + offInt(second.toI64(), 9) + offInt(values[0].toI64(), 9)
+}
+
+// On the CPU a workgroup is a single thread.
+func checkGroupFunctions() -> double {
+    return offInt(groupSize().toI64(), 1) + offInt(localIndex(7).toI64(), 0) + offInt(groupIndex(7).toI64(), 7) + offInt(barrier().toI64(), 0)
+}
+
+// The real reduction kernels of the examples, run one element at a time with a one-slot "workgroup": every element
+// is its own partial sum, and the partial sums still add up to the total.
+func checkBlockSumOnTheCpu() -> double {
+    let n: i64 = 1000
+    let src: ptr<float> = calloc(n, 4).toPtr()
+    var expected: float = 0.0
+    for (i = 0; i < n; i = i + 1) {
+        src[i] = (i % 7).toFloat()
+        expected = expected + src[i]
+    }
+    let tile: ptr<float> = calloc(groupSize().toI64(), 4).toPtr()
+    let partial: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) { blockSum(i.toI32(), src, n.toI32(), tile, partial) }
+    var total: float = 0.0
+    for (g = 0; g < n; g = g + 1) { total = total + partial[g] }
+    return off(total, expected)
+}
+
+func checkBlockMaxOnTheCpu() -> double {
+    let n: i64 = 500
+    let src: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) { src[i] = (i % 11).toFloat() }
+    src[123] = 77.0
+    let tile: ptr<float> = calloc(groupSize().toI64(), 4).toPtr()
+    let partial: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) { blockMax(i.toI32(), src, n.toI32(), tile, partial) }
+    var best: float = partial[0]
+    for (g = 1; g < n; g = g + 1) {
+        if (partial[g] > best) { best = partial[g] }
+    }
+    return off(best, 77.0)
+}
+
+// `total` adds every group's sum into one slot with atomicAddFloat.
+func checkTotalOnTheCpu() -> double {
+    let n: i64 = 777
+    let src: ptr<float> = calloc(n, 4).toPtr()
+    var expected: float = 0.0
+    for (i = 0; i < n; i = i + 1) {
+        src[i] = (i % 5).toFloat()
+        expected = expected + src[i]
+    }
+    let tile: ptr<float> = calloc(groupSize().toI64(), 4).toPtr()
+    let sum: ptr<float> = calloc(1, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) { total(i.toI32(), src, n.toI32(), tile, sum) }
+    return off(sum[0], expected)
+}
+
+func checkLaunchArithmetic() -> double {
+    return offInt(groupsFor(1048579), 4097) + offInt(groupsFor(4097), 17) + offInt(launchCount(1048579), 3) + offInt(groupsFor(256), 1) + offInt(groupsFor(257), 2)
+}

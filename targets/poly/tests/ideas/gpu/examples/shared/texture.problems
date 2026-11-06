@@ -1,0 +1,1 @@
+targets/poly/Poly.translate:101: `kernel(stage, name, params, result, body)` is unimplemented: a kernel's parameters' qualifiers (index, uniform) are not in the tree

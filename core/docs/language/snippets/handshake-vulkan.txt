@@ -1,0 +1,7 @@
+Vulkan: where the time goes
+find the GPU                              11 ms   once per program
+build the pipeline from SPIR-V             0 ms   once per kernel
+make 2 buffers, fill one with 4 MiB       10 ms   once per buffer
+launch for 1 element, and wait           219 us   every launch
+launch for 1,048,576 elements, wait      260 us   every launch
+the CPU reads the 4 MiB of results         2 ms   mapped memory

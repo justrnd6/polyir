@@ -1,0 +1,3 @@
+extern func puts(s: string) -> i64
+extern func puts(s: i64) -> i64
+func main() -> i64 { return 0 }

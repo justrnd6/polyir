@@ -1,0 +1,41 @@
+// The kernel and the report shared by handshake.poly (Metal) and handshake-vulkan.poly (Vulkan): how long each step of
+// "the CPU asks the GPU to do something" takes. The importing file needs shared/print.poly.
+
+// The smallest useful kernel: one add per element, so the time is the CPU-to-GPU conversation, not the arithmetic.
+kernel func addOne(x: float) -> float {
+    return x + 1.0
+}
+
+// 1,048,576 numbers (4 MiB): 0, 1, ... 999, 0, 1, ...
+func makeInput(n: i64) -> ptr<float> {
+    let data: ptr<float> = calloc(n, 4).toPtr()
+    for (i = 0; i < n; i = i + 1) {
+        data[i] = (i % 1000).toFloat()
+    }
+    return data
+}
+
+// Every 997th result is the input plus one (the same kernel on the CPU gives the expected value).
+func resultsAreRight(input: ptr<float>, output: ptr<float>, n: i64) -> i64 {
+    for (i = 0; i < n; i = i + 997) {
+        if (output[i] != addOne(input[i])) { return 0 }
+    }
+    return 1
+}
+
+// One line of the report: a description, a number and a unit, with the number lined up on the right.
+func reportRow(what: string, amount: i64, unit: string, note: string) -> i64 {
+    say(what)
+    sayRight(amount, 8)
+    say(" ")
+    say(unit)
+    say("   ")
+    say(note)
+    newline()
+    return 0
+}
+
+// Microseconds per launch, from the milliseconds that `launches` launches took in all.
+func microsEach(totalMs: i64, launches: i64) -> i64 {
+    return totalMs * 1000 / launches
+}

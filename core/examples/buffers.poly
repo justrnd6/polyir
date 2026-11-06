@@ -1,0 +1,15 @@
+// `ptr<T>` parameters are the one place polyir reads through a real
+// pointer — not a design choice, an LLVM constraint: a RUNTIME index has
+// no SSA-aggregate equivalent, so `buf[i]` is `gep`+`load` here, same as
+// it would be in hand-written IR.
+//
+// `run` only dispatches scalar (i64/double) entry points in v1, so a
+// `ptr<T>` parameter isn't callable from the CLI yet — this one is for
+// `polyir build`/`ir`/`check`, or for calling from another polyir function
+// that already holds a buffer.
+
+func sumBuf(buf: ptr<double>, len: i64) -> double {
+  for (i = 0, total = 0.0; i < len; i = i + 1, total = total + buf[i]) {
+  }
+  return total
+}

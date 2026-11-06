@@ -1,0 +1,20 @@
+$ --analyze
+exit 1
+check failed:
+  err_arg_count.poly:3:16: add takes 2 arguments but 1 were given
+  err_arg_count.poly:4:16: add takes 2 arguments but 3 were given
+$ --analyze --strict
+exit 1
+check failed:
+  err_arg_count.poly:3:16: add takes 2 arguments but 1 were given
+  err_arg_count.poly:4:16: add takes 2 arguments but 3 were given
+$ --emit-hir-json
+exit 1
+check failed:
+  err_arg_count.poly:3:16: add takes 2 arguments but 1 were given
+  err_arg_count.poly:4:16: add takes 2 arguments but 3 were given
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_arg_count.poly:3:16: add takes 2 arguments but 1 were given
+  err_arg_count.poly:4:16: add takes 2 arguments but 3 were given

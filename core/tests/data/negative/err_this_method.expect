@@ -1,0 +1,20 @@
+$ --analyze
+exit 1
+check failed:
+  err_this_method.poly:2:39: unknown name missing
+  err_this_method.poly:6:24: unknown function nothing
+$ --analyze --strict
+exit 1
+check failed:
+  err_this_method.poly:2:39: unknown name missing
+  err_this_method.poly:6:24: unknown function nothing
+$ --emit-hir-json
+exit 1
+check failed:
+  err_this_method.poly:2:39: unknown name missing
+  err_this_method.poly:6:24: unknown function nothing
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_this_method.poly:2:39: unknown name missing
+  err_this_method.poly:6:24: unknown function nothing

@@ -1,0 +1,22 @@
+module Geometry {
+  struct Point(x: i64, y: i64) {
+    internal func bonus() -> i64 {
+      return 1
+    }
+  }
+
+  internal func clamp(n: i64) -> i64 {
+    return n
+  }
+
+  internal struct Cache(size: i64)
+}
+
+func main() -> void {
+  let p: Geometry.Point = Geometry.Point(x: 1, y: 2)
+  let x: i64 = Geometry.clamp(3)
+  let y: i64 = p.bonus()
+  let c: Geometry.Cache = Geometry.Cache(size: 1)
+  let g: i64 = Geometry
+  print(str(x + y + c.size + g))
+}

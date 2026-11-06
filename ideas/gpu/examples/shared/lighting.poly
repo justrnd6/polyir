@@ -1,0 +1,176 @@
+// COLOUR AND LIGHT for the ray-traced scene (the sphere, floor and sky of scene.poly).
+//
+// The kernel `lit` works out a COLOUR for each pixel: three numbers (red, green, blue)
+// from 0 to 1, returned as a vec<float, 4> (the fourth is "alpha", always 1 here). It finds
+// what the pixel's ray hits first, then adds up the light that reaches the eye:
+//
+//   colour = surface colour * light colour * (AMBIENT + DIFFUSE * N.L * shadow * falloff)
+//          + light colour * SPECULAR * highlight * shadow * falloff
+//
+//   ambient   a little light that comes from everywhere (stands in for light bouncing around)
+//   diffuse   light that scatters in all directions; brighter when the surface faces the light
+//             (N.L, the dot product of the normal and the direction to the light)
+//   specular  the shiny highlight: strongest when the surface mirrors the light into the eye
+//   shadow    1 when nothing blocks the light, a small number when something does
+//   falloff   how much weaker a nearby lamp's light gets with distance (1 / distance squared)
+//
+// opts (all numbers 0 to 1 unless noted):
+//   0 ambient   1 diffuse   2 specular   3 shininess (1 = broad highlight .. 200 = tiny)
+//   4 5 6 the light's colour (red, green, blue)
+//   7 gamma: 1 = encode the answer for a screen (see the guide), 0 = leave it linear
+//   8 shadows on (1) or off (0)
+//   9 lamp: 0 = the sun (a direction), 1 = a lamp at a position, with falloff
+//   10 11 12 the lamp's position   13 the lamp's strength
+//   14 what to show: 0 normal lighting, 1 the normals as colours, 2 a mirror sphere,
+//                    3 a bumpy sphere (a tweaked normal)
+//   15 how mirror-like the sphere is, in mode 2 (0 = not at all, 1 = a perfect mirror)
+extern func powf(x: float, y: float) -> float
+
+// The sky seen in direction (_, dy, _): paler at the horizon, bluer overhead.
+kernel func skyColor(dy: float) -> vec<float, 4> {
+    var t: float = dy * 1.6
+    if (t < 0.0) { t = 0.0 }
+    if (t > 1.0) { t = 1.0 }
+    return vec[0.85 - 0.5 * t, 0.9 - 0.35 * t, 1.0 - 0.05 * t, 1.0]
+}
+
+// What a mirror sees looking along a ray: the floor if it hits it, otherwise the sky.
+kernel func environment(ox: float, oy: float, oz: float, dx: float, dy: float, dz: float, floorY: float) -> vec<float, 4> {
+    let tf: float = hitFloor(oy, dy, floorY)
+    if (tf > 0.0) {
+        let hx: float = ox + dx * tf
+        let hz: float = oz + dz * tf
+        var shade: float = 0.75
+        if ((floorf(hx).toI32() + floorf(hz).toI32()) % 2 != 0) { shade = 0.25 }
+        return vec[shade * 0.95, shade, shade * 1.1, 1.0]
+    }
+    return skyColor(dy)
+}
+
+// Turn a linear brightness into the number a screen expects (a gamma curve, see the guide).
+kernel func encode(level: float, gamma: float) -> float {
+    var c: float = level
+    if (c < 0.0) { c = 0.0 }
+    if (c > 1.0) { c = 1.0 }
+    if (gamma > 0.5) { return powf(c, 0.4545) }
+    return c
+}
+
+kernel func lit(index i: i32, uniform cam: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let w: i32 = cam[14].toI32()
+    // The ray through this pixel, exactly as in `trace`.
+    let u: float = (2.0 * ((i % w).toFloat() + 0.5) / cam[14] - 1.0) * cam[13] * cam[12]
+    let v: float = (1.0 - 2.0 * ((i / w).toFloat() + 0.5) / cam[15]) * cam[12]
+    let rx: float = cam[9] + cam[3] * u + cam[6] * v
+    let ry: float = cam[10] + cam[4] * u + cam[7] * v
+    let rz: float = cam[11] + cam[5] * u + cam[8] * v
+    let len: float = sqrtf(rx * rx + ry * ry + rz * rz)
+    let dx: float = rx / len
+    let dy: float = ry / len
+    let dz: float = rz / len
+    // What does it hit first: the sphere (1), the floor (2) or nothing (0, the sky)?
+    let ts: float = hitSphere(cam[0], cam[1], cam[2], dx, dy, dz, cam[16], cam[17], cam[18], cam[19])
+    let tf: float = hitFloor(cam[1], dy, cam[23])
+    var kind: i32 = 0
+    var t: float = 0.0
+    if (ts > 0.0 && (tf < 0.0 || ts < tf)) {
+        kind = 1
+        t = ts
+    }
+    if (kind == 0 && tf > 0.0) {
+        kind = 2
+        t = tf
+    }
+    if (kind == 0) {
+        let sky: vec<float, 4> = skyColor(dy)
+        return vec[encode(sky[0], opts[7]), encode(sky[1], opts[7]), encode(sky[2], opts[7]), 1.0]
+    }
+    let px: float = cam[0] + dx * t
+    let py: float = cam[1] + dy * t
+    let pz: float = cam[2] + dz * t
+    // The NORMAL: the sphere's points straight out from its centre; the floor's points straight up.
+    var nx: float = 0.0
+    var ny: float = 1.0
+    var nz: float = 0.0
+    var baseR: float = 0.75
+    var baseG: float = 0.75
+    var baseB: float = 0.75
+    if (kind == 1) {
+        nx = (px - cam[16]) / cam[19]
+        ny = (py - cam[17]) / cam[19]
+        nz = (pz - cam[18]) / cam[19]
+        baseR = 0.85
+        baseG = 0.25
+        baseB = 0.2
+    } else {
+        if ((floorf(px).toI32() + floorf(pz).toI32()) % 2 != 0) {
+            baseR = 0.25
+            baseG = 0.3
+            baseB = 0.4
+        }
+    }
+    // Mode 1: show the normal itself as a colour. A component runs from -1 to 1, so (n + 1) / 2 fits 0..1.
+    if (opts[14] > 0.5 && opts[14] < 1.5) { return vec[nx * 0.5 + 0.5, ny * 0.5 + 0.5, nz * 0.5 + 0.5, 1.0] }
+    // Mode 3: bumps. Tilt the sphere's normal a little with a wave pattern; the geometry stays a
+    // smooth sphere, but the light now behaves as if the surface were bumpy.
+    if (opts[14] > 2.5 && kind == 1) {
+        nx = nx + 0.35 * sinf(14.0 * ny + 3.0 * nz)
+        ny = ny + 0.35 * sinf(14.0 * nz + 3.0 * nx)
+        nz = nz + 0.35 * sinf(14.0 * nx + 3.0 * ny)
+        let nlen: float = sqrtf(nx * nx + ny * ny + nz * nz)
+        nx = nx / nlen
+        ny = ny / nlen
+        nz = nz / nlen
+    }
+    // The direction TO the light, and how strong the light is here.
+    var lx: float = cam[20]
+    var ly: float = cam[21]
+    var lz: float = cam[22]
+    var falloff: float = 1.0
+    var lampDistance: float = 1000000.0
+    if (opts[9] > 0.5) {
+        let vx: float = opts[10] - px
+        let vy: float = opts[11] - py
+        let vz: float = opts[12] - pz
+        lampDistance = sqrtf(vx * vx + vy * vy + vz * vz)
+        lx = vx / lampDistance
+        ly = vy / lampDistance
+        lz = vz / lampDistance
+        falloff = opts[13] / (lampDistance * lampDistance)
+    }
+    // Shadow: is anything between this point and the light? (Only the floor needs to ask.)
+    var shadow: float = 1.0
+    if (opts[8] > 0.5 && kind == 2) {
+        let blocker: float = hitSphere(px, py, pz, lx, ly, lz, cam[16], cam[17], cam[18], cam[19])
+        if (blocker > 0.0 && blocker < lampDistance) { shadow = 0.0 }
+    }
+    // Diffuse: how directly the surface faces the light (never negative: no light from behind).
+    var facing: float = nx * lx + ny * ly + nz * lz
+    if (facing < 0.0) { facing = 0.0 }
+    // Specular (the Blinn-Phong highlight): halfway between the light direction and the
+    // direction back toward the eye; the closer the normal is to it, the brighter the glint.
+    let hx: float = lx - dx
+    let hy: float = ly - dy
+    let hz: float = lz - dz
+    let hlen: float = sqrtf(hx * hx + hy * hy + hz * hz)
+    var glint: float = (nx * hx + ny * hy + nz * hz) / hlen
+    if (glint < 0.0) { glint = 0.0 }
+    var shine: float = 0.0
+    if (facing > 0.0) { shine = powf(glint, opts[3]) }
+    var surfaceShine: float = opts[2]
+    if (kind == 2) { surfaceShine = opts[2] * 0.25 }
+    let direct: float = shadow * falloff
+    var red: float = baseR * opts[4] * (opts[0] + opts[1] * facing * direct) + opts[4] * surfaceShine * shine * direct
+    var green: float = baseG * opts[5] * (opts[0] + opts[1] * facing * direct) + opts[5] * surfaceShine * shine * direct
+    var blue: float = baseB * opts[6] * (opts[0] + opts[1] * facing * direct) + opts[6] * surfaceShine * shine * direct
+    // Mode 2: a mirror sphere mixes in what the reflected ray sees. The reflection of a ray with
+    // direction d off a surface with normal n is  d - 2 (d.n) n.
+    if (opts[14] > 1.5 && opts[14] < 2.5 && kind == 1) {
+        let along: float = dx * nx + dy * ny + dz * nz
+        let seen: vec<float, 4> = environment(px, py, pz, dx - 2.0 * along * nx, dy - 2.0 * along * ny, dz - 2.0 * along * nz, cam[23])
+        red = lerp(red, seen[0], opts[15])
+        green = lerp(green, seen[1], opts[15])
+        blue = lerp(blue, seen[2], opts[15])
+    }
+    return vec[encode(red, opts[7]), encode(green, opts[7]), encode(blue, opts[7]), 1.0]
+}

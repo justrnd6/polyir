@@ -1,0 +1,33 @@
+extern func putchar(c: i64) -> i64
+
+coro func fibonacci(count: i64) -> i64 {
+  var a: i64 = 0
+  var b: i64 = 1
+  for (i = 0; i < count; i = i + 1) {
+    yield a
+    let next: i64 = a + b
+    a = b
+    b = next
+  }
+}
+
+func main() -> i64 {
+  let fib: coro<i64> = fibonacci(7)
+  var sum: i64 = 0
+  var done: bool = false
+  for (i = 0; i < 8 && done == false; i = i + 1) {
+    let step: variant<i64> = fib.resume()
+    if (step.isCase(1)) {
+      done = true
+    } else {
+      let value: i64 = step.unwrapAt(0)
+      putchar(48 + value)
+      sum = sum + value
+    }
+  }
+  putchar(10)
+  if (fib.done() == false) {
+    return -1
+  }
+  return sum
+}

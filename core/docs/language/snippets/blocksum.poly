@@ -1,0 +1,11 @@
+kernel func blockSum(index i: i32, uniform src: ptr<float>, uniform n: i32, workgroup tile: ptr<float>, writable partial: ptr<float>) -> i32 {
+    let lane: i32 = localIndex(i)
+    if (i < n) { tile[lane] = src[i] } else { tile[lane] = 0.0 }
+    barrier()
+    for (s = groupSize() / 2; s > 0; s = s / 2) {
+        if (lane < s) { tile[lane] = tile[lane] + tile[lane + s] }
+        barrier()
+    }
+    if (lane == 0) { partial[groupIndex(i)] = tile[0] }
+    return 0
+}

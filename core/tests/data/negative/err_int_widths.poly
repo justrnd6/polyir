@@ -1,0 +1,7 @@
+func main() -> i64 {
+  let a: i8 = 300
+  let b: u8 = -1
+  let c: i32 = 5000000000
+  let d: i8 = a + 1000
+  return 0
+}

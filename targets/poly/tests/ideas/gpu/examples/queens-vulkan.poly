@@ -1,0 +1,65 @@
+import "../Vulkan.poly"
+import "shared/queens.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  let search: i64 = vulkanPipeline(gpu, "queens.spv", 4, 4)
+  let add: i64 = vulkanPipeline(gpu, "pairSumInt.spv", 2, 8)
+  if (search == 0 || add == 0) {
+    return 11
+  }
+  if (solve(gpu, search, add, 8, 92) != 0) {
+    return 13
+  }
+  if (solve(gpu, search, add, 10, 724) != 0) {
+    return 13
+  }
+  if (solve(gpu, search, add, 12, 14200) != 0) {
+    return 13
+  }
+  if (solve(gpu, search, add, 13, 73712) != 0) {
+    return 13
+  }
+  return 0
+}
+
+func solve(gpu: i64, search: i64, add: i64, n: i64, expected: i64) -> i64 {
+  let depth: i64 = if (n >= 11) 4 else 3
+  var capacity: i64 = 1
+  for (r = 0; r < depth; r = r + 1) {
+    capacity = capacity * n
+  }
+  let prefixes: ptr<i32> = calloc(capacity * 3, 4).toPtr()
+  let count: i64 = listPrefixes(n, depth, prefixes)
+  let p: i32[2]
+  p[0] = n.toI32()
+  p[1] = depth.toI32()
+  let push: i32[2]
+  push[0] = count.toI32()
+  var counts: i64 = vulkanEmptyBuffer(gpu, count * 4)
+  let stack: i64 = vulkanEmptyBuffer(gpu, count * (n + 1) * 16)
+  if (vulkanDispatch(gpu, search, count, push.toI64(), vulkanBuffer(gpu, prefixes.toI64(), count * 12), vulkanBuffer(gpu, p.toI64(), 8), stack, counts) == 0) {
+    return 12
+  }
+  var length: i64 = count
+  for (pass = 0; pass < 40; pass = pass + 1) {
+    if (length > 1) {
+      let next: i64 = (length + 1) / 2
+      push[0] = next.toI32()
+      push[1] = length.toI32()
+      let out: i64 = vulkanEmptyBuffer(gpu, next * 4)
+      vulkanDispatch(gpu, add, next, push.toI64(), counts, out, 0, 0)
+      counts = out
+      length = next
+    }
+  }
+  let answer: ptr<i32> = vulkanContents(counts).toPtr()
+  if (answer[0].toI64() != expected) {
+    return 1
+  }
+  return 0
+}

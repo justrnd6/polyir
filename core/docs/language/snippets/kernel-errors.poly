@@ -1,0 +1,8 @@
+func helper(x: float) -> float {
+    return x
+}
+
+kernel func bad(x: double) -> float {
+    helper(1.0)
+    return 1.0
+}

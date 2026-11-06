@@ -1,0 +1,366 @@
+// The kernels, test pictures and demonstrations shared by pixels.poly (Metal) and pixels-vulkan.poly (Vulkan): an image
+// as a signal. The importing file supplies `runKernel` (one kernel on its GPU) and `main`, and needs shared/picture.poly,
+// shared/plot.poly and shared/print.poly.
+//
+// (The helper kernel `texel` takes its arrays under the same names, `src` and `opts`, as the kernels that call it:
+// Vulkan has no pointers, so a kernel can only call a kernel that reads an array when the two use the same names.)
+
+extern func floorf(x: float) -> float
+extern func cosf(x: float) -> float
+
+// Every kernel takes the source picture (four floats per pixel: red, green, blue, alpha) and `opts`:
+//   opts[0] the source width, opts[1] the source height, opts[2] the kernel's setting (a channel number, a number of
+//   levels, or a factor k). The thread number `i` is the position in the OUTPUT picture, counted row by row.
+
+// One number of one pixel; a position outside the picture is moved to its nearest edge.
+kernel func texel(uniform src: ptr<float>, uniform opts: ptr<float>, x: i32, y: i32, c: i32) -> float {
+    let w: i32 = opts[0].toI32()
+    let h: i32 = opts[1].toI32()
+    var cx: i32 = x
+    var cy: i32 = y
+    if (cx < 0) { cx = 0 }
+    if (cx > w - 1) { cx = w - 1 }
+    if (cy < 0) { cy = 0 }
+    if (cy > h - 1) { cy = h - 1 }
+    return src[(cy * w + cx) * 4 + c]
+}
+
+kernel func channel(index i: i32, uniform src: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let v: float = src[i * 4 + opts[2].toI32()]
+    return vec[v, v, v, 1.0]
+}
+
+// Round a brightness to the nearest of `levels` evenly spaced values between 0 and 1.
+kernel func snap(v: float, levels: float) -> float {
+    return floorf(v * (levels - 1.0) + 0.5) / (levels - 1.0)
+}
+
+kernel func quantize(index i: i32, uniform src: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let n: float = opts[2]
+    return vec[snap(src[i * 4], n), snap(src[i * 4 + 1], n), snap(src[i * 4 + 2], n), 1.0]
+}
+
+// The smaller picture is k times narrower: its pixel (x, y) is the source pixel (k x, k y).
+kernel func decimate(index i: i32, uniform src: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let k: i32 = opts[2].toI32()
+    let outW: i32 = opts[0].toI32() / k
+    let x: i32 = (i % outW) * k
+    let y: i32 = (i / outW) * k
+    return vec[texel(src, opts, x, y, 0), texel(src, opts, x, y, 1), texel(src, opts, x, y, 2), 1.0]
+}
+
+// The same size, but each pixel is the average of the k x k block of source pixels that it stands for.
+kernel func boxAverage(index i: i32, uniform src: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let k: i32 = opts[2].toI32()
+    let outW: i32 = opts[0].toI32() / k
+    var r: float = 0.0
+    var g: float = 0.0
+    var b: float = 0.0
+    for (dy = 0; dy < k; dy = dy + 1) {
+        for (dx = 0; dx < k; dx = dx + 1) {
+            let x: i32 = (i % outW) * k + dx
+            let y: i32 = (i / outW) * k + dy
+            r = r + texel(src, opts, x, y, 0)
+            g = g + texel(src, opts, x, y, 1)
+            b = b + texel(src, opts, x, y, 2)
+        }
+    }
+    let n: float = (k * k).toFloat()
+    return vec[r / n, g / n, b / n, 1.0]
+}
+
+// The bigger picture is k times wider: each source pixel becomes a k x k block.
+kernel func enlargeNearest(index i: i32, uniform src: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let k: i32 = opts[2].toI32()
+    let outW: i32 = opts[0].toI32() * k
+    let x: i32 = (i % outW) / k
+    let y: i32 = (i / outW) / k
+    return vec[texel(src, opts, x, y, 0), texel(src, opts, x, y, 1), texel(src, opts, x, y, 2), 1.0]
+}
+
+// A mix of four numbers: a and b on the top row, c and d on the bottom row; `fx` across and `fy` down, each 0 to 1.
+kernel func blend(a: float, b: float, c: float, d: float, fx: float, fy: float) -> float {
+    let top: float = a + (b - a) * fx
+    let bottom: float = c + (d - c) * fx
+    return top + (bottom - top) * fy
+}
+
+// Like enlargeNearest, but each new pixel is blended from the four source pixels around where it falls.
+kernel func enlargeBilinear(index i: i32, uniform src: ptr<float>, uniform opts: ptr<float>) -> vec<float, 4> {
+    let k: i32 = opts[2].toI32()
+    let outW: i32 = opts[0].toI32() * k
+    let sx: float = ((i % outW).toFloat() + 0.5) / k.toFloat() - 0.5
+    let sy: float = ((i / outW).toFloat() + 0.5) / k.toFloat() - 0.5
+    let x0: i32 = floorf(sx).toI32()
+    let y0: i32 = floorf(sy).toI32()
+    let fx: float = sx - x0.toFloat()
+    let fy: float = sy - y0.toFloat()
+    let r: float = blend(texel(src, opts, x0, y0, 0), texel(src, opts, x0 + 1, y0, 0), texel(src, opts, x0, y0 + 1, 0), texel(src, opts, x0 + 1, y0 + 1, 0), fx, fy)
+    let g: float = blend(texel(src, opts, x0, y0, 1), texel(src, opts, x0 + 1, y0, 1), texel(src, opts, x0, y0 + 1, 1), texel(src, opts, x0 + 1, y0 + 1, 1), fx, fy)
+    let b: float = blend(texel(src, opts, x0, y0, 2), texel(src, opts, x0 + 1, y0, 2), texel(src, opts, x0, y0 + 1, 2), texel(src, opts, x0 + 1, y0 + 1, 2), fx, fy)
+    return vec[r, g, b, 1.0]
+}
+
+// ---- The test pictures (made on the CPU) ----
+
+// A grey pixel (the same number three times) at position (x, y) of a w-wide picture.
+func putGrey(img: ptr<float>, w: i64, x: i64, y: i64, level: float) -> i64 {
+    let at: i64 = (y * w + x) * 4
+    img[at] = level
+    img[at + 1] = level
+    img[at + 2] = level
+    img[at + 3] = 1.0
+    return 0
+}
+
+// A 16 x 16 face: a bright disc on a dark background, two dark eyes and a dark mouth.
+func facePicture() -> ptr<float> {
+    let img: ptr<float> = calloc(16 * 16 * 4, 4).toPtr()
+    for (y = 0; y < 16; y = y + 1) {
+        for (x = 0; x < 16; x = x + 1) {
+            let dx: i64 = x - 8
+            let dy: i64 = y - 8
+            var level: float = 0.15
+            if (dx * dx + dy * dy <= 36) { level = 0.9 }
+            if (y == 6 && (x == 6 || x == 10)) { level = 0.15 }
+            if (y == 10 && x >= 5 && x <= 11) { level = 0.15 }
+            putGrey(img, 16, x, y, level)
+        }
+    }
+    return img
+}
+
+// A 24 x 8 picture to scan: a bright box, and on the right a ramp from dark to bright.
+func scanPicture() -> ptr<float> {
+    let img: ptr<float> = calloc(24 * 8 * 4, 4).toPtr()
+    for (y = 0; y < 8; y = y + 1) {
+        for (x = 0; x < 24; x = x + 1) {
+            var level: float = 0.2
+            if (x >= 4 && x <= 10 && y >= 2 && y <= 5) { level = 0.9 }
+            if (x >= 16) { level = 0.2 + 0.8 * (x - 16).toFloat() / 7.0 }
+            putGrey(img, 24, x, y, level)
+        }
+    }
+    return img
+}
+
+// A "zone plate": rings that get finer and finer towards the corners, the standard test for resizing.
+func zonePlate() -> ptr<float> {
+    let img: ptr<float> = calloc(128 * 128 * 4, 4).toPtr()
+    for (y = 0; y < 128; y = y + 1) {
+        for (x = 0; x < 128; x = x + 1) {
+            let dx: float = (x - 64).toFloat()
+            let dy: float = (y - 64).toFloat()
+            putGrey(img, 128, x, y, 0.5 + 0.5 * cosf(0.015 * (dx * dx + dy * dy)))
+        }
+    }
+    return img
+}
+
+// Eight colour bars (white, yellow, cyan, green, magenta, red, blue, black), 160 x 120.
+func colourBars() -> ptr<float> {
+    let img: ptr<float> = calloc(160 * 120 * 4, 4).toPtr()
+    for (y = 0; y < 120; y = y + 1) {
+        for (x = 0; x < 160; x = x + 1) {
+            let bar: i64 = x / 20
+            let at: i64 = (y * 160 + x) * 4
+            if (bar == 0 || bar == 1 || bar == 4 || bar == 5) { img[at] = 0.9 }
+            if (bar == 0 || bar == 1 || bar == 2 || bar == 3) { img[at + 1] = 0.9 }
+            if (bar == 0 || bar == 2 || bar == 4 || bar == 6) { img[at + 2] = 0.9 }
+            img[at + 3] = 1.0
+        }
+    }
+    return img
+}
+
+// A brightness ramp, 256 wide and 40 high: pixel x has brightness x / 255.
+func ramp() -> ptr<float> {
+    let img: ptr<float> = calloc(256 * 40 * 4, 4).toPtr()
+    for (y = 0; y < 40; y = y + 1) {
+        for (x = 0; x < 256; x = x + 1) {
+            putGrey(img, 256, x, y, x.toFloat() / 255.0)
+        }
+    }
+    return img
+}
+
+
+func settings(srcW: i64, srcH: i64, setting: float) -> ptr<float> {
+    let opts: ptr<float> = calloc(4, 4).toPtr()
+    opts[0] = srcW.toFloat()
+    opts[1] = srcH.toFloat()
+    opts[2] = setting
+    return opts
+}
+
+// The same kernel on the CPU for output pixel `i`, picked by name (the kernels are ordinary functions).
+func cpuPixel(name: string, i: i64, img: ptr<float>, opts: ptr<float>) -> vec<float, 4> {
+    let k: i32 = i.toI32()
+    if (name == "channel") { return channel(k, img, opts) }
+    if (name == "quantize") { return quantize(k, img, opts) }
+    if (name == "decimate") { return decimate(k, img, opts) }
+    if (name == "boxAverage") { return boxAverage(k, img, opts) }
+    if (name == "enlargeNearest") { return enlargeNearest(k, img, opts) }
+    return enlargeBilinear(k, img, opts)
+}
+
+func near(a: float, b: float, tolerance: float) -> i64 {
+    var gap: float = a - b
+    if (gap < 0.0) { gap = 0.0 - gap }
+    if (gap <= tolerance) { return 1 }
+    return 0
+}
+
+// Every 7th pixel of the GPU's picture equals the CPU's.
+func agrees(name: string, gpu: ptr<float>, img: ptr<float>, opts: ptr<float>, n: i64) -> i64 {
+    for (i = 0; i < n; i = i + 7) {
+        let cpu: vec<float, 4> = cpuPixel(name, i, img, opts)
+        for (c = 0; c < 3; c = c + 1) {
+            if (near(gpu[i * 4 + c], cpu[c], 0.01) == 0) { return 0 }
+        }
+    }
+    return 1
+}
+
+// Runs a kernel on the GPU, checks it against the CPU, and returns its picture (0 if it failed to run, 1 if it
+// disagreed with the CPU).
+func run(device: i64, source: string, name: string, img: ptr<float>, srcW: i64, srcH: i64, setting: float, outCount: i64) -> ptr<float> {
+    let gpu: ptr<float> = runKernel(device, source, name, img, srcW, srcH, setting, outCount)
+    if (gpu.toI64() == 0) { return 0.toPtr() }
+    if (agrees(name, gpu, img, settings(srcW, srcH, setting), outCount) == 0) { return 1.toPtr() }
+    return gpu
+}
+
+
+// ---- The demonstrations ----
+
+// The top-left 8 x 8 pixels of the face as the whole numbers 0 to 255 (what an 8-bit file stores).
+func printTable(face: ptr<float>) -> i64 {
+    for (y = 0; y < 8; y = y + 1) {
+        for (x = 0; x < 8; x = x + 1) {
+            sayRight((face[(y * 16 + x) * 4] * 255.0 + 0.5).toI64(), 5)
+        }
+        newline()
+    }
+    return 0
+}
+
+// A 24 x 8 picture, enlarged to look at, and the same pixels scanned row after row into one long signal.
+func scanDemo(device: i64, source: string) -> i64 {
+    let scan: ptr<float> = scanPicture()
+    let big: ptr<float> = run(device, source, "enlargeNearest", scan, 24, 8, 8.0, 192 * 64)
+    if (big.toI64() <= 1) { return 12 + big.toI64() }
+    saveColorPicture("pixels-1-scan-picture.ppm", big, 192, 64)
+    let signal: ptr<float> = calloc(192, 4).toPtr()
+    for (i = 0; i < 192; i = i + 1) {
+        signal[i] = scan[i * 4]
+    }
+    let plot: ptr<float> = calloc(384 * 96, 4).toPtr()
+    drawStems(plot, 384, 96, signal, 192, 0.0, 1.0)
+    savePicture("pixels-scan.pgm", plot, 384, 96)
+    return 0
+}
+
+// Red, green and blue of eight colour bars, each as a grey picture.
+func channelsDemo(device: i64, source: string) -> i64 {
+    let bars: ptr<float> = colourBars()
+    saveColorPicture("pixels-2-bars.ppm", bars, 160, 120)
+    for (c = 0; c < 3; c = c + 1) {
+        let grey: ptr<float> = run(device, source, "channel", bars, 160, 120, c.toFloat(), 160 * 120)
+        if (grey.toI64() <= 1) { return 12 + grey.toI64() }
+        if (c == 0) { saveColorPicture("pixels-3-red.ppm", grey, 160, 120) }
+        if (c == 1) { saveColorPicture("pixels-3-green.ppm", grey, 160, 120) }
+        if (c == 2) { saveColorPicture("pixels-3-blue.ppm", grey, 160, 120) }
+    }
+    return 0
+}
+
+// The same smooth ramp with 2, 4, 8 and 16 brightness levels, and the original, stacked in one picture.
+func bitsDemo(device: i64, source: string) -> i64 {
+    let src: ptr<float> = ramp()
+    let stack: ptr<float> = calloc(256 * 200 * 4, 4).toPtr()
+    let levels: ptr<float> = calloc(5, 4).toPtr()
+    levels[0] = 2.0
+    levels[1] = 4.0
+    levels[2] = 8.0
+    levels[3] = 16.0
+    levels[4] = 256.0
+    for (band = 0; band < 5; band = band + 1) {
+        let out: ptr<float> = run(device, source, "quantize", src, 256, 40, levels[band], 256 * 40)
+        if (out.toI64() <= 1) { return 12 + out.toI64() }
+        for (p = 0; p < 256 * 40 * 4; p = p + 1) {
+            stack[band * 256 * 40 * 4 + p] = out[p]
+        }
+        if (band == 1 && distinctLevels(out, 256 * 40) > 4) { return 14 }
+    }
+    saveColorPicture("pixels-4-bit-depth.ppm", stack, 256, 200)
+    return 0
+}
+
+// How many different red values a picture of n pixels uses.
+func distinctLevels(img: ptr<float>, n: i64) -> i64 {
+    let seen: ptr<float> = calloc(300, 4).toPtr()
+    var count: i64 = 0
+    for (i = 0; i < n; i = i + 1) {
+        var found: i64 = 0
+        for (k = 0; k < count; k = k + 1) {
+            if (near(seen[k], img[i * 4], 0.0001) == 1) { found = 1 }
+        }
+        if (found == 0 && count < 300) {
+            seen[count] = img[i * 4]
+            count = count + 1
+        }
+    }
+    return count
+}
+
+// Mean brightness (the red number) of n pixels.
+func meanOf(img: ptr<float>, n: i64) -> float {
+    var sum: float = 0.0
+    for (i = 0; i < n; i = i + 1) {
+        sum = sum + img[i * 4]
+    }
+    return sum / n.toFloat()
+}
+
+// A 128 x 128 zone plate made 4 times smaller two ways (keep every 4th pixel / average each 4 x 4 block), then both
+// blown up again to the same size so they can be compared.
+func resizeDemo(device: i64, source: string) -> i64 {
+    let plate: ptr<float> = zonePlate()
+    saveColorPicture("pixels-5-original.ppm", plate, 128, 128)
+    let kept: ptr<float> = run(device, source, "decimate", plate, 128, 128, 4.0, 32 * 32)
+    let averaged: ptr<float> = run(device, source, "boxAverage", plate, 128, 128, 4.0, 32 * 32)
+    if (kept.toI64() <= 1) { return 12 + kept.toI64() }
+    if (averaged.toI64() <= 1) { return 12 + averaged.toI64() }
+    // Averaging 4 x 4 blocks keeps the picture's mean brightness.
+    if (near(meanOf(averaged, 32 * 32), meanOf(plate, 128 * 128), 0.001) == 0) { return 14 }
+    let keptBig: ptr<float> = run(device, source, "enlargeNearest", kept, 32, 32, 4.0, 128 * 128)
+    let averagedBig: ptr<float> = run(device, source, "enlargeNearest", averaged, 32, 32, 4.0, 128 * 128)
+    if (keptBig.toI64() <= 1) { return 12 + keptBig.toI64() }
+    if (averagedBig.toI64() <= 1) { return 12 + averagedBig.toI64() }
+    saveColorPicture("pixels-6-keep-every-4th.ppm", keptBig, 128, 128)
+    saveColorPicture("pixels-7-average-4x4.ppm", averagedBig, 128, 128)
+    return 0
+}
+
+// The 16 x 16 face blown up 8 times by repeating pixels and by blending.
+func enlargeDemo(device: i64, source: string) -> i64 {
+    let face: ptr<float> = facePicture()
+    let blocky: ptr<float> = run(device, source, "enlargeNearest", face, 16, 16, 8.0, 128 * 128)
+    let smooth: ptr<float> = run(device, source, "enlargeBilinear", face, 16, 16, 8.0, 128 * 128)
+    if (blocky.toI64() <= 1) { return 12 + blocky.toI64() }
+    if (smooth.toI64() <= 1) { return 12 + smooth.toI64() }
+    saveColorPicture("pixels-8-nearest.ppm", blocky, 128, 128)
+    saveColorPicture("pixels-9-bilinear.ppm", smooth, 128, 128)
+    // Enlarging by repeating and then keeping every 8th pixel gives the small picture back exactly.
+    let back: ptr<float> = run(device, source, "decimate", blocky, 128, 128, 8.0, 16 * 16)
+    if (back.toI64() <= 1) { return 12 + back.toI64() }
+    for (i = 0; i < 16 * 16; i = i + 1) {
+        if (near(back[i * 4], face[i * 4], 0.0001) == 0) { return 14 }
+    }
+    // Blending never makes a pixel brighter than the brightest or darker than the darkest of the original.
+    for (i = 0; i < 128 * 128; i = i + 1) {
+        if (smooth[i * 4] < 0.15 - 0.0001 || smooth[i * 4] > 0.9 + 0.0001) { return 14 }
+    }
+    return 0
+}

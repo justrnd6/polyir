@@ -1,0 +1,20 @@
+$ --analyze
+exit 1
+check failed:
+  err_void_value.poly:3:19: expected a string but found an integer
+  err_void_value.poly:4:10: expected an integer but found a string
+$ --analyze --strict
+exit 1
+check failed:
+  err_void_value.poly:3:19: expected a string but found an integer
+  err_void_value.poly:4:10: expected an integer but found a string
+$ --emit-hir-json
+exit 1
+check failed:
+  err_void_value.poly:3:19: expected a string but found an integer
+  err_void_value.poly:4:10: expected an integer but found a string
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_void_value.poly:3:19: expected a string but found an integer
+  err_void_value.poly:4:10: expected an integer but found a string

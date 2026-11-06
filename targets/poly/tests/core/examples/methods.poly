@@ -1,0 +1,30 @@
+func square(x: i64) -> i64 {
+  return x * x
+}
+
+func sub(a: i64, b: i64) -> i64 {
+  return a - b
+}
+
+func equivalenceCheck(x: i64) -> i64 {
+  return square(x) - square(x)
+}
+
+func orderingCheck(a: i64, b: i64) -> i64 {
+  return sub(a, b) - (a - b)
+}
+
+func pushViaMethodPersists() -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  arr.push(10)
+  arr.push(20)
+  return arr.len()
+}
+
+func pushViaMethodSum() -> i64 {
+  let arr: mutarray<i64> = mutarray<i64>()
+  arr.push(1)
+  arr.push(2)
+  arr.push(3)
+  return arr[0] + arr[1] + arr[2]
+}

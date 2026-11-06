@@ -1,0 +1,733 @@
+# Cpp
+source: polyir
+target: cpp
+style: indent 2, braces same-line, names keep, paths ::, qualify relative, generics kept, locals unique, extension cpp, library hpp
+
+// A checked program as one C++20 file that needs only the standard library. What polyir shares (a struct, a list, a map, a
+// set) is held by `Ref`, a shared pointer, and compared with `same`. A module is a namespace. The file declares every struct
+// first, then defines the structs, then declares the functions, then gives the bodies, so each name is declared before it is
+// used. A closure is a `std::function` capturing by value (a variable it shares and changes is boxed), a coroutine a C++20
+// coroutine. Whole numbers are the <cstdint> types; a signed one that overflows is undefined in C++ (`-fwrapv` wraps it).
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items.declare}
+
+  {items}
+
+  {items.prototype}
+
+  {items.define}
+
+// A library (a file with no `main` of its own) is a header, included by the files that use it.
+program(support, items, library) :=
+  #pragma once
+
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items.declare}
+
+  {items}
+
+  {items.prototype}
+
+  {items.define}
+
+// Every function is `inline`, so a library's header may be included by several files of one program.
+// The passes over the declarations: `include` writes the headers of imported files, `declare` names each struct, the plain
+// rules define the structs, `prototype` declares each function, and `define` gives the functions and methods their bodies. A
+// construct with no rule of a pass writes nothing.
+any.include(value)                  :=
+any.declare(value)                  :=
+any.prototype(value)                :=
+any.define(value)                   :=
+
+module(name, items)                 := namespace {name} {items}
+module.declare(name, items)         := namespace {name} {items.declare}
+module.prototype(name, items)       := namespace {name} {items.prototype}
+module.define(name, items)          := namespace {name} {items.define}
+
+struct.declare(name, typeParams, fields, methods, nested, statics) :=
+  template <{typeParams.typename?}>
+  struct {name};
+interface.declare(name, methods)    := struct {name};
+
+// A struct declares its methods; their bodies come after every struct (a generic one keeps them inside, as a template must).
+struct(name, typeParams: empty, fields, methods, nested, statics) :=
+  struct {name} {
+    {nested}
+
+    {fields}
+
+    {name}({fields.param}) : {fields.init?} {}
+
+    {methods.declare}
+
+    {statics.declare}
+
+    bool operator==(const {name}& other) const {
+      return allSame({fields.pair});
+    }
+
+    std::size_t hash() const {
+      return hashAll({fields.self});
+    }
+  };
+  uses: core
+struct(name, typeParams: empty, fields, methods, nested, statics, implements) :=
+  struct {name} : {implements.base} {
+    {nested}
+
+    {fields}
+
+    {name}({fields.param}) : {fields.init?} {}
+
+    {methods.declare}
+
+    {statics.declare}
+
+    bool operator==(const {name}& other) const {
+      return allSame({fields.pair});
+    }
+
+    std::size_t hash() const {
+      return hashAll({fields.self});
+    }
+  };
+  uses: core
+// A struct whose methods hand `this` on is shared from itself.
+struct(name, typeParams: empty, fields, methods, nested, statics, sharesThis) :=
+  struct {name} : std::enable_shared_from_this<{name}> {
+    {nested}
+
+    {fields}
+
+    {name}({fields.param}) : {fields.init?} {}
+
+    {methods.declare}
+
+    {statics.declare}
+
+    bool operator==(const {name}& other) const {
+      return allSame({fields.pair});
+    }
+
+    std::size_t hash() const {
+      return hashAll({fields.self});
+    }
+  };
+  uses: core
+struct(name, typeParams: empty, fields, methods, nested, statics, implements, sharesThis) :=
+  struct {name} : {implements.base}, std::enable_shared_from_this<{name}> {
+    {nested}
+
+    {fields}
+
+    {name}({fields.param}) : {fields.init?} {}
+
+    {methods.declare}
+
+    {statics.declare}
+
+    bool operator==(const {name}& other) const {
+      return allSame({fields.pair});
+    }
+
+    std::size_t hash() const {
+      return hashAll({fields.self});
+    }
+  };
+  uses: core
+struct(name, typeParams, fields, methods, nested, statics) :=
+  template <{typeParams.typename}>
+  struct {name} {
+    {nested}
+
+    {fields}
+
+    {name}({fields.param}) : {fields.init?} {}
+
+    {methods.inline}
+
+    {statics.inline}
+
+    bool operator==(const {name}& other) const {
+      return allSame({fields.pair});
+    }
+
+    std::size_t hash() const {
+      return hashAll({fields.self});
+    }
+  };
+  uses: core
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  template <{typeParams.typename}>
+  struct {name} : {implements.base} {
+    {nested}
+
+    {fields}
+
+    {name}({fields.param}) : {fields.init?} {}
+
+    {methods.inline}
+
+    {statics.inline}
+
+    bool operator==(const {name}& other) const {
+      return allSame({fields.pair});
+    }
+
+    std::size_t hash() const {
+      return hashAll({fields.self});
+    }
+  };
+  uses: core
+struct.define(name, typeParams: empty, fields, methods, nested, statics) :=
+  {methods.define}
+
+  {statics.define}
+
+  {nested.define}
+struct.define(name, typeParams, fields, methods, nested, statics) :=
+
+field(name, type)                   := {type} {name};
+field(name, type, value)            := {type} {name};
+field.param(name, type)             := {type} {name}
+field.param(name, type, value)      := {type} {name}
+field.init(name, type)              := {name}({name})
+field.init(name, type, value)       := {name}({name})
+field.pair(name, type)              := {name}, other.{name}
+field.pair(name, type, value)       := {name}, other.{name}
+field.self(name, type)              := {name}
+field.self(name, type, value)       := {name}
+
+method(name, params, result, body)  := {result} {name}({params}) {body}
+method.declare(name, params, result, body) := {result} {name}({params});
+method.declare(name, params, result, body, overrides) := {result} {name}({params}) override;
+method.inline(name, params, result, body) := {result} {name}({params}) {body}
+method.define(name, params, result, body) := inline auto {owner}::{name}({params}) -> {result} {body}
+static(name, params, result, body)  := static {result} {name}({params}) {body}
+static.declare(name, params, result, body) := static {result} {name}({params});
+static.inline(name, params, result, body) := static {result} {name}({params}) {body}
+static.define(name, params, result, body) := inline auto {owner}::{name}({params}) -> {result} {body}
+
+// A function is declared after the structs and defined after that; C++'s `main` gives an int.
+func(name, typeParams, params, result, body) :=
+func.prototype(name, typeParams, params, result, body) :=
+  template <{typeParams.typename?}>
+  {result} {name}({params});
+func.prototype(name: main, typeParams, params, result, body) :=
+func.define(name, typeParams, params, result, body) :=
+  template <{typeParams.typename?}>
+  inline {result} {name}({params}) {body}
+func.define(name: main, typeParams, params, result, body) := int main() {body}
+
+// A coroutine is a C++20 coroutine that `co_yield`s its values.
+coro(name, params, yields, body)    :=
+coro.prototype(name, params, yields, body) := Coroutine<{yields}> {name}({params});
+  uses: core, variant, coroutine
+coro.define(name, params, yields, body) := inline Coroutine<{yields}> {name}({params}) {body}
+  uses: core, variant, coroutine
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) :=
+kernel.prototype(stage, name, params, result, body) := {result} {name}({params});
+kernel.define(stage, name, params, result, body) := inline {result} {name}({params}) {body}
+param(name, type)                   := {type} {name}
+
+interface(name, methods) :=
+  struct {name} {
+    virtual ~{name}() = default;
+
+    {methods}
+  };
+signature(name, params, result)     := virtual {result} {name}({params}) = 0;
+
+// The C library's own functions are declared by its headers; any other one is a C function C++ would need declared, and
+// this C++ keeps polyir's memory in its own containers.
+extern(name, params, result)        := unsupported "this C++ keeps polyir's memory in its containers, not in C's"
+extern(name: sin cos tan sqrt floor ceil log exp fabs pow fmax fmin abs labs llabs sinf cosf tanf sqrtf floorf ceilf logf expf fabsf powf fmaxf fminf, params, result) :=
+  uses: cmath
+extern(name: putchar getchar, params, result) :=
+  uses: cstdio
+
+global(name, type, value)           := inline {type} {name} = {value};
+import(module)                      := unsupported "C++ has no modules of another language to import"
+import(module, alias)               := unsupported "C++ has no modules of another language to import"
+// An imported .poly file is a header, included before this file's declarations.
+use(name, path, names)              :=
+use.include(name, path, names)      := #include "{path}.hpp"
+use.include(name, path, names, program) := #include "{path}.cpp"
+
+## statements
+let(name, type, value)              := const {type} {name} = {value};
+let(name, type: coro, value)        := auto {name} = {value};
+var(name, type)                     := {type} {name} = {type.zero};
+var(name, type, value)              := {type} {name} = {value};
+// A variable a closure shares and changes is boxed, so the closure and the code around it see one value.
+var(name, type, boxed)              := auto {name} = std::make_shared<{type}>({type.zero});
+var(name, type, value, boxed)       := auto {name} = std::make_shared<{type}>({value});
+assign(target, value)               := {target} = {value};
+store(object, index, value)         := {object}->at({index}) = {value};
+store(object: map mutmap, index, value) := {object}->insert_or_assign({index}, {value});
+store(object: vec, index, value)    := {object}[{index}] = {value};
+store(object: sparse, index, value) := {object}->set({value}, {index}, 0);
+store(object: grid matrix tensor, index, value) := {object}->set({value}, {index});
+store(object, indices, value)       := {object}->set({value}, {indices});
+expr(value)                         := {value.statement};
+if(cond, then)                      := if ({cond}) {then}
+if(cond, then, else)                := if ({cond}) {then} else {else}
+if(cond, then, elseIf)              := if ({cond}) {then} else {elseIf}
+while(cond, body)                   := while ({cond}) {body}
+// A for loop declares one counter in C++'s way; several counters, or one used after the loop, are declared before it.
+for(counters, cond, steps, body) :=
+  {
+    {counters.declare}
+    while ({cond}) {
+      {body}
+      {steps.assign}
+    }
+  }
+for(counters: one, cond, steps, body) := for ({counters}; {cond}; {steps}) {body}
+for(counters, cond, steps, body, usedAfter) := lower
+counter(name, type, value)          := {type} {name} = {value}
+counter.declare(name, type, value)  := {type} {name} = {value};
+step(name, value)                   := {name} = {value}
+step.assign(name, value)            := {name} = {value};
+foreach(name, source, body)         := for (auto {name} : *{source}) {body}
+foreach(name, source: vec, body)    := for (auto {name} : {source}) {body}
+foreach(name, source: map mutmap, body) := for (auto {name} : keysOf({source})) {body}
+  uses: lists
+return                              := return;
+return(value)                       := return {value};
+return(inCoroutine)                 := co_return;
+try(body, name, handler) :=
+  try {body} catch (const Thrown& thrown) {
+    const int64_t {name} = thrown.value;
+    {handler}
+  }
+  uses: thrown
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  try {body} catch (...) {
+    {cleanup}
+    throw;
+  }
+throw(value)                        := throw Thrown{{value}};
+  uses: thrown
+// A `co_yield` hears whether the coroutine was closed: a closed one ends its body.
+yield(value) :=
+  if (co_yield {value}) {
+    co_return;
+  }
+// A switch of blocks, which `match` and `switch` lower to: C++'s `switch` for whole numbers and flags, an arm per `case`;
+// any other (a string, a sum) is written as its `if` chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool, arms) :=
+  switch ({value}) {
+    {arms}
+  }
+select(value: int bool, arms, else) :=
+  switch ({value}) {
+    {arms}
+    default: {
+      {else}
+      break;
+    }
+  }
+arm(keys, body) :=
+  case {keys|: case }: {
+    {body}
+    break;
+  }
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the cases of a loop around a switch on `label`; each case ends with a jump or a
+// return.
+machine(state, cases) :=
+  for (;;) {
+    switch ({state}) {
+      {cases}
+    }
+  }
+case(state, number, body)           := case {number}: {body}
+jump(state, number) :=
+  {state} = {number};
+  continue;
+
+## expressions
+int(value)                          := {value}
+float(value)                        := {value}
+float(value: float)                 := {value}f
+bool(value)                         := {value}
+string(value)                       := "{value}"s
+  uses: literals
+unit                                := {}
+name(name)                          := {name}
+name(name, boxed)                   := (*{name})
+this                                := shared_from_this()
+funcref(name)                       := {name}
+
+// The narrow integers are promoted to int by C++, so their arithmetic is brought back to its type.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: i8, op: + - * / % << >> & | ^, right) := (int8_t) ({left} {op} {right})
+binary(left: i16, op: + - * / % << >> & | ^, right) := (int16_t) ({left} {op} {right})
+binary(left: u8, op: + - * / % << >> & | ^, right) := (uint8_t) ({left} {op} {right})
+binary(left: u16, op: + - * / % << >> & | ^, right) := (uint16_t) ({left} {op} {right})
+// `==` compares what two values hold: numbers, flags and strings with `==`, anything else with `same`.
+binary(left, op: ==, right)         := same({left}, {right})
+  uses: core
+binary(left, op: !=, right)         := !same({left}, {right})
+  uses: core
+binary(left: number bool string, op: == !=, right) := {left} {op} {right}
+binary(left: float double, op: %, right) := std::fmod({left}, {right})
+  uses: cmath
+binary(left: array mutarray, op: +, right) := concat({left}, {right})
+  uses: lists
+// A vector's operators work lane by lane.
+binary(left: vec, op: + - * / %, right) := lanes({left}, {right}, [](auto x, auto y) { return x {op} y; })
+  uses: lanes
+
+unary(op, operand)                  := {op}{operand}
+unary(op: - ~, operand: i8)         := (int8_t) {op}{operand}
+unary(op: - ~, operand: i16)        := (int16_t) {op}{operand}
+unary(op: - ~, operand: u8)         := (uint8_t) {op}{operand}
+unary(op: - ~, operand: u16)        := (uint16_t) {op}{operand}
+
+cast(value, type)                   := ({type}) {value}
+// A pointer is a list here, so it has no address to turn into a number, or back.
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: bool)             := {value} != 0
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := {cond} ? {then} : {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}<{typeArgs}>({args})
+// A member is reached through the shared pointer: `p->x`, or `this->x` inside a method.
+methodcall(object, name, args)      := {object.ptr}->{name}({args})
+invoke(callee, args)                := {callee}({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object.ptr}->{name}
+any.ptr(value)                      := {value}
+this.ptr                            := this
+
+// A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := {object}->at({index})
+index(object: map mutmap, index, type) := getOr({object}, {index}, {type.zero})
+  uses: lists
+index(object: vec, index, type)     := {object}[{index}]
+index(object: sparse, index, type)  := {object}->get({index}, 0)
+index(object: grid matrix tensor, index, type) := {object}->get({index})
+index(object, indices, type)        := {object}->get({indices})
+
+new(name, values)                   := std::make_shared<{name}>({values})
+  uses: memory
+new(name, typeArgs, values)         := std::make_shared<{name}<{typeArgs}>>({values})
+  uses: memory
+init(name, value)                   := {value}
+list(values, type)                  := listOf<{type.elem}>({{values}})
+vec(values, type)                   := {type}{{{values}}}
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+closure(params, result, body)       := [=]({params}) -> {result} {body}
+lambda(params, value)               := [=]({params}) { return {value}; }
+some(type, value)                   := {type}({value})
+none(type)                          := {type}()
+// An `either` is an Either: `Either<int64_t, std::string>::ok(1)`, with `isOk`, `okValue()` and `errValue()`.
+ok(type, value)                     := {type.ok}({value})
+  uses: core, either
+err(type, value)                    := {type.err}({value})
+  uses: core, either
+variant(type, case, value)          := makeVariant({case}, {value})
+  uses: core, variant
+// A whole number goes in as 64 bits, as the case reads it back: a literal alone would be an `int`.
+variant(type, case, value: i64)     := makeVariant({case}, int64_t({value}))
+  uses: core, variant
+interp(pieces)                      := lower
+text(value)                         := "{value}"s
+  uses: literals
+hole(value)                         := {value}
+
+## builtins
+// Sizes are int64_t (i64) in the program; a string counts its bytes.
+len(object)                         := (int64_t) {object}->size()
+len(object: string vec)             := (int64_t) {object}.size()
+capacity(object)                    := (int64_t) {object}->size()
+capacity(object: vec)               := (int64_t) {object}.size()
+rows(object)                        := (int64_t) {object}->dims[0]
+cols(object)                        := (int64_t) {object}->dims[1]
+dim(object, axis)                   := (int64_t) {object}->dims[{axis}]
+
+// A push whose list is not used is a push_back; one used as a value gives the list (`pushed`).
+push(object, value)                 := pushed({object}, {value})
+  uses: lists
+push.statement(object, value)       := {object}->push_back({value})
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := (int64_t) {value}
+hash(value: string)                 := hashText({value})
+  uses: hashText
+
+shuffle(object, lanes)              := shuffle({object}, {lanes})
+  uses: lanes
+atomicLoad(object, order)           := unsupported "this C++ keeps polyir's memory in its containers, not in C's"
+atomicStore(object, value, order)   := unsupported "this C++ keeps polyir's memory in its containers, not in C's"
+atomicRmw(object, op, value, order) := unsupported "this C++ keeps polyir's memory in its containers, not in C's"
+cmpxchg(object, expected, value, success, failure) := unsupported "this C++ keeps polyir's memory in its containers, not in C's"
+fence(order)                        := std::atomic_thread_fence(std::memory_order_seq_cst)
+  uses: atomic
+
+// A variant is a Variant (the number of its case and its value), an `either` an Either.
+tag(object)                         := {object}.tag
+isCase(object, case)                := {object}.tag == {case}
+unwrapAt(object, case, type)        := std::any_cast<{type}>({object}.value)
+isOk(object)                        := {object}.isOk
+isErr(object)                       := !{object}.isOk
+unwrapOk(object)                    := {object}.okValue()
+unwrapErr(object)                   := {object}.errValue()
+isSome(object)                      := {object}.has_value()
+isNone(object)                      := !{object}.has_value()
+unwrap(object)                      := present({object})
+  uses: fail
+
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+yielded(value)                      := (co_yield {value})
+
+// `copy`, `freeze` and `thaw` make a new list, map, set or struct holding the same.
+copy(object)                        := copyOf({object})
+  uses: copies
+copy(object: vec)                   := {object}
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := withItem({object}, {value})
+  uses: copies
+with(object, key, value)            := withEntry({object}, {key}, {value})
+  uses: copies
+has(object, key)                    := contains({object}, {key})
+  uses: lists
+has(object: map mutmap set mutset, key) := {object}->contains({key})
+add(object, value)                  := {object}->insert({value})
+remove(object, key)                 := {object}->erase({key}) > 0
+truncate(object, size)              := truncate({object}, {size})
+  uses: lists
+
+str(value)                          := str({value})
+  uses: text
+charAt(object, index)               := textByte({object}, {index})
+  uses: text
+slice(object, from, to)             := textSlice({object}, {from}, {to})
+  uses: text
+find(object, part, from)            := textFind({object}, {part}, {from})
+  uses: text
+print(value)                        := println({value})
+  uses: text
+fail(value)                         := fail({value})
+  uses: fail
+
+## types
+i8                                  := int8_t
+  uses: cstdint
+i16                                 := int16_t
+  uses: cstdint
+i32                                 := int32_t
+  uses: cstdint
+i64                                 := int64_t
+  uses: cstdint
+u8                                  := uint8_t
+  uses: cstdint
+u16                                 := uint16_t
+  uses: cstdint
+u32                                 := uint32_t
+  uses: cstdint
+u64                                 := uint64_t
+  uses: cstdint
+bool                                := bool
+float                               := float
+double                              := double
+string                              := std::string
+  uses: string
+void                                := void
+struct(name)                        := Ref<{name}>
+  uses: core
+instance(name, args)                := Ref<{name}<{args}>>
+  uses: core
+param(name)                         := {name}
+param.typename(name)                := typename {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}<{args}>
+array(elem)                         := List<{elem}>
+  uses: core
+mutarray(elem)                      := List<{elem}>
+  uses: core
+map(key, value)                     := Map<{key}, {value}>
+  uses: core
+mutmap(key, value)                  := Map<{key}, {value}>
+  uses: core
+set(elem)                           := Set<{elem}>
+  uses: core
+mutset(elem)                        := Set<{elem}>
+  uses: core
+optional(elem)                      := std::optional<{elem}>
+  uses: optional
+either(ok, err)                     := Either<{ok}, {err}>
+  uses: core, either
+variant(cases)                      := Variant
+  uses: core, variant
+closure(params, result)             := std::function<{result}({params})>
+  uses: functional
+func(params, result)                := std::function<{result}({params})>
+  uses: functional
+// A pointer is a kernel's buffer, indexed as a list; a pointer to a function is the function.
+ptr(elem)                           := List<{elem}>
+  uses: core
+ptr(elem: func closure)             := {elem}
+coro(elem)                          := Coroutine<{elem}>
+  uses: core, variant, coroutine
+vec(elem, size)                     := std::array<{elem}, {size}>
+  uses: array
+matrix(elem, size)                  := Ref<Grid<{elem}>>
+  uses: core, grid
+fixed(elem, size)                   := List<{elem}>
+  uses: core
+buffer(elem, size)                  := List<{elem}>
+  uses: core
+grid(elem, rows, cols)              := Ref<Grid<{elem}>>
+  uses: core, grid
+tensor(elem, dims)                  := Ref<Grid<{elem}>>
+  uses: core, grid
+sparse(elem)                        := Ref<Sparse<{elem}>>
+  uses: core, sparse
+
+struct.base(name)                   := public {name}
+array.elem(elem)                    := {elem}
+mutarray.elem(elem)                 := {elem}
+either.ok(ok, err)                  := Either<{ok}, {err}>::ok
+either.err(ok, err)                 := Either<{ok}, {err}>::err
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := {}
+i8.zero                             := 0
+i16.zero                            := 0
+i32.zero                            := 0
+i64.zero                            := 0
+u8.zero                             := 0
+u16.zero                            := 0
+u32.zero                            := 0
+u64.zero                            := 0
+bool.zero                           := false
+float.zero                          := 0.0f
+double.zero                         := 0.0
+string.zero                         := ""s
+  uses: literals
+struct.zero(name)                   := nullptr
+optional.zero(elem)                 := std::nullopt
+  uses: optional
+array.zero(elem)                    := newList<{elem}>()
+mutarray.zero(elem)                 := newList<{elem}>()
+map.zero(key, value)                := newMap<{key}, {value}>()
+mutmap.zero(key, value)             := newMap<{key}, {value}>()
+set.zero(elem)                      := newSet<{elem}>()
+mutset.zero(elem)                   := newSet<{elem}>()
+fixed.zero(elem, size)              := newFilled<{elem}>({size}, {elem.zero})
+buffer.zero(elem, size)             := newFilled<{elem}>({size}, {elem.zero})
+grid.zero(elem, rows, cols)         := std::make_shared<Grid<{elem}>>(std::vector<int>{{rows}, {cols}}, {elem.zero})
+matrix.zero(elem, size)             := std::make_shared<Grid<{elem}>>(std::vector<int>{{size}, {size}}, {elem.zero})
+tensor.zero(elem, dims)             := std::make_shared<Grid<{elem}>>(std::vector<int>{{dims}}, {elem.zero})
+sparse.zero(elem)                   := std::make_shared<Sparse<{elem}>>({elem.zero})
+
+## operators
+=== := ==
+!== := !=
+// `->` reaches a member through a pointer: it binds most tightly, not as `-` and `>`.
+levels: ?, ||, &&, |, ^, &, == !=, < <= > >=, << >>, + -, * / %, ->
+
+## reserved
+// C++'s own words, and the names its helpers and built-ins use: a name that is one of them gets a _ after it.
+alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept
+const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double
+dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new
+noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short
+signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid
+typename union unsigned using virtual void volatile wchar_t while xor xor_eq
+std Ref List Map Set Same Hash same hashOf allSame hashAll newList listOf newFilled newMap newSet pushed contains getOr
+keysOf truncate concat copyOf withItem withEntry str println textByte textSlice textFind hashText fail present Thrown
+Either Variant makeVariant Coroutine Grid Sparse lanes shuffle other
+
+## imports
+// The headers and the one `using` line, each written once at the top when a rule or a support file that uses it is written.
+algorithm := #include <algorithm>
+any := #include <any>
+array := #include <array>
+atomic := #include <atomic>
+cmath := #include <cmath>
+coroutine := #include <coroutine>
+cstdint := #include <cstdint>
+cstdio := #include <cstdio>
+cstdlib := #include <cstdlib>
+functional := #include <functional>
+iostream := #include <iostream>
+memory := #include <memory>
+optional := #include <optional>
+string := #include <string>
+type_traits := #include <type_traits>
+unordered_map := #include <unordered_map>
+unordered_set := #include <unordered_set>
+utility := #include <utility>
+vector := #include <vector>
+literals := using namespace std::string_literals;
+  uses: string
+
+## support
+// Each file is written after the files and headers its `uses:` line names.
+core := runtime/Core.hpp
+  uses: algorithm, functional, memory, optional, unordered_map, unordered_set, vector
+lists := runtime/Lists.hpp
+  uses: core, type_traits
+copies := runtime/Copies.hpp
+  uses: core, type_traits
+text := runtime/Text.hpp
+  uses: algorithm, cstdint, iostream, string, type_traits
+hashText := runtime/HashText.hpp
+  uses: cstdint, string
+fail := runtime/Fail.hpp
+  uses: cstdlib, iostream, optional, string
+thrown := runtime/Thrown.hpp
+  uses: cstdint
+either := runtime/Either.hpp
+  uses: core, optional, utility
+variant := runtime/Variant.hpp
+  uses: any, cstdint, functional
+coroutine := runtime/Coroutine.hpp
+  uses: any, coroutine, optional, utility, variant
+grid := runtime/Grid.hpp
+  uses: core, utility, vector
+sparse := runtime/Sparse.hpp
+  uses: core, vector
+lanes := runtime/Lanes.hpp
+  uses: array
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code, then
+// the line that makes a compiler and a debugger name that source line.
+line := //# from {file}:{line}:{column} {code}\n#line {line} "{file}"

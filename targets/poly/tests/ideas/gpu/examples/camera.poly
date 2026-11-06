@@ -1,0 +1,14 @@
+import "../Metal.poly"
+import "shared/camera.poly"
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let source: string = metalReadFile("camera.metal")
+  if (source == "") {
+    return 11
+  }
+  return runAll(device, source)
+}

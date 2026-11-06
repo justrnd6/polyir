@@ -1,0 +1,56 @@
+// Atomics as real polyir syntax, on a plain `ptr<T>` receiver — methods
+// dispatched exactly like `.push(...)`/`.tag()` already are, plus one
+// standalone `fence(ordering)` builtin. The ordering/op strings ("add",
+// "seq_cst", ...) must be compile-time STRING_LITs — real LLVM keyword
+// tokens in the rendered IR, not a runtime value, same restriction
+// `.shuffle()`'s/`.dim(i)`'s indices already have. Alignment is
+// computed automatically from the element type's own size, never
+// exposed to polyir source.
+//
+// `array<T,S>` renders the SAME opaque `ptr` type as `ptr<T>` but is
+// deliberately NOT a valid receiver for these methods — only a
+// genuine `ptr<T>` is.
+
+extern func malloc(size: i64) -> ptr<i64>
+
+// `.atomicRmw(op, value, ordering)` returns the OLD value, matching
+// the real `atomicrmw` instruction; a follow-up `.atomicLoad`
+// confirms the memory was actually updated.
+func atomicIncrement() -> i64 {
+  let counter: ptr<i64> = malloc(8)
+  counter[0] = 41
+  let old: i64 = counter.atomicRmw("add", 1, "seq_cst")
+  let after: i64 = counter.atomicLoad("seq_cst")
+  return old * 100 + after
+}
+
+// `.cmpxchg(expected, replacement, successOrdering, failureOrdering)`
+// returns the OLD/current value — scoped to the STRONG form, so
+// success is just `result == expected`, the same idiom C11's
+// `atomic_compare_exchange_strong` already uses. A matching `expected`
+// swaps the memory...
+func cmpxchgSucceeds() -> i64 {
+  let slot: ptr<i64> = malloc(8)
+  slot[0] = 10
+  let old: i64 = slot.cmpxchg(10, 20, "seq_cst", "seq_cst")
+  return old * 1000 + slot.atomicLoad("seq_cst")
+}
+
+// ...a mismatching `expected` leaves it untouched.
+func cmpxchgFails() -> i64 {
+  let slot: ptr<i64> = malloc(8)
+  slot[0] = 10
+  let old: i64 = slot.cmpxchg(999, 20, "seq_cst", "seq_cst")
+  return old * 1000 + slot.atomicLoad("seq_cst")
+}
+
+// `.atomicStore`/`fence(ordering)` — a release-store + acquire-fence +
+// acquire-load, the real pairing used to publish a value across
+// threads (correctness here is single-threaded by construction, this
+// just confirms it renders/verifies/JITs cleanly).
+func storeWithFence() -> i64 {
+  let slot: ptr<i64> = malloc(8)
+  slot.atomicStore(7, "release")
+  fence("acquire")
+  return slot.atomicLoad("acquire")
+}

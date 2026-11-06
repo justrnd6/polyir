@@ -1,0 +1,32 @@
+struct Point(x: double, y: double) {
+  func dist() -> double {
+    return this.x * this.x + this.y * this.y
+  }
+}
+
+struct Circle(r: double) {
+  func dist() -> double {
+    return this.r * this.r
+  }
+}
+
+func distSum(px: double, py: double, r: double) -> double {
+  let p: Point = Point(x: px, y: py)
+  let c: Circle = Circle(r: r)
+  return p.dist() + c.dist()
+}
+
+struct Pair(a: i64, b: i64) {
+  func sum() -> i64 {
+    return this.a + this.b
+  }
+
+  func doubledSum() -> i64 {
+    return this.sum() * 2
+  }
+}
+
+func doubledSumCheck(a: i64, b: i64) -> i64 {
+  let p: Pair = Pair(a: a, b: b)
+  return p.doubledSum()
+}

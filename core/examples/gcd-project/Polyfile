@@ -1,0 +1,6 @@
+// polyir's own project file: `polyir --project . --run` runs it, `--run --all` runs it on every target below.
+name gcd
+main src/main.poly
+entry main
+target native
+targets interp native wasm java js python swift c cpp objc rust

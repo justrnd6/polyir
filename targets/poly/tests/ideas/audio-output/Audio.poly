@@ -1,0 +1,19 @@
+import "Stream.poly"
+import "macos.poly"
+import "../audio/Sound.poly"
+
+func audioStreamAt(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64 >, state: i64, channels: i64, rate: i64, seconds: float, volume: float) -> i64 {
+  return audioStreamRun(streamNew(fill, state, channels, rate, seconds, volume))
+}
+
+func audioStream(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64 >, state: i64, channels: i64, rate: i64, seconds: float) -> i64 {
+  return audioStreamAt(fill, state, channels, rate, seconds, 1.0)
+}
+
+func soundPlay(s: Sound) -> i64 {
+  return audioStreamRun(soundStream(s, 1.0))
+}
+
+func audioPlay(samples: ptr<float>, count: i64, rate: i64) -> i64 {
+  return soundPlay(Sound(samples: samples, count: count, rate: rate, channels: 1))
+}

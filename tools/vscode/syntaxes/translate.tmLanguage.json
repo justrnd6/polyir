@@ -1,0 +1,283 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "polyir translate page",
+  "scopeName": "source.polyir-translate",
+  "comment": "A page of construct rules (core/docs/translate.md): `# Name`, the head lines (source, target, base, style), `## section`s of rules `construct.role(part, part: pattern) := value`, templates with `{part}` holes on the indented lines below, `before:` `hoist:` `escape:` `uses:` lines, and the sections that hold no rules (operators, reserved, imports, support). A comment is a `//` line at the start of a line; an indented `//` is the target's own text.",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#title" },
+    { "include": "#head" },
+    { "include": "#operators" },
+    { "include": "#reserved" },
+    { "include": "#entries" },
+    { "include": "#types" },
+    { "include": "#section" },
+    { "include": "#rule" },
+    { "include": "#under-rule" },
+    { "include": "#hole" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.polyir-translate",
+      "match": "^//.*$"
+    },
+    "title": {
+      "match": "^(#)\\s+(.*?)\\s*$",
+      "captures": {
+        "0": { "name": "markup.heading.title.polyir-translate" },
+        "1": { "name": "punctuation.definition.heading.polyir-translate" },
+        "2": { "name": "entity.name.section.title.polyir-translate" }
+      }
+    },
+    "section-heading": {
+      "match": "^(##)\\s+(.*?)\\s*$",
+      "captures": {
+        "0": { "name": "markup.heading.section.polyir-translate" },
+        "1": { "name": "punctuation.definition.heading.polyir-translate" },
+        "2": { "name": "entity.name.section.polyir-translate" }
+      }
+    },
+    "section": { "include": "#section-heading" },
+    "head": {
+      "patterns": [
+        {
+          "match": "^(source|target|base)(:)\\s*(.*?)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.other.head.polyir-translate" },
+            "2": { "name": "punctuation.separator.key-value.polyir-translate" },
+            "3": { "name": "entity.name.namespace.language.polyir-translate" }
+          }
+        },
+        {
+          "match": "^(style)(:)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.other.head.polyir-translate" },
+            "2": { "name": "punctuation.separator.key-value.polyir-translate" },
+            "3": { "patterns": [{ "include": "#style-settings" }] }
+          }
+        }
+      ]
+    },
+    "style-settings": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.polyir-translate", "match": "," },
+        { "name": "constant.numeric.polyir-translate", "match": "\\b\\d+\\b" },
+        {
+          "match": "(?<=[:,])\\s*([A-Za-z][\\w-]*)",
+          "captures": { "1": { "name": "support.type.property-name.style.polyir-translate" } }
+        },
+        { "name": "support.constant.style.polyir-translate", "match": "[^\\s,]+" }
+      ]
+    },
+    "operators": {
+      "begin": "^(##)\\s+(operators)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-translate" },
+        "1": { "name": "punctuation.definition.heading.polyir-translate" },
+        "2": { "name": "entity.name.section.polyir-translate" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "match": "^(levels|apart)(:)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.other.setting.polyir-translate" },
+            "2": { "name": "punctuation.separator.key-value.polyir-translate" },
+            "3": {
+              "patterns": [
+                { "name": "punctuation.separator.comma.polyir-translate", "match": "," },
+                { "name": "keyword.operator.target.polyir-translate", "match": "[^\\s,]+" }
+              ]
+            }
+          }
+        },
+        {
+          "match": "^(\\S+)\\s+(:=)\\s+(.*?)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.operator.source.polyir-translate" },
+            "2": { "name": "keyword.operator.assignment.rule.polyir-translate" },
+            "3": { "name": "keyword.operator.target.polyir-translate" }
+          }
+        }
+      ]
+    },
+    "reserved": {
+      "begin": "^(##)\\s+(reserved)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-translate" },
+        "1": { "name": "punctuation.definition.heading.polyir-translate" },
+        "2": { "name": "entity.name.section.polyir-translate" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        { "name": "variable.language.reserved.polyir-translate", "match": "[^\\s]+" }
+      ]
+    },
+    "entries": {
+      "comment": "`## imports` and `## support`: `name := the import's line` or `name := runtime/File.js`, and `uses:` under one.",
+      "begin": "^(##)\\s+(imports|support)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-translate" },
+        "1": { "name": "punctuation.definition.heading.polyir-translate" },
+        "2": { "name": "entity.name.section.polyir-translate" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "match": "^([A-Za-z_]\\w*)\\s*(:=)\\s*([\\w./-]+\\.\\w+)\\s*$",
+          "captures": {
+            "1": { "name": "entity.name.function.entry.polyir-translate" },
+            "2": { "name": "keyword.operator.assignment.rule.polyir-translate" },
+            "3": { "name": "string.unquoted.path.polyir-translate" }
+          }
+        },
+        {
+          "match": "^([A-Za-z_]\\w*)\\s*(:=)",
+          "captures": {
+            "1": { "name": "entity.name.function.entry.polyir-translate" },
+            "2": { "name": "keyword.operator.assignment.rule.polyir-translate" }
+          }
+        },
+        { "include": "#uses" }
+      ]
+    },
+    "types": {
+      "comment": "`## types`: a rule for each type form, its construct named as a type.",
+      "begin": "^(##)\\s+(types)\\s*$",
+      "beginCaptures": {
+        "0": { "name": "markup.heading.section.polyir-translate" },
+        "1": { "name": "punctuation.definition.heading.polyir-translate" },
+        "2": { "name": "entity.name.section.polyir-translate" }
+      },
+      "end": "(?=^##\\s)",
+      "patterns": [
+        { "include": "#comment" },
+        {
+          "match": "^([A-Za-z_]\\w*)(?:(\\.)([A-Za-z_]\\w*))?(?:(\\()([^)]*)(\\)))?\\s*(:=)(.*)$",
+          "captures": {
+            "1": { "name": "entity.name.type.construct.polyir-translate" },
+            "2": { "name": "punctuation.accessor.role.polyir-translate" },
+            "3": { "name": "entity.other.attribute-name.role.polyir-translate" },
+            "4": { "name": "punctuation.definition.parameters.begin.polyir-translate" },
+            "5": { "patterns": [{ "include": "#parts" }] },
+            "6": { "name": "punctuation.definition.parameters.end.polyir-translate" },
+            "7": { "name": "keyword.operator.assignment.rule.polyir-translate" },
+            "8": { "patterns": [{ "include": "#value" }] }
+          }
+        },
+        { "include": "#under-rule" },
+        { "include": "#hole" }
+      ]
+    },
+    "rule": {
+      "comment": "`construct.role(part, part: pattern words) := value`.",
+      "match": "^([A-Za-z_]\\w*)(?:(\\.)([A-Za-z_]\\w*))?(?:(\\()([^)]*)(\\)))?\\s*(:=)(.*)$",
+      "captures": {
+        "1": { "name": "entity.name.function.construct.polyir-translate" },
+        "2": { "name": "punctuation.accessor.role.polyir-translate" },
+        "3": { "name": "entity.other.attribute-name.role.polyir-translate" },
+        "4": { "name": "punctuation.definition.parameters.begin.polyir-translate" },
+        "5": { "patterns": [{ "include": "#parts" }] },
+        "6": { "name": "punctuation.definition.parameters.end.polyir-translate" },
+        "7": { "name": "keyword.operator.assignment.rule.polyir-translate" },
+        "8": { "patterns": [{ "include": "#value" }] }
+      }
+    },
+    "parts": {
+      "patterns": [
+        { "name": "punctuation.separator.comma.polyir-translate", "match": "," },
+        {
+          "match": "([A-Za-z_]\\w*)\\s*(:)([^,]*)",
+          "captures": {
+            "1": { "name": "variable.parameter.part.polyir-translate" },
+            "2": { "name": "punctuation.separator.pattern.polyir-translate" },
+            "3": { "patterns": [{ "include": "#pattern-words" }] }
+          }
+        },
+        { "name": "variable.parameter.part.polyir-translate", "match": "[A-Za-z_]\\w*" }
+      ]
+    },
+    "pattern-words": {
+      "patterns": [
+        { "name": "keyword.other.pattern.polyir-translate", "match": "\\b(empty|one)\\b" },
+        { "name": "support.type.pattern.polyir-translate", "match": "[^\\s,]+" }
+      ]
+    },
+    "value": {
+      "patterns": [
+        {
+          "match": "(?<=:=)\\s*(todo)\\s*$",
+          "captures": { "1": { "name": "keyword.control.status.todo.polyir-translate" } }
+        },
+        {
+          "match": "(?<=:=)\\s*(unimplemented|unsupported)\\b\\s*(\"[^\"]*\"?)?(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.status.polyir-translate" },
+            "2": { "name": "string.quoted.double.reason.polyir-translate" },
+            "3": { "name": "string.unquoted.reason.polyir-translate" }
+          }
+        },
+        {
+          "match": "(?<=:=)\\s*(lower|style)\\s*$",
+          "captures": { "1": { "name": "keyword.control.status.polyir-translate" } }
+        },
+        { "include": "#hole" }
+      ]
+    },
+    "under-rule": {
+      "comment": "The lines indented under a rule: `before:` and `hoist:` templates, `escape: X as Y`, `uses: a, b`; any other is the template's text.",
+      "patterns": [
+        {
+          "match": "^\\s+(before|hoist)(:)(.*)$",
+          "captures": {
+            "1": { "name": "keyword.other.placement.polyir-translate" },
+            "2": { "name": "punctuation.separator.key-value.polyir-translate" },
+            "3": { "patterns": [{ "include": "#hole" }] }
+          }
+        },
+        {
+          "match": "^\\s+(escape)(:)\\s*(.*?)\\s+(as)\\s+(.*?)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.other.escape.polyir-translate" },
+            "2": { "name": "punctuation.separator.key-value.polyir-translate" },
+            "3": { "name": "string.unquoted.escape.from.polyir-translate" },
+            "4": { "name": "keyword.other.as.polyir-translate" },
+            "5": { "name": "string.unquoted.escape.to.polyir-translate" }
+          }
+        },
+        { "include": "#uses" }
+      ]
+    },
+    "uses": {
+      "match": "^\\s+(uses)(:)(.*)$",
+      "captures": {
+        "1": { "name": "keyword.other.uses.polyir-translate" },
+        "2": { "name": "punctuation.separator.key-value.polyir-translate" },
+        "3": {
+          "patterns": [
+            { "name": "punctuation.separator.comma.polyir-translate", "match": "," },
+            { "name": "entity.name.function.entry.polyir-translate", "match": "[A-Za-z_]\\w*" }
+          ]
+        }
+      }
+    },
+    "hole": {
+      "comment": "`{part}`, `{part.role}`, `{part?}`, `{part|separator}`: any other brace is the target's text.",
+      "match": "(\\{)([A-Za-z]\\w*)(?:(\\.)(\\w+))?(\\?)?(?:(\\|)([^}]*))?(\\})",
+      "captures": {
+        "0": { "name": "meta.template.expression.hole.polyir-translate" },
+        "1": { "name": "punctuation.definition.template-expression.begin.polyir-translate" },
+        "2": { "name": "variable.other.part.polyir-translate" },
+        "3": { "name": "punctuation.accessor.role.polyir-translate" },
+        "4": { "name": "entity.other.attribute-name.role.polyir-translate" },
+        "5": { "name": "keyword.operator.optional.polyir-translate" },
+        "6": { "name": "punctuation.separator.polyir-translate" },
+        "7": { "name": "string.unquoted.separator.polyir-translate" },
+        "8": { "name": "punctuation.definition.template-expression.end.polyir-translate" }
+      }
+    }
+  }
+}

@@ -1,0 +1,88 @@
+// Labels, `goto`, `branch` and `switch`: control flow without nesting. Flow.java is the same program as loops, `if` and labelled
+// blocks (the jumps are rebuilt into structure: a jump back is `continue`, a jump to a shared continuation is `break`).
+
+func sumTo(n: i64) -> i64 {
+  goto loop(0, 1)
+label loop(total: i64, i: i64):
+  branch i > n ? done(total) : step(total, i)
+label step(total: i64, i: i64):
+  goto loop(total + i, i + 1)
+label done(result: i64):
+  return result
+}
+
+func gcd(a0: i64, b0: i64) -> i64 {
+  goto loop(a0, b0)
+label loop(a: i64, b: i64):
+  branch b == 0 ? done(a) : body(a, b)
+label body(a: i64, b: i64):
+  let r: i64 = a % b
+  goto loop(b, r)
+label done(result: i64):
+  return result
+}
+
+func collatz(n: i64) -> i64 {
+  goto start(n, 0)
+label start(x: i64, steps: i64):
+  branch x == 1 ? finished(steps) : test(x, steps)
+label test(x: i64, steps: i64):
+  branch x % 2 == 0 ? even(x, steps) : odd(x, steps)
+label even(x: i64, steps: i64):
+  goto start(x / 2, steps + 1)
+label odd(x: i64, steps: i64):
+  goto start(3 * x + 1, steps + 1)
+label finished(count: i64):
+  return count
+}
+
+func swapped(a: i64, b: i64) -> i64 {
+  goto round(a, b, 0)
+label round(x: i64, y: i64, k: i64):
+  branch k == 3 ? out(x, y) : again(x, y, k)
+label again(x: i64, y: i64, k: i64):
+  goto round(y, x, k + 1)
+label out(x: i64, y: i64):
+  return x * 10 + y
+}
+
+func weight(day: i64) -> i64 {
+  switch (day) {
+    0 => rest()
+    6 => rest()
+    1 => work()
+    2 => work()
+    else => other()
+  }
+label rest():
+  goto done(1)
+label work():
+  goto done(2)
+label other():
+  goto done(3)
+label done(w: i64):
+  return w * 100
+}
+
+// Two blocks that jump into each other from outside: a loop with two entrances, which cannot be written as nested loops. The Java and
+// Kotlin back ends write it as a state machine.
+func zigzag(a: i64) -> i64 {
+  branch a == 0 ? ping(a) : pong(a)
+label ping(p: i64):
+  let next: i64 = p + 1
+  branch next > 5 ? done(next) : pong(next)
+label pong(q: i64):
+  branch q > 5 ? done(q) : ping(q + 1)
+label done(r: i64):
+  return r * 2
+}
+
+func main() -> i64 {
+  var score: i64 = sumTo(10)
+  score = score + gcd(48, 18)
+  score = score + collatz(6)
+  score = score + swapped(4, 7)
+  score = score + weight(0) + weight(2) + weight(9)
+  score = score + zigzag(0) + zigzag(3)
+  return score
+}

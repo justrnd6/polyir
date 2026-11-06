@@ -1,0 +1,65 @@
+// `for (x in gen)`: a loop over what a coroutine yields. Each turn resumes the coroutine for its next value, the
+// loop ends when the coroutine finishes, and a `return` from the body closes it on the way out.
+import "Check.poly"
+
+coro func upTo(limit: i64) -> i64 {
+    for (i = 0; i < limit; i = i + 1) {
+        yield i
+    }
+}
+
+global made: i64 = 0
+
+// Counts how many coroutines were started, so a test can see the source is evaluated once.
+func counted(limit: i64) -> coro<i64> {
+    made = made + 1
+    return upTo(limit)
+}
+
+func checkSumsEveryValue() -> double {
+    var total: i64 = 0
+    for (n in upTo(5)) {
+        total = total + n
+    }
+    return offInt(total, 10)
+}
+
+func checkEmptyCoroutineRunsNoTurns() -> double {
+    var turns: i64 = 0
+    for (n in upTo(0)) {
+        turns = turns + 1
+    }
+    return offInt(turns, 0)
+}
+
+func firstAbove(limit: i64) -> i64 {
+    for (n in upTo(100)) {
+        if (n > limit) {
+            return n
+        }
+    }
+    return -1
+}
+
+func checkReturnLeavesMidway() -> double {
+    return offInt(firstAbove(6), 7)
+}
+
+func checkLoopsNest() -> double {
+    var total: i64 = 0
+    for (a in upTo(3)) {
+        for (b in upTo(2)) {
+            total = total + a * 10 + b
+        }
+    }
+    return offInt(total, 63)
+}
+
+func checkSourceIsEvaluatedOnce() -> double {
+    made = 0
+    var total: i64 = 0
+    for (n in counted(4)) {
+        total = total + n
+    }
+    return offInt(made * 100 + total, 106)
+}

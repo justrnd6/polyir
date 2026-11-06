@@ -1,0 +1,30 @@
+extern func malloc(size: i64) -> ptr<i64>
+
+func atomicIncrement() -> i64 {
+  let counter: ptr<i64> = malloc(8)
+  counter[0] = 41
+  let old: i64 = counter.atomicRmw("add", 1, "seq_cst")
+  let after: i64 = counter.atomicLoad("seq_cst")
+  return old * 100 + after
+}
+
+func cmpxchgSucceeds() -> i64 {
+  let slot: ptr<i64> = malloc(8)
+  slot[0] = 10
+  let old: i64 = slot.cmpxchg(10, 20, "seq_cst", "seq_cst")
+  return old * 1000 + slot.atomicLoad("seq_cst")
+}
+
+func cmpxchgFails() -> i64 {
+  let slot: ptr<i64> = malloc(8)
+  slot[0] = 10
+  let old: i64 = slot.cmpxchg(999, 20, "seq_cst", "seq_cst")
+  return old * 1000 + slot.atomicLoad("seq_cst")
+}
+
+func storeWithFence() -> i64 {
+  let slot: ptr<i64> = malloc(8)
+  slot.atomicStore(7, "release")
+  fence("acquire")
+  return slot.atomicLoad("acquire")
+}

@@ -1,0 +1,113 @@
+// Arithmetic at the edges of every integer type: overflow, negative division and remainder, shifts, narrowing and widening casts, and
+// floats to integers. Each function folds what it computed into one i64, and the program returns a digest of those, so a single wrong
+// bit anywhere changes the exit status.
+
+func mix(h: i64, v: i64) -> i64 {
+  return (h * 31 + v) % 1000003
+}
+
+func wide() -> i64 {
+  let big: i64 = 9223372036854775807
+  let wrapped: i64 = big + 1
+  let product: i64 = 3037000500 * 3037000500
+  let neg: i64 = 0 - big
+  let quotient: i64 = (0 - 7) / 2
+  let rest: i64 = (0 - 7) % 3
+  var h: i64 = 7
+  h = mix(h, (wrapped >> 40) % 1000)
+  h = mix(h, (product >> 33) % 1000)
+  h = mix(h, (neg >> 50) % 1000)
+  h = mix(h, quotient + 100)
+  h = mix(h, rest + 100)
+  h = mix(h, (big << 3) >> 60)
+  h = mix(h, (0 - 1) >> 5 + 100)
+  return h
+}
+
+func thirtyTwo() -> i64 {
+  let big: i32 = 2147483647
+  let wrapped: i32 = big + 1
+  let product: i32 = 65536 * 65536
+  let other: i32 = 123456789 * 987
+  let quotient: i32 = (0 - 7) / 2
+  let rest: i32 = (0 - 7) % 3
+  var h: i64 = 11
+  h = mix(h, wrapped.toI64() % 100003)
+  h = mix(h, product.toI64() + 5)
+  h = mix(h, other.toI64() % 100003)
+  h = mix(h, quotient.toI64() + 100)
+  h = mix(h, rest.toI64() + 100)
+  h = mix(h, (wrapped >> 7).toI64() % 100003)
+  h = mix(h, (big << 5).toI64() % 100003)
+  return h
+}
+
+func unsigned32() -> i64 {
+  let top: u32 = 4294967295
+  let wrapped: u32 = top + 2
+  let product: u32 = 4000000000 * 7
+  let under: u32 = 3 - 5
+  let shifted: u32 = top << 4
+  var h: i64 = 13
+  h = mix(h, wrapped.toI64())
+  h = mix(h, product.toI64() % 100003)
+  h = mix(h, under.toI64() % 100003)
+  h = mix(h, shifted.toI64() % 100003)
+  h = mix(h, (top >> 3).toI64() % 100003)
+  h = mix(h, (top / 3).toI64() % 100003)
+  h = mix(h, (top % 1000).toI64())
+  return h
+}
+
+func narrow() -> i64 {
+  let a: i8 = 127
+  let b: i8 = a + 1
+  let c: i16 = 32767
+  let d: i16 = c + 1
+  let e: u8 = 250
+  let f: u8 = e + 10
+  let g: u16 = 65535
+  let hh: u16 = g + 3
+  let m: i8 = 0 - 128
+  let n: i8 = m / (0 - 1)
+  var h: i64 = 17
+  h = mix(h, b.toI64() + 200)
+  h = mix(h, d.toI64() + 40000)
+  h = mix(h, f.toI64())
+  h = mix(h, hh.toI64())
+  h = mix(h, n.toI64() + 200)
+  h = mix(h, (b >> 2).toI64() + 200)
+  h = mix(h, (e << 3).toI64())
+  return h
+}
+
+func casts() -> i64 {
+  let big: i64 = 5000000000
+  let cut: i32 = big.toI32()
+  let tiny: i8 = (300).toI8()
+  let uns: u32 = (0 - 5).toU32()
+  let up: u64 = (0 - 1).toU64()
+  let back: i64 = up.toI64()
+  let f: double = 3.99
+  let g: double = 0.0 - 3.99
+  var h: i64 = 19
+  h = mix(h, cut.toI64() % 100003)
+  h = mix(h, tiny.toI64() + 200)
+  h = mix(h, uns.toI64() % 100003)
+  h = mix(h, (up >> 60).toI64())
+  h = mix(h, back + 5)
+  h = mix(h, f.toI64())
+  h = mix(h, g.toI64() + 10)
+  h = mix(h, (f * 2.5).toI64())
+  return h
+}
+
+func main() -> i64 {
+  var h: i64 = 1
+  h = mix(h, wide())
+  h = mix(h, thirtyTwo())
+  h = mix(h, unsigned32())
+  h = mix(h, narrow())
+  h = mix(h, casts())
+  return h % 251
+}

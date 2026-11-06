@@ -1,0 +1,89 @@
+// Printing for the example programs: text and whole numbers on the screen, and a stopwatch.
+// (polyir has no printf, so numbers are turned into digits by hand and written with `write`.)
+extern func gettimeofday(timeValue: i64, zone: i64) -> i32
+extern func write(fd: i32, text: string, count: i64) -> i64
+extern func strlen(text: string) -> i64
+extern func calloc(count: i64, size: i64) -> i64
+
+// The wall-clock time in milliseconds (what a stopwatch would show). `clock()` would be wrong for
+// timing a GPU: it counts only the CPU's own working time, not the time spent waiting.
+func wallMs() -> i64 {
+    let tv: ptr<i64> = calloc(2, 8).toPtr()
+    gettimeofday(tv.toI64(), 0)
+    let micro: ptr<i32> = tv.toI64().toPtr()
+    return tv[0] * 1000 + micro[2].toI64() / 1000
+}
+
+func say(text: string) -> i64 {
+    return write(1, text, strlen(text))
+}
+
+func newline() -> i64 {
+    let one: ptr<i8> = calloc(2, 1).toPtr()
+    one[0] = 10
+    let text: string = one.toI64().toPtr()
+    return write(1, text, 1)
+}
+
+// A whole number in decimal.
+func sayNumber(value: i64) -> i64 {
+    let digits: ptr<i8> = calloc(24, 1).toPtr()
+    var n: i64 = value
+    var length: i64 = 0
+    if (n == 0) {
+        digits[0] = 48
+        length = 1
+    }
+    var scratch: i64 = n
+    for (k = 0; k < 20; k = k + 1) {
+        if (scratch > 0) {
+            length = length + 1
+            scratch = scratch / 10
+        }
+    }
+    for (k = 0; k < 20; k = k + 1) {
+        if (n > 0) {
+            digits[length - 1 - k] = 48 + n % 10
+            n = n / 10
+        }
+    }
+    let text: string = digits.toI64().toPtr()
+    return write(1, text, length)
+}
+
+// A whole number, right-aligned in `width` columns (for tables).
+func sayRight(value: i64, width: i64) -> i64 {
+    var digits: i64 = 1
+    var rest: i64 = value / 10
+    for (k = 0; k < 20; k = k + 1) {
+        if (rest > 0) {
+            digits = digits + 1
+            rest = rest / 10
+        }
+    }
+    let spaces: ptr<i8> = calloc(width + 1, 1).toPtr()
+    var count: i64 = width - digits
+    if (count < 0) { count = 0 }
+    for (k = 0; k < count; k = k + 1) {
+        spaces[k] = 32
+    }
+    let text: string = spaces.toI64().toPtr()
+    write(1, text, count)
+    return sayNumber(value)
+}
+
+// A number with three decimals (1.995, -0.250, 0.005).
+func sayDecimal(value: float) -> i64 {
+    var v: float = value
+    if (v < 0.0) {
+        say("-")
+        v = 0.0 - v
+    }
+    let thousandths: i64 = (v * 1000.0 + 0.5).toI64()
+    sayNumber(thousandths / 1000)
+    say(".")
+    let fraction: i64 = thousandths % 1000
+    if (fraction < 100) { say("0") }
+    if (fraction < 10) { say("0") }
+    return sayNumber(fraction)
+}

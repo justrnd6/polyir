@@ -1,0 +1,8 @@
+func main() -> i64 {
+  try {
+    throw nothere
+  } catch (e) {
+    return e
+  }
+  return 0
+}

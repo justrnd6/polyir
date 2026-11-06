@@ -1,0 +1,46 @@
+func safeDivide(a: i64, b: i64) -> either<i64, i64> {
+  if (b == 0) {
+    return eitherErr<i64, i64>(99)
+  }
+  return eitherOk<i64, i64>(a / b)
+}
+
+func divideOrDefault(a: i64, b: i64) -> i64 {
+  let r: either<i64, i64> = safeDivide(a, b)
+  if (r.isErr()) {
+    return r.unwrapErr()
+  }
+  return r.unwrapOk()
+}
+
+func eitherCoercion() -> i64 {
+  let r: either<double, i64> = eitherOk<double, i64>(3.0)
+  return r.unwrapOk().toI64()
+}
+
+func variantSum(which: i64) -> i64 {
+  var v: variant<i64, double, i64> = variant<i64, double, i64>(0, 0)
+  if (which == 0) {
+    v = variant<i64, double, i64>(0, 10)
+  }
+  if (which == 1) {
+    v = variant<i64, double, i64>(1, 2.5)
+  }
+  if (which == 2) {
+    v = variant<i64, double, i64>(2, 30)
+  }
+  if (v.tag() == 0) {
+    return v.unwrapAt(0)
+  }
+  if (v.tag() == 1) {
+    return v.unwrapAt(1).toI64() * 100
+  }
+  return v.unwrapAt(2) * 1000
+}
+
+func castRoundTrip() -> i64 {
+  let d: double = 9.0
+  let asI64: i64 = d.toI64()
+  let backToD: double = asI64.toDouble()
+  return backToD.toI64() + asI64
+}

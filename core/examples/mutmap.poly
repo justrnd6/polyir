@@ -1,0 +1,74 @@
+// `mutmap<K,V>` — real open addressing with linear probing, a starting
+// capacity (rounded up to the next power of two at construction; the table doubles when three quarters full). `K` is `i64` or `string` in v1 — a string key compares by
+// CONTENT (`strcmp`), not pointer identity. A mutmap is a reference (like a `mutarray`): any name for it can be written, and a
+// function that is handed one writes the caller's.
+
+// Capacity 4: keys 0 and 5 are chosen because they hash to the SAME
+// initial bucket at this capacity (confirmed by computing the real
+// mixing function, not left to chance) — this forces an actual
+// collision, so inserting `5` after `0` only succeeds if probing past
+// an occupied-but-different-key slot actually advances correctly.
+func collisionAndOverwrite() -> i64 {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  hm[0] = 100
+  hm[5] = 500
+  hm[1] = 10
+  // Overwrite an EXISTING key with a new value — this must land in
+  // place (the slot `1` already occupies), not append a second,
+  // stale entry alongside it.
+  hm[1] = 20
+  return hm[0] * 10000 + hm[5] * 10 + hm[1]
+}
+
+// A genuinely absent key reads back as the zero-equivalent.
+func missingKeyIsZero() -> i64 {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  hm[0] = 7
+  return hm[42]
+}
+
+// `.len()`/`.count()`: the live entry count; overwriting a key does not add one. (A map has no `.capacity()`: each
+// target stores its table its own way.)
+func sizeCheck() -> i64 {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  hm[0] = 1
+  hm[1] = 2
+  hm[1] = 99
+  return hm.len() * 100
+}
+
+// `mutmap<string, i64>` — real string-keyed lookups. "one" is written
+// via TWO SEPARATE literal occurrences (each its own `stringConstant`,
+// a different address) to confirm equality is by CONTENT, not pointer
+// identity: the second write must overwrite the first in place, not
+// append a second, aliased entry.
+func stringKeyedWriteAndReadBack() -> i64 {
+  let hm: mutmap<string, i64> = mutmap<string, i64>(4)
+  hm["one"] = 1
+  hm["two"] = 2
+  hm["one"] = 11
+  return hm["one"] * 100 + hm["two"]
+}
+
+// A genuinely absent STRING key reads back as the zero-equivalent too
+// (`defaultValueFor`'s own `i64` arm — `V` here is `i64`, not `ptr`).
+func stringKeyMissingIsZero() -> i64 {
+  let hm: mutmap<string, i64> = mutmap<string, i64>(4)
+  hm["present"] = 5
+  return hm["absent"]
+}
+
+// `V = string` (a `ptr`-typed VALUE, distinct from `K = string` above)
+// — a miss here exercises `defaultValueFor`'s `ptr` arm, which must
+// render `null`, not `0` (LLVM requires the literal spelling `null`
+// for a pointer constant; a pre-existing latent bug, fixed this round,
+// already reachable before `string` existed via e.g. `mutmap<i64,
+// ptr<i64>>`). This program only compiling/verifying/running at all —
+// not the `1` it returns — is the real assertion: the OLD buggy
+// `constInt(ptr, 0)` would render invalid IR here.
+func hashmapPtrValueMissIsSafe() -> i64 {
+  let hm: mutmap<i64, string> = mutmap<i64, string>(4)
+  hm[1] = "present"
+  let missing: string = hm[99]
+  return 1
+}

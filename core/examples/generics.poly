@@ -1,0 +1,100 @@
+// `struct Box<T> { value: T }` — real generics via MONOMORPHIZATION,
+// not type erasure: the compiler generates ONE concrete LLVM struct +
+// specialized methods per distinct concrete type actually used
+// anywhere in the program (`Box<i64>` -> real `%Box_i64 = type { i64
+// }`, `Box<double>` -> `%Box_double = type { double }`) — zero
+// boxing/heap-indirection overhead, the same technique Rust/Swift/C++
+// templates use (see `--emit-llvm` to inspect this directly). This is
+// the OPPOSITE choice from `variant<...>`/`either<Ok,Err>`'s own
+// universal-boxed-struct trick (variant.poly) — chosen here for the
+// most direct LLVM mapping.
+//
+// A type parameter (`T`) is referenced inside the struct's own
+// fields/methods as an ordinary type name — no special syntax. A
+// generic struct LITERAL stays byte-for-byte identical to a
+// non-generic one (`Box { value: 5 }`, no `<...>` at the literal
+// itself) — the concrete type is inferred from the enclosing `let`'s
+// own declared type instead.
+
+struct Box<T>(value: T) {
+  func getValue() -> T {
+    return this.value
+  }
+}
+
+func boxedI64() -> i64 {
+  let b: Box<i64> = Box(value: 42)
+  return b.getValue()
+}
+
+// Two DIFFERENT instantiations of the SAME generic struct, used
+// together in one program — confirms the mangled names (`Box_i64`,
+// `Box_double`) never collide.
+func boxedBoth() -> i64 {
+  let bi: Box<i64> = Box(value: 100)
+  let bd: Box<double> = Box(value: 2.0)
+  return bi.getValue() + bd.getValue().toI64()
+}
+
+// Multiple type parameters.
+struct Pair<A, B>(a: A, b: B) {
+  func sumAsInt() -> i64 {
+    return this.a.toI64() + this.b.toI64()
+  }
+}
+
+func pairOfIntAndDouble() -> i64 {
+  let p: Pair<i64, double> = Pair(a: 7, b: 8.5)
+  return p.sumAsInt()
+}
+
+// A generic method doing REAL arithmetic with its own `T`-typed field
+// (`+` must dispatch `add` for i64 but `fadd` for double) — not just
+// reading it back, confirming specialization threads through method
+// BODIES, not just signatures.
+struct Doubler<T>(value: T) {
+  func doubled() -> T {
+    return this.value + this.value
+  }
+}
+
+func doubledI64() -> i64 {
+  let d: Doubler<i64> = Doubler(value: 21)
+  return d.doubled()
+}
+
+// Interoperates with `either<Ok,Err>` (variant.poly) in both
+// directions: a generic struct's own field can be `either<T,Err>`
+// (its case types get substituted during monomorphization same as
+// any other field), and `either`'s own Ok/Err slot can itself be a
+// monomorphized generic struct instantiation, constructed directly
+// as a `eitherOk<...>(...)` argument (not just through a `let`).
+struct Container<T>(value: either<T, i64>) {
+  func unwrapOrDefault(def: T) -> T {
+    if (this.value.isErr()) {
+      return def
+    }
+    return this.value.unwrapOk()
+  }
+}
+
+func containerOk() -> i64 {
+  let c: Container<i64> = Container(value: eitherOk<i64, i64>(42))
+  return c.unwrapOrDefault(0)
+}
+
+func makePairResult(ok: i64) -> either<Pair<i64, i64>, i64> {
+  if (ok == 0) {
+    return eitherErr<Pair<i64, i64>, i64>(-1)
+  }
+  return eitherOk<Pair<i64, i64>, i64>(Pair(a: 11, b: 22))
+}
+
+func pairResultOrErr(ok: i64) -> i64 {
+  let r: either<Pair<i64, i64>, i64> = makePairResult(ok)
+  if (r.isErr()) {
+    return r.unwrapErr()
+  }
+  let p: Pair<i64, i64> = r.unwrapOk()
+  return p.a * 100 + p.b
+}

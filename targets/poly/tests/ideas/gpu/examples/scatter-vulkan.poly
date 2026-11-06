@@ -1,0 +1,74 @@
+import "../Vulkan.poly"
+import "shared/scatter.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  if (checkReverse(gpu) != 0) {
+    return 13
+  }
+  if (checkHistogram(gpu) != 0) {
+    return 14
+  }
+  return 0
+}
+
+func checkReverse(gpu: i64) -> i64 {
+  let pipeline: i64 = vulkanPipeline(gpu, "reverseCopy.spv", 3, 8)
+  if (pipeline == 0) {
+    return 11
+  }
+  let n: i64 = 1000
+  let src: ptr<float> = calloc(n, 4).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    src[i] = i.toFloat() * 0.5
+  }
+  let dst: i64 = vulkanEmptyBuffer(gpu, n * 4)
+  let push: i32[2]
+  push[0] = n.toI32()
+  push[1] = n.toI32()
+  if (vulkanDispatch(gpu, pipeline, n, push.toI64(), vulkanBuffer(gpu, src.toI64(), n * 4), dst, vulkanEmptyBuffer(gpu, n * 4), 0) == 0) {
+    return 12
+  }
+  let got: ptr<float> = vulkanContents(dst).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    if (got[i] != src[n - 1 - i]) {
+      return 1
+    }
+  }
+  return 0
+}
+
+func checkHistogram(gpu: i64) -> i64 {
+  let pipeline: i64 = vulkanPipeline(gpu, "histogram.spv", 3, 8)
+  if (pipeline == 0) {
+    return 11
+  }
+  let n: i64 = 1000000
+  let bins: i64 = 16
+  let data: ptr<i32> = calloc(n, 4).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    data[i] = ((i * 37 + 11) % 1000).toI32()
+  }
+  let cpu: ptr<i32> = calloc(bins, 4).toPtr()
+  for (i = 0; i < n; i = i + 1) {
+    histogram(i, data, bins.toI32(), cpu)
+  }
+  let counts: i64 = vulkanEmptyBuffer(gpu, bins * 4)
+  let push: i32[2]
+  push[0] = n.toI32()
+  push[1] = bins.toI32()
+  if (vulkanDispatch(gpu, pipeline, n, push.toI64(), vulkanBuffer(gpu, data.toI64(), n * 4), counts, vulkanEmptyBuffer(gpu, n * 4), 0) == 0) {
+    return 12
+  }
+  let got: ptr<i32> = vulkanContents(counts).toPtr()
+  for (b = 0; b < bins; b = b + 1) {
+    if (got[b] != cpu[b]) {
+      return 1
+    }
+  }
+  return 0
+}

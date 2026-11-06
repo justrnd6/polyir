@@ -1,0 +1,101 @@
+// A Z-BUFFER BY SCATTER: drawing triangles with one thread per TRIANGLE and `atomicMin`.
+//
+// The rasterizer of triangles.poly gives each thread a PIXEL and asks "which triangle covers me, and which is
+// nearest?". This one turns the question around: each thread owns a TRIANGLE, walks over the pixels inside its
+// bounding box and WRITES its claim to the ones it covers. Many triangles can cover one pixel, so the claims
+// must be settled without a race, and the nearest must win. The trick is to pack each claim into ONE whole number
+//
+//        key = depth * 512 + triangle number
+//
+// (depth scaled to 20 bits, so a nearer triangle has a smaller key; the triangle number fits in the low 9 bits)
+// and let every thread do `atomicMin(depth, pixel, key)`. The smallest key, the nearest triangle, survives
+// whatever order the threads run in, and the winner's number is still inside the key, so a second pass can read
+// it back and colour the pixel. Ties in depth go to the lower triangle number.
+//
+// Triangles are 10 floats each: x, y and depth (0 near to 1 far) of three corners, then a brightness.
+extern func fminf(x: float, y: float) -> float
+extern func fmaxf(x: float, y: float) -> float
+extern func floorf(x: float) -> float
+extern func ceilf(x: float) -> float
+
+// The key meaning "nothing drawn here yet": larger than any triangle's.
+func emptyKey() -> i32 {
+    return 2147483647
+}
+
+// Pass 1: thread t draws triangle t into the `depth` array (a picture of keys, row by row).
+kernel func rasterize(index t: i32, uniform tris: ptr<float>, uniform width: i32, uniform height: i32, writable depth: ptr<i32>) -> i32 {
+    let base: i32 = t * 10
+    let x0: float = tris[base]
+    let y0: float = tris[base + 1]
+    let z0: float = tris[base + 2]
+    let x1: float = tris[base + 3]
+    let y1: float = tris[base + 4]
+    let z1: float = tris[base + 5]
+    let x2: float = tris[base + 6]
+    let y2: float = tris[base + 7]
+    let z2: float = tris[base + 8]
+    let area: float = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+    let left: i32 = fmaxf(0.0, floorf(fminf(x0, fminf(x1, x2)))).toI32()
+    let right: i32 = fminf(width.toFloat() - 1.0, ceilf(fmaxf(x0, fmaxf(x1, x2)))).toI32()
+    let top: i32 = fmaxf(0.0, floorf(fminf(y0, fminf(y1, y2)))).toI32()
+    let bottom: i32 = fminf(height.toFloat() - 1.0, ceilf(fmaxf(y0, fmaxf(y1, y2)))).toI32()
+    for (y = top; y <= bottom; y = y + 1) {
+        for (x = left; x <= right; x = x + 1) {
+            let px: float = x.toFloat() + 0.5
+            let py: float = y.toFloat() + 0.5
+            let w0: float = ((x1 - px) * (y2 - py) - (x2 - px) * (y1 - py)) / area
+            let w1: float = ((x2 - px) * (y0 - py) - (x0 - px) * (y2 - py)) / area
+            let w2: float = 1.0 - w0 - w1
+            if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
+                let z: float = w0 * z0 + w1 * z1 + w2 * z2
+                atomicMin(depth, y * width + x, (z * 1048575.0).toI32() * 512 + t)
+            }
+        }
+    }
+    return 0
+}
+
+// Pass 2: pixel p reads the winning key, finds the triangle number in its low bits, and takes that triangle's
+// brightness, dimmed a little with distance (an empty pixel is dark grey).
+kernel func shade(index p: i32, uniform depth: ptr<i32>, uniform tris: ptr<float>) -> float {
+    let key: i32 = depth[p]
+    if (key == 2147483647) { return 0.06 }
+    let id: i32 = key % 512
+    let z: float = (key / 512).toFloat() / 1048575.0
+    return tris[id * 10 + 9] * (1.0 - 0.45 * z)
+}
+
+// A made-up scene of `count` triangles (at most 512), the same every time: sizes and places from a small
+// pseudo-random generator, depths spread so the triangles overlap and cut through each other.
+func makeScene(tris: ptr<float>, count: i64, width: i64, height: i64) -> i64 {
+    var seed: i64 = 12345
+    for (t = 0; t < count; t = t + 1) {
+        let cx: float = nextRandom(seed) * width.toFloat()
+        seed = nextSeed(seed)
+        let cy: float = nextRandom(seed) * height.toFloat()
+        seed = nextSeed(seed)
+        let size: float = 30.0 + nextRandom(seed) * 110.0
+        seed = nextSeed(seed)
+        for (corner = 0; corner < 3; corner = corner + 1) {
+            tris[t * 10 + corner * 3] = cx + (nextRandom(seed) - 0.5) * 2.0 * size
+            seed = nextSeed(seed)
+            tris[t * 10 + corner * 3 + 1] = cy + (nextRandom(seed) - 0.5) * 2.0 * size
+            seed = nextSeed(seed)
+            tris[t * 10 + corner * 3 + 2] = nextRandom(seed)
+            seed = nextSeed(seed)
+        }
+        tris[t * 10 + 9] = 0.25 + 0.75 * nextRandom(seed)
+        seed = nextSeed(seed)
+    }
+    return 0
+}
+
+func nextSeed(seed: i64) -> i64 {
+    return (seed * 1103515245 + 12345) % 2147483648
+}
+
+// A number from 0 up to (not including) 1, from the seed.
+func nextRandom(seed: i64) -> float {
+    return ((seed / 65536) % 32768).toFloat() / 32768.0
+}

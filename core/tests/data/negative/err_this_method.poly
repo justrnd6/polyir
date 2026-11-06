@@ -1,0 +1,6 @@
+struct C(n: i64) {
+  func get() -> i64 { return this.n + missing }
+  func twice() -> i64 { return this.get() }
+}
+func main() -> i64 { let c: C = C { n: 1 }
+  return c.twice() + c.nothing() }

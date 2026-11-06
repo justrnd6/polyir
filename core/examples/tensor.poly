@@ -1,0 +1,79 @@
+// `tensor<T,d1,...,dn>` — the N-dimensional generalization of `grid`.
+// Same flat row-major representation, same `flatIndex` stride math
+// (`stride[last]=1`, `stride[k]=dims[k+1]*stride[k+1]`) — grid's own
+// 2-index case is just this formula with a 2-element `dims`.
+
+func weightedSum3D() -> i64 {
+  let t: tensor<i64, 2, 3, 4>
+  for (i = 0; i < 2; i = i + 1) {
+    for (j = 0; j < 3; j = j + 1) {
+      for (k = 0; k < 4; k = k + 1) {
+        t[i, j, k] = i * 100 + j * 10 + k
+      }
+    }
+  }
+  // A weight that depends on ALL THREE indices — getting any ONE
+  // stride wrong (treating it as row-major vs any other dimension
+  // order) gives a visibly different number, not a coincidentally
+  // matching one.
+  var total: i64 = 0
+  for (i = 0; i < 2; i = i + 1) {
+    for (j = 0; j < 3; j = j + 1) {
+      for (k = 0; k < 4; k = k + 1) {
+        total = total + t[i, j, k] * (i + 1) * (j + 1)
+      }
+    }
+  }
+  return total
+}
+
+// A direct round-trip on specific cells across all three axes,
+// isolated from the fill loop above.
+func cornerRoundTrip() -> i64 {
+  let t: tensor<i64, 2, 2, 2>
+  t[0, 0, 0] = 1
+  t[0, 0, 1] = 2
+  t[0, 1, 0] = 3
+  t[1, 0, 0] = 4
+  t[1, 1, 1] = 5
+  return t[1, 1, 1] * 100 + t[1, 0, 0] * 10 + t[0, 1, 0]
+}
+
+// `.dim(i)` — one axis's declared size, read as a compile-time
+// constant; `i` must be an `INT_LIT` at the call site (v1 restriction).
+func dimsCheck() -> i64 {
+  let t: tensor<i64, 2, 3, 4>
+  return t.dim(0) * 100 + t.dim(1) * 10 + t.dim(2)
+}
+
+// A genuinely 1-DIMENSIONAL tensor — `t[i]`, a single index, same
+// stride math as the N-dimensional case with a 1-element `dims` list
+// (`stride=[1]`, so `flatIndex` is just the index itself). A real bug
+// this example exists to pin down: the dispatch used to decide "is
+// this a grid/tensor access" purely by counting indices (`>= 2`),
+// which a 1D tensor's own single index never satisfies — it fell
+// through to the generic single-index path, which then used the
+// WHOLE flat array type as the element type (wrong stride, and
+// genuinely invalid IR — confirmed via a real `build` rejection:
+// `add [4 x i64] ...` instead of a scalar `add i64 ...`). Fixed by
+// dispatching on the RECEIVER's own declared kind instead of the
+// index count.
+func oneDimensional() -> i64 {
+  let t: tensor<i64, 4>
+  t[0] = 10
+  t[1] = 20
+  t[2] = 30
+  t[3] = 40
+  return t[1] + t[2]
+}
+
+// A 4-dimensional tensor, to confirm the general stride math scales
+// past 3 dims too (nothing in `flatIndex`/`dimsOfKind` is hardcoded
+// to 2 or 3).
+func fourDimensional() -> i64 {
+  let t: tensor<i64, 2, 2, 2, 2>
+  t[0, 0, 0, 0] = 1
+  t[1, 1, 1, 1] = 99
+  t[0, 1, 0, 1] = 5
+  return t[1, 1, 1, 1] * 100 + t[0, 1, 0, 1]
+}

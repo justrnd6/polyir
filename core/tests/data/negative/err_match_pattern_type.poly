@@ -1,0 +1,9 @@
+func f(n: i64, s: string, xs: array<i64>) -> i64 {
+  let a = match (n) { "one" => 1 else => 0 }
+  let b = match (s) { Ok(v) => 1 else => 0 }
+  let c = match (n) { [x] => x else => 0 }
+  let d = match (xs) { variant(0, x) => x else => 0 }
+  let e = match (n) { x if x => 1 else => 0 }
+  return a + b + c + d + e
+}
+func main() -> i64 { return 0 }

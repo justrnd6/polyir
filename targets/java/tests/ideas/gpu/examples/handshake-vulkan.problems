@@ -1,0 +1,3 @@
+targets/java/Java.translate:164: `extern(name, params, result)` is unsupported: Java cannot call a C function
+targets/java/Java.translate:345: `cast(value: ptr, type)` is unsupported: a pointer is a list here, not an address
+targets/java/Java.translate:346: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

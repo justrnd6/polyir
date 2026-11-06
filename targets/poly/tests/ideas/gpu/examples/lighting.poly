@@ -1,0 +1,133 @@
+import "../Metal.poly"
+import "shared/lighting.poly"
+import "shared/picture.poly"
+import "shared/scene.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func setLook(o: ptr<float>, ambient: float, diffuse: float, specular: float, shininess: float) -> i64 {
+  for (k = 0; k < 16; k = k + 1) {
+    o[k] = 0.0
+  }
+  o[0] = ambient
+  o[1] = diffuse
+  o[2] = specular
+  o[3] = shininess
+  o[4] = 1.0
+  o[5] = 1.0
+  o[6] = 1.0
+  o[7] = 1.0
+  o[8] = 1.0
+  return 0
+}
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let pipeline: i64 = metalPipeline(device, metalReadFile("lighting.metal"), "lit")
+  if (pipeline == 0) {
+    return 11
+  }
+  let cam: ptr<float> = calloc(28, 4).toPtr()
+  buildCamera(cam, 240, 135)
+  let o: ptr<float> = calloc(16, 4).toPtr()
+  setLook(o, 0.18, 0.0, 0.0, 40.0)
+  if (draw(device, pipeline, cam, o, "light-1-ambient.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.0, 1.0, 0.0, 40.0)
+  if (draw(device, pipeline, cam, o, "light-2-diffuse.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.0, 0.0, 1.0, 40.0)
+  if (draw(device, pipeline, cam, o, "light-3-specular.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 1.0, 0.0, 40.0)
+  if (draw(device, pipeline, cam, o, "light-4-ambient-diffuse.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 0.9, 0.7, 40.0)
+  if (draw(device, pipeline, cam, o, "light-5-full.ppm") != 0) {
+    return 13
+  }
+  o[7] = 0.0
+  if (draw(device, pipeline, cam, o, "light-6-no-gamma.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 0.9, 0.7, 40.0)
+  o[4] = 1.0
+  o[5] = 0.55
+  o[6] = 0.25
+  if (draw(device, pipeline, cam, o, "light-7-warm.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.1, 0.9, 0.7, 40.0)
+  o[9] = 1.0
+  o[10] = (0.0 - 1.5)
+  o[11] = 0.9
+  o[12] = (0.0 - 1.2)
+  o[13] = 2.4
+  if (draw(device, pipeline, cam, o, "light-8-lamp.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 0.9, 0.8, 8.0)
+  if (draw(device, pipeline, cam, o, "light-9-shiny-low.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 0.9, 0.8, 200.0)
+  if (draw(device, pipeline, cam, o, "light-10-shiny-high.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 0.9, 0.7, 40.0)
+  o[8] = 0.0
+  if (draw(device, pipeline, cam, o, "light-11-no-shadow.ppm") != 0) {
+    return 13
+  }
+  setLook(o, 0.18, 0.9, 0.7, 40.0)
+  o[14] = 1.0
+  if (draw(device, pipeline, cam, o, "normal-1-colours.ppm") != 0) {
+    return 13
+  }
+  o[14] = 2.0
+  o[15] = 0.8
+  if (draw(device, pipeline, cam, o, "normal-2-mirror.ppm") != 0) {
+    return 13
+  }
+  o[14] = 3.0
+  o[15] = 0.0
+  if (draw(device, pipeline, cam, o, "normal-3-bumps.ppm") != 0) {
+    return 13
+  }
+  return 0
+}
+
+func draw(device: i64, pipeline: i64, cam: ptr<float>, o: ptr<float>, name: string) -> i64 {
+  let w: i64 = 240
+  let h: i64 = 135
+  let n: i64 = w * h
+  let out: i64 = metalEmptyBuffer(device, n * 16)
+  if (metalDispatch(device, pipeline, n, metalBuffer(device, cam.toI64(), 112), metalBuffer(device, o.toI64(), 64), out, 0) == 0) {
+    return 1
+  }
+  let gpu: ptr<float> = metalContents(out).toPtr()
+  saveColorPicture(name, gpu, w, h)
+  var differ: i64 = 0
+  for (i = 0; i < n; i = i + 1) {
+    let cpu: vec<float, 4> = lit(i, cam, o)
+    for (c = 0; c < 3; c = c + 1) {
+      var gap: float = gpu[i * 4 + c] - cpu[c]
+      if (gap < 0.0) {
+        gap = (0.0 - gap)
+      }
+      if (gap > 0.02) {
+        differ = differ + 1
+      }
+    }
+  }
+  if (differ > 80) {
+    return 1
+  }
+  return 0
+}

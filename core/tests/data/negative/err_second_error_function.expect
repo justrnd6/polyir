@@ -1,0 +1,24 @@
+$ --analyze
+exit 1
+check failed:
+  err_second_error_function.poly:1:26: unknown name x
+  err_second_error_function.poly:2:26: unknown name y
+  err_second_error_function.poly:3:29: unknown name z
+$ --analyze --strict
+exit 1
+check failed:
+  err_second_error_function.poly:1:26: unknown name x
+  err_second_error_function.poly:2:26: unknown name y
+  err_second_error_function.poly:3:29: unknown name z
+$ --emit-hir-json
+exit 1
+check failed:
+  err_second_error_function.poly:1:26: unknown name x
+  err_second_error_function.poly:2:26: unknown name y
+  err_second_error_function.poly:3:29: unknown name z
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_second_error_function.poly:1:26: unknown name x
+  err_second_error_function.poly:2:26: unknown name y
+  err_second_error_function.poly:3:29: unknown name z

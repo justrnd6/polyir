@@ -1,0 +1,215 @@
+// The Metal host runtime, written in polyir. A kernel (`kernel func`) is only
+// half of GPU programming: something on the CPU has to hand the Metal source to
+// the GPU driver, put the data in GPU-visible buffers, start the kernel and
+// wait for it. This file does that, using Apple's Objective-C runtime directly.
+//
+// Objective-C methods are called with one C function, `objc_msgSend`: its first
+// argument is the object, the second the method's name (a "selector"), the rest
+// are the method's arguments. Every value here is passed as an `i64` (an object
+// is just an address), which works on Apple Silicon, where integers and
+// addresses share the same argument registers. `objc_msgSend` always gets six
+// arguments; the ones a method does not use are ignored.
+//
+// Building: this program calls Metal, so it must be built natively
+// (`polyir file --out name`); the CLI adds `-framework Metal` itself, and `--jit`
+// refuses it with a clear message. It needs Apple Silicon.
+//
+// Typical use (see examples/):
+//   let device: i64 = metalDevice()
+//   let pipeline: i64 = metalPipeline(device, sourceText, "scale")
+//   let buffer: i64 = metalBuffer(device, data.toI64(), byteCount)
+//   metalDispatch(device, pipeline, count, buffer0, buffer1, buffer2, 0)
+// (more buffers, a grid of threads, and workgroups: see "running" below)
+extern func MTLCreateSystemDefaultDevice() -> i64
+extern func objc_getClass(name: string) -> i64
+extern func sel_registerName(name: string) -> i64
+extern func objc_msgSend(target: i64, selector: i64, a: i64, b: i64, c: i64, d: i64) -> i64
+extern func fopen(path: string, mode: string) -> i64
+extern func fread(buf: i64, size: i64, count: i64, file: i64) -> i64
+extern func fclose(file: i64) -> i64
+extern func calloc(count: i64, size: i64) -> i64
+
+// ── calling an Objective-C method ────────────────────────────────────────────
+func send(target: i64, method: string, a: i64, b: i64, c: i64) -> i64 {
+    return objc_msgSend(target, sel_registerName(method), a, b, c, 0)
+}
+
+func nsString(text: string) -> i64 {
+    return send(objc_getClass("NSString"), "stringWithUTF8String:", text.toI64(), 0, 0)
+}
+
+// ── reading the Metal source ─────────────────────────────────────────────────
+// The text of a file (up to 1 MiB), for the Metal source `polyir --emit-msl` wrote.
+// Returns an empty string if the file cannot be opened.
+func metalReadFile(path: string) -> string {
+    let size: i64 = 1048576
+    let buf: i64 = calloc(size + 1, 1)
+    let file: i64 = fopen(path, "r")
+    if (file == 0) { return "" }
+    fread(buf, 1, size, file)
+    fclose(file)
+    return buf.toPtr()
+}
+
+// ── the device, the compiled kernel ─────────────────────────────────────────
+// The GPU, or 0 when this machine has none.
+func metalDevice() -> i64 {
+    return MTLCreateSystemDefaultDevice()
+}
+
+// Compiles Metal source and returns the named kernel, ready to run; 0 if the
+// source does not compile or has no kernel of that name.
+func metalPipeline(device: i64, source: string, kernelName: string) -> i64 {
+    let errorSlot: i64[1]
+    errorSlot[0] = 0
+    let library: i64 = send(device, "newLibraryWithSource:options:error:", nsString(source), 0, errorSlot.toI64())
+    if (library == 0) { return 0 }
+    let function: i64 = send(library, "newFunctionWithName:", nsString(kernelName), 0, 0)
+    if (function == 0) { return 0 }
+    return send(device, "newComputePipelineStateWithFunction:error:", function, errorSlot.toI64(), 0)
+}
+
+// ── buffers ──────────────────────────────────────────────────────────────────
+// A buffer filled with `byteCount` bytes copied from `address`.
+func metalBuffer(device: i64, address: i64, byteCount: i64) -> i64 {
+    return send(device, "newBufferWithBytes:length:options:", address, byteCount, 0)
+}
+
+// An empty buffer, for a kernel's results.
+func metalEmptyBuffer(device: i64, byteCount: i64) -> i64 {
+    return send(device, "newBufferWithLength:options:", byteCount, 0, 0)
+}
+
+// Where a buffer's bytes live, to read results with `.toPtr()`.
+func metalContents(buf: i64) -> i64 {
+    return send(buf, "contents", 0, 0, 0)
+}
+
+// ── running ──────────────────────────────────────────────────────────────────
+// There are four ways to start a kernel, according to how its threads are laid out:
+//
+//   metalDispatch          a LINE of `count` threads, up to four buffers (the original, kept as it was)
+//   metalDispatchBuffers   a line of `count` threads, any number of buffers (an array of them)
+//   metalDispatch2D        a GRID of width x height threads (a kernel with two `index` parameters)
+//   metalDispatchGroups    a line in whole WORKGROUPS of 256 threads (a kernel with `workgroup` memory):
+//                          `count` is rounded UP to a multiple of 256, so the result buffer must be that
+//                          long, and the kernel itself must ignore the extra threads.
+//
+// Buffers go in the kernel's slots in order (slot 0 first). Each returns 1 when the GPU finished, 0 if it
+// could not start.
+
+// Runs the kernel once per element, `count` times, and waits for it to finish. Up to four buffers; a 0 is
+// skipped (so `metalDispatch(device, p, n, a, b, 0, 0)` has two).
+func metalDispatch(device: i64, pipeline: i64, count: i64, b0: i64, b1: i64, b2: i64, b3: i64) -> i64 {
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    var used: i64 = 0
+    if (b0 != 0) {
+        buffers[used] = b0
+        used = used + 1
+    }
+    if (b1 != 0) {
+        buffers[used] = b1
+        used = used + 1
+    }
+    if (b2 != 0) {
+        buffers[used] = b2
+        used = used + 1
+    }
+    if (b3 != 0) {
+        buffers[used] = b3
+        used = used + 1
+    }
+    return metalDispatchBuffers(device, pipeline, count, buffers, used)
+}
+
+// A line of `count` threads and `bufferCount` buffers, which are `buffers[0]`, `buffers[1]`, ...
+func metalDispatchBuffers(device: i64, pipeline: i64, count: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    let total: i64[3]
+    total[0] = count
+    total[1] = 1
+    total[2] = 1
+    let perGroup: i64[3]
+    perGroup[0] = groupWidth(pipeline, count)
+    perGroup[1] = 1
+    perGroup[2] = 1
+    return metalRun(device, pipeline, buffers, bufferCount, "dispatchThreads:threadsPerThreadgroup:", total.toI64(), perGroup.toI64())
+}
+
+// A grid of `width` x `height` threads (the first `index` is the column, the second the row). The threads
+// are grouped in 16 x 16 tiles where the grid is big enough.
+func metalDispatch2D(device: i64, pipeline: i64, width: i64, height: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    let total: i64[3]
+    total[0] = width
+    total[1] = height
+    total[2] = 1
+    let perGroup: i64[3]
+    perGroup[0] = smaller(16, width)
+    perGroup[1] = smaller(16, height)
+    perGroup[2] = 1
+    return metalRun(device, pipeline, buffers, bufferCount, "dispatchThreads:threadsPerThreadgroup:", total.toI64(), perGroup.toI64())
+}
+
+// A line of at least `count` threads in whole workgroups of 256, for a kernel with `workgroup` memory. The
+// kernel must write the neutral value for threads past the real data, and every array it indexes by thread
+// number (including the result buffer) must have room for `count` rounded up to a multiple of 256.
+func metalDispatchGroups(device: i64, pipeline: i64, count: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+    let groups: i64[3]
+    groups[0] = (count + 255) / 256
+    groups[1] = 1
+    groups[2] = 1
+    let perGroup: i64[3]
+    perGroup[0] = 256
+    perGroup[1] = 1
+    perGroup[2] = 1
+    return metalRun(device, pipeline, buffers, bufferCount, "dispatchThreadgroups:threadsPerThreadgroup:", groups.toI64(), perGroup.toI64())
+}
+
+// How many whole workgroups a launch of `count` threads uses, and the padded length it needs.
+func metalPadded(count: i64) -> i64 {
+    return (count + 255) / 256 * 256
+}
+
+// Makes a command buffer, binds the buffers, calls the given launch method (its two size arguments are
+// each three 64-bit numbers: more than 16 bytes, so the calling convention passes the address of a copy),
+// and waits.
+func metalRun(device: i64, pipeline: i64, buffers: ptr<i64>, bufferCount: i64, launchMethod: string, sizeA: i64, sizeB: i64) -> i64 {
+    let queue: i64 = metalQueue(device)
+    let commands: i64 = send(queue, "commandBuffer", 0, 0, 0)
+    let encoder: i64 = send(commands, "computeCommandEncoder", 0, 0, 0)
+    if (encoder == 0) { return 0 }
+    send(encoder, "setComputePipelineState:", pipeline, 0, 0)
+    for (slot = 0; slot < bufferCount; slot = slot + 1) {
+        bindBuffer(encoder, buffers[slot], slot)
+    }
+    send(encoder, launchMethod, sizeA, sizeB, 0)
+    send(encoder, "endEncoding", 0, 0, 0)
+    send(commands, "commit", 0, 0, 0)
+    send(commands, "waitUntilCompleted", 0, 0, 0)
+    return 1
+}
+
+// The command queue launches go through: made once, the first time it is needed, and reused (making a
+// queue for every launch is slow and piles up).
+global commandQueue: i64 = 0
+
+func metalQueue(device: i64) -> i64 {
+    if (commandQueue == 0) { commandQueue = send(device, "newCommandQueue", 0, 0, 0) }
+    return commandQueue
+}
+
+func bindBuffer(encoder: i64, buf: i64, slot: i64) -> i64 {
+    if (buf == 0) { return 0 }
+    return send(encoder, "setBuffer:offset:atIndex:", buf, 0, slot)
+}
+
+func smaller(a: i64, b: i64) -> i64 {
+    if (a < b) { return a }
+    return b
+}
+
+// As many threads per group as the GPU allows, but no more than there are elements.
+func groupWidth(pipeline: i64, count: i64) -> i64 {
+    let most: i64 = send(pipeline, "maxTotalThreadsPerThreadgroup", 0, 0, 0)
+    if (count < most) { return count }
+    return most
+}

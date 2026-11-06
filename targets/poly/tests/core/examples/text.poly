@@ -1,0 +1,158 @@
+func split(s: string, sep: string) -> mutarray<string> {
+  let parts: mutarray<string> = mutarray<string>()
+  if (sep.len() == 0) {
+    parts.push(s)
+    return parts
+  }
+  var from: i64 = 0
+  for (at = s.find(sep, 0); at >= 0; at = s.find(sep, from)) {
+    parts.push(s.slice(from, at))
+    from = at + sep.len()
+  }
+  parts.push(s.slice(from, s.len()))
+  return parts
+}
+
+func join(parts: mutarray<string>, sep: string) -> string {
+  var out: string = ""
+  for (i = 0; i < parts.len(); i = i + 1) {
+    if (i > 0) {
+      out = out + sep
+    }
+    out = out + parts[i]
+  }
+  return out
+}
+
+func isSpaceChar(c: i8) -> bool {
+  return c == 32 || c == 9 || c == 10 || c == 13
+}
+
+func trim(s: string) -> string {
+  var from: i64 = 0
+  for (; from < s.len() && isSpaceChar(s[from]); ) {
+    from = from + 1
+  }
+  var to: i64 = s.len()
+  for (; to > from && isSpaceChar(s[to - 1]); ) {
+    to = to - 1
+  }
+  return s.slice(from, to)
+}
+
+func repeat(s: string, n: i64) -> string {
+  var out: string = ""
+  for (i = 0; i < n; i = i + 1) {
+    out = out + s
+  }
+  return out
+}
+
+func fill(template: string, values: mutmap<string, string>) -> string {
+  var out: string = ""
+  var from: i64 = 0
+  for (at = template.find("\${", 0); at >= 0; at = template.find("\${", from)) {
+    let close: i64 = template.find("}", at)
+    if (close < 0) {
+      return out + template.slice(from, template.len())
+    }
+    out = out + template.slice(from, at) + filledName(template.slice(at, close + 1), values)
+    from = close + 1
+  }
+  return out + template.slice(from, template.len())
+}
+
+func filledName(placeholder: string, values: mutmap<string, string>) -> string {
+  let name: string = trim(placeholder.slice(2, placeholder.len() - 1))
+  if (values.has(name)) {
+    return values[name]
+  }
+  return placeholder
+}
+
+struct StringBuilder(pieces: mutarray<string>, indents: mutarray<i64>) {
+  func add(s: string) -> StringBuilder {
+    this.pieces.push(s)
+    return this
+  }
+
+  func line(s: string) -> StringBuilder {
+    if (s.len() > 0) {
+      this.pieces.push(repeat(" ", this.indentNow()))
+    }
+    this.pieces.push(s)
+    this.pieces.push("\n")
+    return this
+  }
+
+  func blank() -> StringBuilder {
+    this.pieces.push("\n")
+    return this
+  }
+
+  func lines(all: mutarray<string>) -> StringBuilder {
+    for (i = 0; i < all.len(); i = i + 1) {
+      this.line(all[i])
+    }
+    return this
+  }
+
+  func indent(n: i64) -> StringBuilder {
+    this.indents.push(this.indentNow() + n)
+    return this
+  }
+
+  func dedent() -> StringBuilder {
+    if (this.indents.len() > 0) {
+      this.indents.truncate(this.indents.len() - 1)
+    }
+    return this
+  }
+
+  func indentNow() -> i64 {
+    if (this.indents.len() == 0) {
+      return 0
+    }
+    return this.indents[this.indents.len() - 1]
+  }
+
+  func length() -> i64 {
+    return this.text().len()
+  }
+
+  func isEmpty() -> bool {
+    return this.length() == 0
+  }
+
+  func text() -> string {
+    return join(this.pieces, "")
+  }
+}
+
+struct Dep(name: string, version: string) {
+}
+
+func cmakeLists(name: string, sources: mutarray<string>, deps: mutarray<Dep>) -> string {
+  let out: StringBuilder = StringBuilder(pieces: mutarray<string>(), indents: mutarray<i64>())
+  for (d in deps) {
+    out.line("pkg_check_modules(${d.name} REQUIRED IMPORTED_TARGET ${d.name}>=${d.version})")
+  }
+  return "cmake_minimum_required(VERSION 3.20)" + "\n" + "project(" + str(name) + " LANGUAGES C)" + "\n" + "find_package(PkgConfig REQUIRED)" + "\n" + str(trim(out.text())) + "\n" + "add_executable(" + str(name) + " " + str(join(sources, " ")) + ")" + "\n"
+}
+
+func checksum(s: string) -> i64 {
+  var sum: i64 = 0
+  for (i = 0; i < s.len(); i = i + 1) {
+    sum = (sum * 31 + s[i].toI64()) % 1000003
+  }
+  return sum
+}
+
+func main() -> i64 {
+  let deps: mutarray<Dep> = [Dep(name: "zlib", version: "1.2"), Dep(name: "sdl2", version: "2.0")]
+  let text: string = cmakeLists("demo", ["main.c", "util.c"], deps)
+  let values: mutmap<string, string> = mutmap<string, string>()
+  values["who"] = "polyir"
+  let hello: string = fill("hello \${who}", values)
+  return (checksum(text) + split("a, b ,c", ",").len() * 7 + hello.len()) % 256
+}

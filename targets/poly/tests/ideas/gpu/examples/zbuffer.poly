@@ -1,0 +1,99 @@
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/print.poly"
+import "shared/zbuffer.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let source: string = metalReadFile("zbuffer.metal")
+  let width: i64 = 640
+  let height: i64 = 480
+  let count: i64 = 48
+  let tris: ptr<float> = calloc(count * 10, 4).toPtr()
+  makeScene(tris, count, width, height)
+  let gpu: ptr<float> = gpuPicture(device, source, tris, count, width, height)
+  if (gpu.toI64() == 0) {
+    return 12
+  }
+  let cpu: ptr<float> = cpuPicture(tris, count, width, height)
+  let different: i64 = countDifferent(gpu, cpu, width * height)
+  say("pixels that differ from the CPU's picture: ")
+  sayNumber(different)
+  say(" of ")
+  sayNumber(width * height)
+  newline()
+  savePicture("zbuffer.pgm", gpu, width, height)
+  if (different * 500 > width * height) {
+    return 13
+  }
+  return 0
+}
+
+func gpuPicture(device: i64, source: string, tris: ptr<float>, count: i64, width: i64, height: i64) -> ptr<float> {
+  let rasterize: i64 = metalPipeline(device, source, "rasterize")
+  let shade: i64 = metalPipeline(device, source, "shade")
+  if (rasterize == 0 || shade == 0) {
+    return 0.toPtr()
+  }
+  let pixels: i64 = width * height
+  let empty: ptr<i32> = calloc(pixels, 4).toPtr()
+  for (p = 0; p < pixels; p = p + 1) {
+    empty[p] = emptyKey()
+  }
+  let size: i32[2]
+  size[0] = width.toI32()
+  size[1] = height.toI32()
+  let keys: i64 = metalBuffer(device, empty.toI64(), pixels * 4)
+  let trianglesBuffer: i64 = metalBuffer(device, tris.toI64(), count * 40)
+  let first: ptr<i64> = calloc(6, 8).toPtr()
+  first[0] = trianglesBuffer
+  first[1] = metalBuffer(device, size.toI64(), 4)
+  first[2] = metalBuffer(device, size.toI64() + 4, 4)
+  first[3] = keys
+  first[4] = metalEmptyBuffer(device, count * 4)
+  if (metalDispatchBuffers(device, rasterize, count, first, 5) == 0) {
+    return 0.toPtr()
+  }
+  let second: ptr<i64> = calloc(3, 8).toPtr()
+  second[0] = keys
+  second[1] = trianglesBuffer
+  second[2] = metalEmptyBuffer(device, pixels * 4)
+  if (metalDispatchBuffers(device, shade, pixels, second, 3) == 0) {
+    return 0.toPtr()
+  }
+  return metalContents(second[2]).toPtr()
+}
+
+func cpuPicture(tris: ptr<float>, count: i64, width: i64, height: i64) -> ptr<float> {
+  let pixels: i64 = width * height
+  let keys: ptr<i32> = calloc(pixels, 4).toPtr()
+  for (p = 0; p < pixels; p = p + 1) {
+    keys[p] = emptyKey()
+  }
+  for (t = 0; t < count; t = t + 1) {
+    rasterize(t.toI32(), tris, width.toI32(), height.toI32(), keys)
+  }
+  let picture: ptr<float> = calloc(pixels, 4).toPtr()
+  for (p = 0; p < pixels; p = p + 1) {
+    picture[p] = shade(p.toI32(), keys, tris)
+  }
+  return picture
+}
+
+func countDifferent(a: ptr<float>, b: ptr<float>, n: i64) -> i64 {
+  var different: i64 = 0
+  for (p = 0; p < n; p = p + 1) {
+    var gap: float = a[p] - b[p]
+    if (gap < 0.0) {
+      gap = (0.0 - gap)
+    }
+    if (gap > 0.01) {
+      different = different + 1
+    }
+  }
+  return different
+}

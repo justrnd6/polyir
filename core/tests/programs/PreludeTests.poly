@@ -1,0 +1,25 @@
+// The Math library is part of the language: nothing here imports it or defines any of its functions, yet every one of
+// them can be called. (The compiler adds the library by itself when a program uses it; see src/Prelude.nina.)
+import "Check.poly"
+
+func checkSign() -> double { return off(sign(0.0 - 3.0), 0.0 - 1.0) + off(sign(0.0), 0.0) + off(sign(2.0), 1.0) }
+
+// `fract` calls `floorf`, which the program never declares: what a library function needs comes with it.
+func checkFract() -> double { return off(fract(2.75), 0.75) + off(fract(0.0 - 0.25), 0.75) }
+
+func checkClamp() -> double {
+    return off(clamp(5.0, 0.0 - 1.0, 2.0), 2.0) + off(clamp(0.0 - 5.0, 0.0 - 1.0, 2.0), 0.0 - 1.0)
+}
+
+func checkMix() -> double { return off(mix(10.0, 20.0, 0.25), 12.5) }
+
+// A call nested inside another library call is found too (the arguments of an unknown call are only checked once
+// it is known).
+func checkNestedCalls() -> double {
+    return off(clamp(fract(1.75) * 2.0, 0.0 - 1.0, 1.0), 1.0) + off(mix(sign(2.0), fract(0.5), 0.5), 0.75)
+}
+
+// A function of the program's own that merely has the same kind of name, but is not one of the library's, is untouched.
+func rescale(x: float) -> float { return x * 3.0 }
+
+func checkOwnFunctionsStillWork() -> double { return off(rescale(fract(1.25)), 0.75) }

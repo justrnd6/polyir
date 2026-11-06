@@ -1,0 +1,4 @@
+targets/rust/Rust.translate:145: `coro(name, params, yields, body)` is unsupported: Rust has no coroutines to write here (its generators are not stable), and a Ref cannot go to a thread
+targets/rust/Rust.translate:284: `yield(value)` is unsupported: Rust has no coroutines to write here (its generators are not stable), and a Ref cannot go to a thread
+targets/rust/Rust.translate:448: `resume(object)` is unsupported: Rust has no coroutines to write here
+targets/rust/Rust.translate:539: `coro(elem)` is unsupported: Rust has no coroutines to write here (its generators are not stable), and a Ref cannot go to a thread

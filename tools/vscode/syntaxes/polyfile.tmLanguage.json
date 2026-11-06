@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Polyfile",
+  "scopeName": "source.polyfile",
+  "comment": "A polyir project file: one `key value…` setting per line (name, main, entry, args, target, targets), `//` comments.",
+  "patterns": [
+    { "name": "comment.line.double-slash.polyfile", "match": "//.*$" },
+    {
+      "match": "^\\s*(name|main|entry|args|target|targets)\\b",
+      "captures": { "1": { "name": "keyword.other.setting.polyfile" } }
+    },
+    { "match": "^\\s*([A-Za-z_]\\w*)\\b", "captures": { "1": { "name": "invalid.illegal.unknown-setting.polyfile" } } },
+    { "name": "string.quoted.double.polyfile", "match": "\"[^\"]*\"" },
+    {
+      "name": "support.constant.target.polyfile",
+      "match": "\\b(interp|jit|native|wasm|java|kotlin|js|ts|python|swift|c|cpp|objc|rust)\\b"
+    },
+    { "name": "string.unquoted.path.polyfile", "match": "[\\w./-]+\\.poly\\b" },
+    { "name": "entity.name.function.polyfile", "match": "\\b[A-Za-z_]\\w*\\b" }
+  ]
+}

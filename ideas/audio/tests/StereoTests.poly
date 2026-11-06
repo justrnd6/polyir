@@ -1,0 +1,201 @@
+// Channels: stereo (and more) sounds. A frame is one sample per channel; the samples are interleaved
+// (left, right, left, right, ...), so frame f, channel c is `samples[f * channels + c]`.
+import "../Sound.poly"
+import "../../../core/tests/programs/Check.poly"
+
+extern func fopen(path: string, mode: string) -> i64
+extern func remove(path: string) -> i64
+
+// A stereo sound of 4 frames: left 1, 2, 3, 4 and right 10, 20, 30, 40.
+func ramp() -> Sound {
+    let s: Sound = soundNewFrames(4, 1000, 2)
+    let d: ptr<float> = s.samples
+    for (i = 0; i < 4; i = i + 1) {
+        d[i * 2] = (i + 1).toFloat()
+        d[i * 2 + 1] = (i + 1).toFloat() * 10.0
+    }
+    return s
+}
+
+func checkNewStereoShape() -> double {
+    let s: Sound = soundNewChannels(1.0, 8000, 2)
+    return offInt(s.channels, 2) + offInt(s.count, 8000) + offInt(s.rate, 8000)
+}
+
+func checkSecondsIgnoresChannels() -> double { return off(soundNewChannels(2.0, 8000, 2).seconds(), 2.0) }
+
+// A tone goes into every channel.
+func checkToneFillsBothChannels() -> double {
+    let s: Sound = soundNewChannels(0.1, 1000, 2)
+    s.tone(0, 125.0, 0.5, 0.0, 0.1)
+    var different: i64 = 0
+    for (i = 0; i < 100; i = i + 1) {
+        if (s.samples[i * 2] != s.samples[i * 2 + 1]) { different = different + 1 }
+    }
+    return offInt(different, 0) + off(s.peak(), 0.5)
+}
+
+func checkChannelExtraction() -> double {
+    let left: Sound = ramp().channel(0)
+    let right: Sound = ramp().channel(1)
+    return offInt(left.channels, 1) + off(left.samples[2], 3.0) + off(right.samples[2], 30.0) + offInt(right.count, 4)
+}
+
+func checkToMonoAverages() -> double {
+    let m: Sound = ramp().toMono()
+    return offInt(m.channels, 1) + off(m.samples[0], 5.5) + off(m.samples[3], 22.0)
+}
+
+func checkStereoFromTwoMonos() -> double {
+    let l: Sound = soundNew(0.003, 1000)
+    let r: Sound = soundNew(0.002, 1000)
+    l.samples[0] = 1.0
+    l.samples[2] = 3.0
+    r.samples[1] = 7.0
+    let s: Sound = soundStereo(l, r)
+    // Three frames (the longer one), interleaved: (1,0) (0,7) (3,0).
+    return offInt(s.count, 3) + offInt(s.channels, 2) + off(s.samples[0], 1.0) + off(s.samples[1], 0.0) + off(s.samples[3], 7.0) + off(s.samples[4], 3.0) + off(s.samples[5], 0.0)
+}
+
+func checkToStereoCopies() -> double {
+    let m: Sound = soundNew(0.002, 1000)
+    m.samples[0] = 0.5
+    m.samples[1] = 0.25
+    let s: Sound = m.toStereo()
+    return offInt(s.channels, 2) + off(s.samples[0], 0.5) + off(s.samples[1], 0.5) + off(s.samples[2], 0.25) + off(s.samples[3], 0.25)
+}
+
+// Panning follows the constant-power rule: hard left is all left, the middle is 0.7071 in each, hard right is all right.
+func panned(position: float) -> Sound {
+    let m: Sound = soundNew(0.001, 1000)
+    m.samples[0] = 1.0
+    return m.pan(position)
+}
+
+func checkPanHardLeft() -> double {
+    let s: Sound = panned(0.0 - 1.0)
+    return off(s.samples[0], 1.0) + off(s.samples[1], 0.0)
+}
+
+func checkPanCentre() -> double {
+    let s: Sound = panned(0.0)
+    return off(s.samples[0], 0.70710678) + off(s.samples[1], 0.70710678)
+}
+
+func checkPanHardRight() -> double {
+    let s: Sound = panned(1.0)
+    return off(s.samples[0], 0.0) + off(s.samples[1], 1.0)
+}
+
+// Left squared plus right squared is 1 wherever the sound is placed (the loudness does not change).
+func checkPanKeepsPower() -> double {
+    var worst: float = 0.0
+    for (k = 0; k < 9; k = k + 1) {
+        let s: Sound = panned(k.toFloat() / 4.0 - 1.0)
+        let power: float = s.samples[0] * s.samples[0] + s.samples[1] * s.samples[1]
+        var gap: float = power - 1.0
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > worst) { worst = gap }
+    }
+    return worst.toDouble()
+}
+
+// A mono sound mixed into a stereo one goes into both channels; a stereo one goes channel to channel.
+func checkMixMonoIntoStereo() -> double {
+    let bed: Sound = soundNewChannels(0.004, 1000, 2)
+    let m: Sound = soundNew(0.002, 1000)
+    m.samples[0] = 2.0
+    bed.add(m, 0.001, 1.0)
+    return off(bed.samples[2], 2.0) + off(bed.samples[3], 2.0) + off(bed.samples[0], 0.0)
+}
+
+func checkMixStereoIntoStereo() -> double {
+    let bed: Sound = soundNewChannels(0.004, 1000, 2)
+    bed.add(ramp(), 0.0, 0.5)
+    return off(bed.samples[2], 1.0) + off(bed.samples[3], 10.0) + off(bed.samples[6], 2.0) + off(bed.samples[7], 20.0)
+}
+
+// The loudest sample counts over every channel.
+func checkPeakOverChannels() -> double { return off(ramp().peak(), 40.0) }
+
+func checkNormalizeStereo() -> double {
+    let s: Sound = ramp()
+    s.normalize(1.0)
+    return off(s.samples[7], 1.0) + off(s.samples[6], 0.1)
+}
+
+// Filters run on each channel on its own: a silent right channel stays silent.
+func checkFilterKeepsChannelsApart() -> double {
+    let s: Sound = soundNewChannels(0.1, 8000, 2)
+    for (i = 0; i < 800; i = i + 1) { s.samples[i * 2] = sine(440.0 * i.toFloat() / 8000.0) }
+    s.lowPass(500.0)
+    s.highPass(100.0)
+    s.bell(1000.0, 1.0, 6.0)
+    var rightPeak: float = 0.0
+    for (i = 0; i < 800; i = i + 1) {
+        var level: float = s.samples[i * 2 + 1]
+        if (level < 0.0) { level = 0.0 - level }
+        if (level > rightPeak) { rightPeak = level }
+    }
+    if (s.channel(0).peak() < 0.1) { return 1.0 }
+    return off(rightPeak, 0.0)
+}
+
+// A stereo filter does to each channel what the mono filter does to that channel alone.
+func checkStereoLowPassEqualsMono() -> double {
+    let mono: Sound = soundNew(0.1, 8000)
+    let stereo: Sound = soundNewChannels(0.1, 8000, 2)
+    for (i = 0; i < 800; i = i + 1) {
+        let v: float = sine(1000.0 * i.toFloat() / 8000.0)
+        mono.samples[i] = v
+        stereo.samples[i * 2] = v
+        stereo.samples[i * 2 + 1] = 0.5 * v
+    }
+    mono.lowPass(500.0)
+    stereo.lowPass(500.0)
+    var worst: float = 0.0
+    for (i = 0; i < 800; i = i + 1) {
+        var gapLeft: float = stereo.samples[i * 2] - mono.samples[i]
+        var gapRight: float = stereo.samples[i * 2 + 1] - 0.5 * mono.samples[i]
+        if (gapLeft < 0.0) { gapLeft = 0.0 - gapLeft }
+        if (gapRight < 0.0) { gapRight = 0.0 - gapRight }
+        if (gapLeft > worst) { worst = gapLeft }
+        if (gapRight > worst) { worst = gapRight }
+    }
+    return worst.toDouble()
+}
+
+// Echo delays each channel by whole frames, so a click in the left channel echoes in the left channel only.
+func checkEchoStaysInChannel() -> double {
+    let s: Sound = soundNewChannels(0.5, 1000, 2)
+    s.samples[0] = 1.0
+    s.echo(0.1, 0.5)
+    return off(s.samples[200], 0.5) + off(s.samples[201], 0.0) + off(s.samples[400], 0.25)
+}
+
+// A mono response is applied to every channel; the result is longer by response.count - 1 frames.
+func checkConvolveStereoWithMonoResponse() -> double {
+    let response: Sound = soundNew(0.002, 1000)
+    response.samples[0] = 1.0
+    response.samples[1] = 1.0
+    let out: Sound = ramp().convolve(response)
+    // Frames: 4 + 2 - 1 = 5. Left 1,2,3,4 -> 1,3,5,7,4 and right 10..40 -> 10,30,50,70,40.
+    return offInt(out.count, 5) + offInt(out.channels, 2) + off(out.samples[2], 3.0) + off(out.samples[3], 30.0) + off(out.samples[8], 4.0) + off(out.samples[9], 40.0)
+}
+
+// Saving and loading a stereo file gives the same sound back (to the 16-bit rounding of the file).
+func checkWavRoundTrip() -> double {
+    let s: Sound = soundNewChannels(0.05, 8000, 2)
+    s.tone(0, 440.0, 0.5, 0.0, 0.05)
+    s.samples[1] = 0.25
+    s.saveWav("tests-stereo-roundtrip.wav")
+    let back: Sound = soundLoadWav("tests-stereo-roundtrip.wav")
+    remove("tests-stereo-roundtrip.wav")
+    var worst: float = 0.0
+    for (i = 0; i < back.count * back.channels; i = i + 1) {
+        var gap: float = back.samples[i] - s.samples[i]
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > worst) { worst = gap }
+    }
+    return offInt(back.count, s.count) + offInt(back.channels, 2) + offInt(back.rate, 8000) + worst.toDouble()
+}

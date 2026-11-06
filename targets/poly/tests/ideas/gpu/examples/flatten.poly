@@ -1,0 +1,156 @@
+import "../Metal.poly"
+import "shared/matrix.poly"
+import "shared/picture.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func cornerCoordinate(k: i64, bit: i64) -> float {
+  return (1.0 - 2.0 * (k / bit % 2).toFloat())
+}
+
+func modelMatrix(m: ptr<float>) -> i64 {
+  identity(m)
+  m[11] = (0.0 - 5.0)
+  return 0
+}
+
+func viewMatrix(m: ptr<float>) -> i64 {
+  identity(m)
+  return 0
+}
+
+func projectionMatrix(m: ptr<float>) -> i64 {
+  for (k = 0; k < 16; k = k + 1) {
+    m[k] = 0.0
+  }
+  m[0] = 1.0
+  m[5] = 1.0
+  m[10] = (0.0 - 11.0 / 9.0)
+  m[11] = (0.0 - 20.0 / 9.0)
+  m[14] = (0.0 - 1.0)
+  return 0
+}
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let pipeline: i64 = metalPipeline(device, metalReadFile("flatten.metal"), "transform")
+  if (pipeline == 0) {
+    return 11
+  }
+  let model: ptr<float> = calloc(16, 4).toPtr()
+  let view: ptr<float> = calloc(16, 4).toPtr()
+  let projection: ptr<float> = calloc(16, 4).toPtr()
+  let viewModel: ptr<float> = calloc(16, 4).toPtr()
+  let all: ptr<float> = calloc(16, 4).toPtr()
+  modelMatrix(model)
+  viewMatrix(view)
+  projectionMatrix(projection)
+  multiply4(view, model, viewModel)
+  multiply4(projection, viewModel, all)
+  let corners: ptr<float> = calloc(32, 4).toPtr()
+  for (k = 0; k < 8; k = k + 1) {
+    corners[k * 4] = cornerCoordinate(k, 1)
+    corners[k * 4 + 1] = cornerCoordinate(k, 2)
+    corners[k * 4 + 2] = cornerCoordinate(k, 4)
+    corners[k * 4 + 3] = 1.0
+  }
+  let out: i64 = metalEmptyBuffer(device, 128)
+  if (metalDispatch(device, pipeline, 8, metalBuffer(device, corners.toI64(), 128), metalBuffer(device, all.toI64(), 64), out, 0) == 0) {
+    return 12
+  }
+  let clip: ptr<float> = metalContents(out).toPtr()
+  let picture: ptr<float> = calloc(200 * 200, 4).toPtr()
+  for (p = 0; p < 40000; p = p + 1) {
+    picture[p] = 0.08
+  }
+  if (checkCorners(corners, clip, picture) != 0) {
+    return 13
+  }
+  drawCube(picture, clip)
+  savePicture("flatten.pgm", picture, 200, 200)
+  return 0
+}
+
+func checkCorners(corners: ptr<float>, clip: ptr<float>, picture: ptr<float>) -> i64 {
+  for (k = 0; k < 8; k = k + 1) {
+    let w: float = clip[k * 4 + 3]
+    let distance: float = (5.0 - corners[k * 4 + 2])
+    if (differs(w, distance) == 1) {
+      return 1
+    }
+    let ndcX: float = clip[k * 4] / w
+    let ndcY: float = clip[k * 4 + 1] / w
+    let ndcZ: float = clip[k * 4 + 2] / w
+    if (differs(ndcX, corners[k * 4] / distance) == 1) {
+      return 1
+    }
+    if (differs(ndcY, corners[k * 4 + 1] / distance) == 1) {
+      return 1
+    }
+    if (differs(ndcZ, ((11.0 * distance - 20.0) / (9.0 * distance))) == 1) {
+      return 1
+    }
+  }
+  return 0
+}
+
+func differs(a: float, b: float) -> i64 {
+  var gap: float = a - b
+  if (gap < 0.0) {
+    gap = (0.0 - gap)
+  }
+  if (gap > 0.0005) {
+    return 1
+  }
+  return 0
+}
+
+func screenX(clip: ptr<float>, k: i64) -> float {
+  return (clip[k * 4] / clip[k * 4 + 3] + 1.0) * 0.5 * 200.0
+}
+
+func screenY(clip: ptr<float>, k: i64) -> float {
+  return ((1.0 - (clip[k * 4 + 1] / clip[k * 4 + 3])) * 0.5 * 200.0)
+}
+
+func drawCube(picture: ptr<float>, clip: ptr<float>) -> i64 {
+  for (a = 0; a < 8; a = a + 1) {
+    for (bit = 1; bit < 8; bit = bit * 2) {
+      if (a / bit % 2 == 0) {
+        let b: i64 = a + bit
+        drawLine(picture, screenX(clip, a), screenY(clip, a), screenX(clip, b), screenY(clip, b), (0.55 + 0.4 * (a / 4).toFloat()))
+      }
+    }
+  }
+  for (k = 0; k < 8; k = k + 1) {
+    drawDot(picture, screenX(clip, k), screenY(clip, k))
+  }
+  return 0
+}
+
+func drawLine(picture: ptr<float>, x0: float, y0: float, x1: float, y1: float, tone: float) -> i64 {
+  for (s = 0; s <= 400; s = s + 1) {
+    let t: float = s.toFloat() / 400.0
+    let x: i64 = (x0 + (x1 - x0) * t).toI64()
+    let y: i64 = (y0 + (y1 - y0) * t).toI64()
+    if (x >= 0 && x < 200 && y >= 0 && y < 200) {
+      picture[y * 200 + x] = tone
+    }
+  }
+  return 0
+}
+
+func drawDot(picture: ptr<float>, x: float, y: float) -> i64 {
+  for (dy = 0 - 2; dy <= 2; dy = dy + 1) {
+    for (dx = 0 - 2; dx <= 2; dx = dx + 1) {
+      let px: i64 = x.toI64() + dx
+      let py: i64 = y.toI64() + dy
+      if (px >= 0 && px < 200 && py >= 0 && py < 200) {
+        picture[py * 200 + px] = 1.0
+      }
+    }
+  }
+  return 0
+}

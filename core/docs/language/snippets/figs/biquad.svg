@@ -1,0 +1,36 @@
+<svg viewBox="0 0 700 260" width="100%" role="img" aria-label="The signal flow of a biquad filter">
+<text x="22" y="64" font-size="12" fill="#1b1f24">x[n]</text>
+<line x1="55.0" y1="70.0" x2="110.0" y2="70.0" stroke="#586069" stroke-width="1.5"/><path d="M110.0 70.0 L102.6 73.1 L102.6 66.9 Z" fill="#586069"/>
+<rect x="110" y="55" width="44" height="30" rx="4" fill="#f6f8fa" stroke="#8b949e"/><text x="132" y="74" font-size="12" text-anchor="middle" fill="#1b1f24">&#215; b0</text>
+<rect x="110" y="130" width="44" height="30" rx="4" fill="#f6f8fa" stroke="#8b949e"/><text x="132" y="149" font-size="12" text-anchor="middle" fill="#1b1f24">&#215; b1</text>
+<rect x="110" y="205" width="44" height="30" rx="4" fill="#f6f8fa" stroke="#8b949e"/><text x="132" y="224" font-size="12" text-anchor="middle" fill="#1b1f24">&#215; b2</text>
+<rect x="60" y="100" width="40" height="24" rx="4" fill="#fff8e5" stroke="#8b949e"/><text x="80" y="116" font-size="12" text-anchor="middle" fill="#1b1f24">z&#8315;&#185;</text>
+<rect x="60" y="175" width="40" height="24" rx="4" fill="#fff8e5" stroke="#8b949e"/><text x="80" y="191" font-size="12" text-anchor="middle" fill="#1b1f24">z&#8315;&#185;</text>
+<line x1="80.0" y1="70.0" x2="80.0" y2="100.0" stroke="#586069" stroke-width="1.5"/><path d="M80.0 100.0 L76.9 92.6 L83.1 92.6 Z" fill="#586069"/>
+<line x1="80.0" y1="124.0" x2="80.0" y2="145.0" stroke="#586069" stroke-width="1.5"/><path d="M80.0 145.0 L76.9 137.6 L83.1 137.6 Z" fill="#586069"/>
+<line x1="80.0" y1="145.0" x2="110.0" y2="145.0" stroke="#586069" stroke-width="1.5"/><path d="M110.0 145.0 L102.6 148.1 L102.6 141.9 Z" fill="#586069"/>
+<line x1="80.0" y1="145.0" x2="80.0" y2="175.0" stroke="#586069" stroke-width="1.5"/><path d="M80.0 175.0 L76.9 167.6 L83.1 167.6 Z" fill="#586069"/>
+<line x1="80.0" y1="199.0" x2="80.0" y2="220.0" stroke="#586069" stroke-width="1.5"/><path d="M80.0 220.0 L76.9 212.6 L83.1 212.6 Z" fill="#586069"/>
+<line x1="80.0" y1="220.0" x2="110.0" y2="220.0" stroke="#586069" stroke-width="1.5"/><path d="M110.0 220.0 L102.6 223.1 L102.6 216.9 Z" fill="#586069"/>
+<circle cx="320" cy="70" r="16" fill="#eef7ee" stroke="#1b7f3b"/><text x="320" y="75" font-size="16" text-anchor="middle" fill="#1b7f3b">&#931;</text>
+<line x1="154.0" y1="70.0" x2="304.0" y2="70.0" stroke="#586069" stroke-width="1.5"/><path d="M304.0 70.0 L296.6 73.1 L296.6 66.9 Z" fill="#586069"/>
+<path d="M154 145 L240 145 L240 90 L320 90 L320 86" fill="none" stroke="#586069" stroke-width="1.5"/><line x1="320.0" y1="98.0" x2="320.0" y2="87.0" stroke="#586069" stroke-width="1.5"/><path d="M320.0 87.0 L323.1 94.4 L316.9 94.4 Z" fill="#586069"/>
+<path d="M154 220 L270 220 L270 100 L305 82" fill="none" stroke="#586069" stroke-width="1.5"/>
+<line x1="336.0" y1="70.0" x2="560.0" y2="70.0" stroke="#586069" stroke-width="1.5"/><path d="M560.0 70.0 L552.6 73.1 L552.6 66.9 Z" fill="#586069"/>
+<text x="565" y="74" font-size="12" fill="#1b1f24">y[n]</text>
+<rect x="470" y="130" width="44" height="30" rx="4" fill="#f6f8fa" stroke="#8b949e"/><text x="492" y="149" font-size="12" text-anchor="middle" fill="#1b1f24">&#215; &#8722;a1</text>
+<rect x="470" y="205" width="44" height="30" rx="4" fill="#f6f8fa" stroke="#8b949e"/><text x="492" y="224" font-size="12" text-anchor="middle" fill="#1b1f24">&#215; &#8722;a2</text>
+<rect x="520" y="100" width="40" height="24" rx="4" fill="#fff8e5" stroke="#8b949e"/><text x="540" y="116" font-size="12" text-anchor="middle" fill="#1b1f24">z&#8315;&#185;</text>
+<rect x="520" y="175" width="40" height="24" rx="4" fill="#fff8e5" stroke="#8b949e"/><text x="540" y="191" font-size="12" text-anchor="middle" fill="#1b1f24">z&#8315;&#185;</text>
+<path d="M500 70 L500 60" stroke="none"/>
+<path d="M540 70 L540 100" fill="none" stroke="#586069" stroke-width="1.5"/><line x1="540.0" y1="90.0" x2="540.0" y2="100.0" stroke="#586069" stroke-width="1.5"/><path d="M540.0 100.0 L536.9 92.6 L543.1 92.6 Z" fill="#586069"/>
+<line x1="540.0" y1="124.0" x2="540.0" y2="145.0" stroke="#586069" stroke-width="1.5"/><path d="M540.0 145.0 L536.9 137.6 L543.1 137.6 Z" fill="#586069"/>
+<line x1="540.0" y1="145.0" x2="514.0" y2="145.0" stroke="#586069" stroke-width="1.5"/><path d="M514.0 145.0 L521.4 141.9 L521.4 148.1 Z" fill="#586069"/>
+<line x1="540.0" y1="145.0" x2="540.0" y2="175.0" stroke="#586069" stroke-width="1.5"/><path d="M540.0 175.0 L536.9 167.6 L543.1 167.6 Z" fill="#586069"/>
+<line x1="540.0" y1="199.0" x2="540.0" y2="220.0" stroke="#586069" stroke-width="1.5"/><path d="M540.0 220.0 L536.9 212.6 L543.1 212.6 Z" fill="#586069"/>
+<line x1="540.0" y1="220.0" x2="514.0" y2="220.0" stroke="#586069" stroke-width="1.5"/><path d="M514.0 220.0 L521.4 216.9 L521.4 223.1 Z" fill="#586069"/>
+<path d="M470 145 L380 145 L380 92 L336 76" fill="none" stroke="#586069" stroke-width="1.5"/>
+<path d="M470 220 L400 220 L400 100 L330 84" fill="none" stroke="#586069" stroke-width="1.5"/>
+<text x="60" y="250" font-size="11" fill="#586069">the past INPUTS (left, feed forward)</text>
+<text x="430" y="250" font-size="11" fill="#586069">the past OUTPUTS (right, fed back)</text>
+</svg>

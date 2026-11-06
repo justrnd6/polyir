@@ -1,0 +1,43 @@
+import "Check.poly"
+
+func checkFloatRemainder() -> double {
+  let a: float = 7.5
+  let b: float = 2.0
+  return off(a % b, 1.5)
+}
+
+func checkFloatRemainderKeepsTheSignOfTheLeftNumber() -> double {
+  let a: float = (0.0 - 7.5)
+  let b: float = 2.0
+  return off(a % b, (0.0 - 1.5))
+}
+
+func checkFloatRemainderIgnoresTheSignOfTheRightNumber() -> double {
+  let a: float = 7.5
+  let b: float = (0.0 - 2.0)
+  return off(a % b, 1.5)
+}
+
+func checkFloatRemainderOfNumbersThatDivideEvenly() -> double {
+  let b: float = 47.0
+  let c: float = 97.0
+  return off((2867.0 % b), 0.0) + off((5969.0 % b), 0.0) + off((9409.0 % c), 0.0)
+}
+
+func checkFloatRemainderOfZero() -> double {
+  let a: float = 0.0
+  let b: float = 5.0
+  return off(a % b, 0.0)
+}
+
+func checkFloatRemainderOfAFractionOfOne() -> double {
+  let a: float = 0.75
+  let b: float = 1.0
+  return off(a % b, 0.75)
+}
+
+func checkWholeNumberRemainder() -> double {
+  let a: i64 = 17
+  let b: i64 = 5
+  return offInt(a % b, 2) + offInt((0 - a) % b, 0 - 2)
+}

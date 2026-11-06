@@ -1,0 +1,674 @@
+# Java
+source: polyir
+target: java
+style: imported qualified, indent 4, braces same-line, names keep, paths ., qualify relative, generics kept, locals unique, extension java
+
+// A checked .poly file as one Java 21 file: every declaration is a static member of the file's class (`final class Check`), so a
+// module is a nested class (`Geometry.Point`). A struct is a record, or a class with equals and hashCode when a field is
+// `var`. Whole numbers are Java's own, which wrap as polyir's do; an unsigned one is kept in range with a mask, a u64 is a
+// long read with Long's unsigned operations. A closure is an `Fn1<A, R>` (or `Act1<A>` when it gives nothing); a variable
+// a closure changes is a one-element array. A coroutine runs on a virtual thread of its own.
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  final class {name} {
+      {items}
+
+      {support}
+  }
+program(support, items, main) :=
+  {imports}
+
+  final class {name} {
+      {items}
+
+      public static void main(String[] args) {
+          main();
+      }
+
+      {support}
+  }
+program(support, items, main: int) :=
+  {imports}
+
+  final class {name} {
+      {items}
+
+      public static void main(String[] args) {
+          System.exit((int) main());
+      }
+
+      {support}
+  }
+
+module(name, items) :=
+  static final class {name} {
+      private {name}() {}
+
+      {items}
+  }
+
+// A struct is a record: its fields can only be read. One with a `var` field is a class that compares by its fields.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  record {name}<{typeParams}>({fields.param}) {
+      {methods}
+
+      {statics}
+
+      {nested}
+  }
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  record {name}<{typeParams}>({fields.param}) implements {implements} {
+      {methods}
+
+      {statics}
+
+      {nested}
+  }
+struct(name, typeParams, fields, methods, nested, statics, isMutable) :=
+  static final class {name}<{typeParams}> {
+      {fields}
+
+      {name}({fields.param}) {
+          {fields.init}
+      }
+
+      {methods}
+
+      {name} copy() {
+          return new {name}({fields.self});
+      }
+
+      @Override
+      public boolean equals(Object other) {
+          return other instanceof {name} that && Arrays.equals(new Object[] {{fields.self}}, new Object[] {{fields.that}});
+      }
+
+      @Override
+      public int hashCode() {
+          return Objects.hash({fields.self});
+      }
+
+      {statics}
+
+      {nested}
+  }
+  uses: arrays, objects
+struct(name, typeParams, fields, methods, nested, statics, implements, isMutable) :=
+  static final class {name}<{typeParams}> implements {implements} {
+      {fields}
+
+      {name}({fields.param}) {
+          {fields.init}
+      }
+
+      {methods}
+
+      {name} copy() {
+          return new {name}({fields.self});
+      }
+
+      @Override
+      public boolean equals(Object other) {
+          return other instanceof {name} that && Arrays.equals(new Object[] {{fields.self}}, new Object[] {{fields.that}});
+      }
+
+      @Override
+      public int hashCode() {
+          return Objects.hash({fields.self});
+      }
+
+      {statics}
+
+      {nested}
+  }
+  uses: arrays, objects
+field(name, type)                   := final {type} {name};
+field(name, type, value)            := final {type} {name};
+field(name, type, isMutable)        := {type} {name};
+field(name, type, value, isMutable) := {type} {name};
+field.param(name, type)             := {type} {name}
+field.param(name, type, value)      := {type} {name}
+field.init(name, type)              := this.{name} = {name};
+field.init(name, type, value)       := this.{name} = {name};
+field.self(name, type)              := {name}
+field.self(name, type, value)       := {name}
+field.that(name, type)              := that.{name}
+field.that(name, type, value)       := that.{name}
+
+method(name, params, result, body)  := public {result} {name}({params}) {body}
+static(name, params, result, body)  := static {result} {name}({params}) {body}
+func(name, typeParams, params, result, body) := static <{typeParams}> {result} {name}({params}) {body}
+
+// A coroutine gives a Coroutine running its body, which hands each value over with `give`.
+coro(name, params, yields, body) :=
+  static Coroutine<{yields.boxed}> {name}({params}) {
+      return new Coroutine<>(coroutine -> {
+          {body}
+      });
+  }
+  uses: variant, coroutine
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) := static {result} {name}({params}) {body}
+param(name, type)                   := {type} {name}
+param.arg(name, type)               := {name}
+param.bare(name, type)              := {name}
+
+interface(name, methods)            := interface {name} {methods}
+signature(name, params, result)     := {result} {name}({params});
+
+// The C functions Java has, through Math; any other one it cannot call.
+extern(name, params, result)        := unsupported "Java cannot call a C function"
+extern(name: sin cos tan sqrt floor ceil log exp abs pow, params, result) := static {result} {name}({params}) { return Math.{name}({params.arg}); }
+extern(name: fabs labs llabs, params, result) := static {result} {name}({params}) { return Math.abs({params.arg}); }
+extern(name: fmax, params, result)  := static double fmax(double x, double y) { return Math.max(x, y); }
+extern(name: fmin, params, result)  := static double fmin(double x, double y) { return Math.min(x, y); }
+extern(name: sinf, params, result)  := static float sinf(float x) { return (float) Math.sin(x); }
+extern(name: cosf, params, result)  := static float cosf(float x) { return (float) Math.cos(x); }
+extern(name: tanf, params, result)  := static float tanf(float x) { return (float) Math.tan(x); }
+extern(name: sqrtf, params, result) := static float sqrtf(float x) { return (float) Math.sqrt(x); }
+extern(name: floorf, params, result) := static float floorf(float x) { return (float) Math.floor(x); }
+extern(name: ceilf, params, result) := static float ceilf(float x) { return (float) Math.ceil(x); }
+extern(name: logf, params, result)  := static float logf(float x) { return (float) Math.log(x); }
+extern(name: expf, params, result)  := static float expf(float x) { return (float) Math.exp(x); }
+extern(name: fabsf, params, result) := static float fabsf(float x) { return Math.abs(x); }
+extern(name: powf, params, result)  := static float powf(float x, float y) { return (float) Math.pow(x, y); }
+extern(name: fmaxf, params, result) := static float fmaxf(float x, float y) { return Math.max(x, y); }
+extern(name: fminf, params, result) := static float fminf(float x, float y) { return Math.min(x, y); }
+extern(name: getchar, params, result) :=
+  static {result} getchar() {
+      try {
+          return ({result}) System.in.read();
+      } catch (java.io.IOException failed) {
+          return -1;
+      }
+  }
+extern(name: putchar, params, result) :=
+  static {result} putchar({params}) {
+      System.out.write((int) {params.arg});
+      System.out.flush();
+      return {params.arg};
+  }
+
+global(name, type, value)           := static {type} {name} = {value};
+import(module)                      := unsupported "Java has no modules of another language to import"
+import(module, alias)               := unsupported "Java has no modules of another language to import"
+// An imported .poly file is its own class, which names its declarations (`Check.offInt`).
+use(name, path, names)              :=
+
+## statements
+let(name, type, value)              := final {type} {name} = {value};
+var(name, type)                     := {type} {name} = {type.zero};
+var(name, type, value)              := {type} {name} = {value};
+// A variable a closure changes is a one-element array, which the closure can hold.
+var(name, type, boxed)              := final {type}[] {name} = {{type.zero}};
+var(name, type, value, boxed)       := final {type}[] {name} = {{value}};
+assign(target, value)               := {target} = {value};
+store(object, index, value)         := {object}.set({index.int}, {value});
+store(object: map mutmap, index, value) := {object}.put({index}, {value});
+store(object: fixed buffer vec ptr, index, value) := {object}[{index.int}] = {value};
+store(object: sparse, index, value) := {object}.set({value}, {index}, 0L);
+store(object: grid matrix tensor, index, value) := {object}.set({value}, {index});
+store(object, indices, value)       := {object}.set({value}, {indices});
+expr(value)                         := {value.statement};
+if(cond, then)                      := if ({cond}) {then}
+if(cond, then, else)                := if ({cond}) {then} else {else}
+if(cond, then, elseIf)              := if ({cond}) {then} else {elseIf}
+while(cond, body)                   := while ({cond}) {body}
+// A for loop declares one counter in Java's way; several counters, or one used after the loop, are declared before it.
+for(counters, cond, steps, body) :=
+  {
+      {counters.declare}
+      while ({cond}) {
+          {body}
+          {steps.assign}
+      }
+  }
+for(counters: one, cond, steps, body) := for ({counters}; {cond}; {steps}) {body}
+for(counters, cond, steps, body, usedAfter) := lower
+counter(name, type, value)          := {type} {name} = {value}
+counter.declare(name, type, value)  := {type} {name} = {value};
+step(name, value)                   := {name} = {value}
+step.assign(name, value)            := {name} = {value};
+foreach(name, source, body)         := for (var {name} : {source}) {body}
+foreach(name, source: map mutmap, body) := for (var {name} : {source}.keySet()) {body}
+return                              := return;
+return(value)                       := return {value};
+try(body, name, handler) :=
+  try {body} catch (Thrown thrown) {
+      final long {name} = thrown.value;
+      {handler}
+  }
+  uses: thrown
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  try {body} catch (RuntimeException thrown) {
+      {cleanup}
+      throw thrown;
+  }
+throw(value)                        := throw new Thrown({value});
+  uses: thrown
+// A `yield` of a coroutine that was closed ends its body.
+yield(value) :=
+  if (coroutine.give({value})) {
+      return;
+  }
+// A switch of blocks, which `match` and `switch` lower to: Java's `switch` with arrows (no fall-through) for a string or a
+// number of 32 bits or fewer; a `long`, a flag or a sum is written as its `if` chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: string i8 i16 i32, arms) :=
+  switch ({value}) {
+      {arms}
+  }
+select(value: string i8 i16 i32, arms, else) :=
+  switch ({value}) {
+      {arms}
+      default -> {else}
+  }
+arm(keys, body)                     := case {keys} -> {body}
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the cases of a loop around a switch on `label`; each case ends with a jump or a
+// return.
+machine(state, cases) :=
+  machine:
+  while (true) {
+      switch ((int) {state}) {
+          {cases}
+      }
+  }
+case(state, number, body)           := case {number}: {body}
+jump(state, number) :=
+  {state} = {number}L;
+  continue machine;
+
+## expressions
+int(value)                          := {value}
+int(value: i64 u64 u32)             := {value}L
+int(value: i8)                      := (byte) {value}
+int(value: i16)                     := (short) {value}
+float(value)                        := {value}
+float(value: float)                 := {value}f
+bool(value)                         := {value}
+string(value)                       := "{value}"
+unit                                := null
+name(name)                          := {name}
+name(name, boxed)                   := {name}[0]
+this                                := this
+// A function as a value is a method reference: `funcptr::doubleIt` in this file, `Check::offInt` in another.
+funcref(name)                       := {file}::{name}
+funcref(name, holder, own)          := {holder}::{own}
+
+// i32 and i64 wrap as Java's int and long do; i8 and i16 are cast back, the unsigned types masked.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: i8, op: + - * / % << >>, right) := (byte) ({left} {op} {right})
+binary(left: i16, op: + - * / % << >>, right) := (short) ({left} {op} {right})
+binary(left: u8, op: + - * <<, right) := ({left} {op} {right}) & 0xFF
+binary(left: u16, op: + - * <<, right) := ({left} {op} {right}) & 0xFFFF
+binary(left: u32, op: + - * <<, right) := ({left} {op} {right}) & 0xFFFFFFFFL
+binary(left: u64, op: /, right)     := Long.divideUnsigned({left}, {right})
+binary(left: u64, op: %, right)     := Long.remainderUnsigned({left}, {right})
+binary(left: u64, op: >>, right)    := {left} >>> {right}
+binary(left: u64, op: <, right)     := Long.compareUnsigned({left}, {right}) < 0
+binary(left: u64, op: <=, right)    := Long.compareUnsigned({left}, {right}) <= 0
+binary(left: u64, op: >, right)     := Long.compareUnsigned({left}, {right}) > 0
+binary(left: u64, op: >=, right)    := Long.compareUnsigned({left}, {right}) >= 0
+// `==` compares what two values hold: numbers and flags with `==`, anything else with Objects.equals.
+binary(left, op: ==, right)         := Objects.equals({left}, {right})
+  uses: objects
+binary(left, op: !=, right)         := !Objects.equals({left}, {right})
+  uses: objects
+binary(left: number bool, op: == !=, right) := {left} {op} {right}
+binary(left: string, op: +, right)  := {left} + {right}
+binary(left: array mutarray, op: +, right) := concat({left}, {right})
+  uses: concat
+// A vector's operators work lane by lane (its lanes are not kept in an integer's range or rounded to a float).
+binary(left: vec, op: + - * / %, right) := lanes({left}, {right}, (x, y) -> x {op} y)
+  uses: lanes
+
+unary(op, operand)                  := {op}{operand}
+unary(op: - ~, operand: i8)         := (byte) {op}{operand}
+unary(op: - ~, operand: i16)        := (short) {op}{operand}
+unary(op: - ~, operand: u8)         := {op}{operand} & 0xFF
+unary(op: - ~, operand: u16)        := {op}{operand} & 0xFFFF
+unary(op: - ~, operand: u32)        := {op}{operand} & 0xFFFFFFFFL
+
+// A number of one type as another, kept in the new type's range.
+cast(value, type)                   := ({type}) {value}
+// A pointer is a list here, so it has no address to turn into a number, or back.
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: u8)               := (int) {value} & 0xFF
+cast(value, type: u16)              := (int) {value} & 0xFFFF
+cast(value, type: u32)              := (long) {value} & 0xFFFFFFFFL
+cast(value, type: u64)              := (long) {value}
+cast(value: bool, type: i64 u64 u32) := ({value} ? 1L : 0L)
+cast(value: bool, type: i8 i16 i32 u8 u16 float double) := ({type}) ({value} ? 1 : 0)
+cast(value: number, type: bool)     := {value} != 0
+// A narrowing cast goes through the value's own primitive type, so a boxed value (a generic's) can be narrowed too.
+cast(value: double, type: i8 i16 i32 i64 float) := ({type}) (double) {value}
+cast(value: float, type: i8 i16 i32 i64) := ({type}) (float) {value}
+cast(value: i64, type: i8 i16 i32 float) := ({type}) (long) {value}
+cast(value: i32, type: i8 i16)      := ({type}) (int) {value}
+cast(value: u64, type: double)      := (double) Long.toUnsignedString({value}).length() > 19 ? Double.parseDouble(Long.toUnsignedString({value})) : (double) {value}
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := {cond} ? {then} : {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+methodcall(object, name, args)      := {object}.{name}({args})
+invoke(callee, args)                := {callee}.call({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object}.{name}
+
+// A list is indexed by an int. A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := {object}.get({index.int})
+index(object: fixed buffer vec ptr, index, type) := {object}[{index.int}]
+index(object: map mutmap, index, type) := {object}.getOrDefault({index}, {type.zero})
+index(object: sparse, index, type)  := {object}.get({index}, 0L)
+index(object: grid matrix tensor, index, type) := {object}.get({index})
+index(object, indices, type)        := {object}.get({indices})
+any.int(value)                      := (int) {value}
+any.int(value: i8 i16 i32 u8 u16)   := {value}
+int.int(value)                      := {value}
+
+new(name, values)                   := new {name}({values})
+new(name, typeArgs, values)         := new {name}<>({values})
+init(name, value)                   := {value}
+list(values)                        := new ArrayList<>(List.of({values}))
+  uses: arrayList, list
+vec(values, type)                   := new {type} {{values}}
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+closure(params, result, body)       := ({params.bare}) -> {body}
+lambda(params, value)               := ({params.bare}) -> {value}
+some(type, value)                   := {value}
+none(type)                          := null
+// An `either` is an Either: `Either.<Long, String>ok(1L)`, with `isOk`, `okValue()` and `errValue()`.
+ok(type, value)                     := {type.ok}({value})
+  uses: either
+err(type, value)                    := {type.err}({value})
+  uses: either
+variant(type, case, value)          := new Variant({case}L, {value})
+  uses: variant
+// A whole number goes in as a Long, as the case reads it back: a literal alone would be an Integer.
+variant(type, case, value: i64)     := new Variant({case}L, (long) ({value}))
+  uses: variant
+interp(pieces)                      := lower
+text(value)                         := "{value}"
+hole(value)                         := {value}
+
+## builtins
+// Sizes are longs (i64) in the program. A string counts its UTF-8 bytes, as on every target.
+len(object)                         := (long) {object}.size()
+len(object: fixed buffer vec ptr)   := (long) {object}.length
+len(object: string)                 := textLength({object})
+  uses: text
+capacity(object)                    := (long) {object}.size()
+capacity(object: fixed buffer vec ptr) := (long) {object}.length
+rows(object)                        := (long) {object}.dims[0]
+cols(object)                        := (long) {object}.dims[1]
+dim(object, axis)                   := (long) {object}.dims[{axis.int}]
+
+// A push whose list is not used is Java's add; one used as a value gives the list (`pushed`).
+push(object, value)                 := pushed({object}, {value})
+  uses: pushed
+push.statement(object, value)       := {object}.add({value})
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := (long) {value}
+hash(value: bool)                   := ({value} ? 1L : 0L)
+hash(value: string)                 := hashText({value})
+  uses: hashText
+
+shuffle(object, lanes)              := shuffle({object}, {lanes.int})
+  uses: shuffle
+atomicLoad(object, order)           := unsupported "this Java has no memory shared with C to read atomically"
+atomicStore(object, value, order)   := unsupported "this Java has no memory shared with C to write atomically"
+atomicRmw(object, op, value, order) := unsupported "this Java has no memory shared with C to change atomically"
+cmpxchg(object, expected, value, success, failure) := unsupported "this Java has no memory shared with C to change atomically"
+fence(order)                        := unsupported "this Java has no memory shared with C to order"
+
+// A variant is a Variant (the number of its case and its value), an `either` an Either.
+tag(object)                         := {object}.tag()
+isCase(object, case)                := {object}.tag() == {case}L
+unwrapAt(object, case, type)        := ({type.boxed}) {object}.value()
+isOk(object)                        := {object}.isOk
+isErr(object)                       := !{object}.isOk
+unwrapOk(object)                    := {object}.okValue()
+unwrapErr(object)                   := {object}.errValue()
+isSome(object)                      := {object} != null
+isNone(object)                      := {object} == null
+unwrap(object)                      := present({object})
+  uses: fail, present
+
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+yielded(value)                      := coroutine.give({value})
+
+// `copy`, `freeze` and `thaw` make a new collection holding the same items; a record cannot change, so it is its own copy, and a
+// class with `var` fields has a `copy()`.
+copy(object)                        := {object}
+copy(object, isMutable)             := {object}.copy()
+copy(object: array mutarray)        := new ArrayList<>({object})
+  uses: arrayList
+copy(object: map mutmap)            := new HashMap<>({object})
+  uses: hashMap
+copy(object: set mutset)            := new HashSet<>({object})
+  uses: hashSet
+copy(object: fixed buffer vec)      := {object}.clone()
+copy(object: grid matrix tensor sparse) := {object}.copy()
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := withItem({object}, {value})
+  uses: with
+with(object, key, value)            := withEntry({object}, {key}, {value})
+  uses: with
+has(object, key)                    := {object}.contains({key})
+has(object: map mutmap, key)        := {object}.containsKey({key})
+add(object, value)                  := {object}.add({value})
+remove(object, key)                 := {object}.remove({key})
+remove(object: map mutmap, key)     := {object}.remove({key}) != null
+truncate(object, size)              := truncate({object}, {size})
+  uses: truncate
+
+str(value)                          := String.valueOf({value})
+str(value: i8 u8)                   := String.valueOf((char) ({value} & 0xFF))
+str(value: u64)                     := Long.toUnsignedString({value})
+str(value: string)                  := {value}
+charAt(object, index)               := textByte({object}, {index})
+  uses: text
+slice(object, from, to)             := textSlice({object}, {from}, {to})
+  uses: text
+find(object, part, from)            := textFind({object}, {part}, {from})
+  uses: text
+print(value)                        := System.out.println({value})
+fail(value)                         := fail({value})
+  uses: fail
+
+## types
+i8                                  := byte
+i16                                 := short
+i32                                 := int
+i64                                 := long
+u8                                  := int
+u16                                 := int
+u32                                 := long
+u64                                 := long
+bool                                := boolean
+float                               := float
+double                              := double
+string                              := String
+void                                := void
+struct(name)                        := {name}
+instance(name, args)                := {name}<{args.boxed}>
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}<{args.boxed}>
+array(elem)                         := ArrayList<{elem.boxed}>
+  uses: arrayList
+mutarray(elem)                      := ArrayList<{elem.boxed}>
+  uses: arrayList
+map(key, value)                     := HashMap<{key.boxed}, {value.boxed}>
+  uses: hashMap
+mutmap(key, value)                  := HashMap<{key.boxed}, {value.boxed}>
+  uses: hashMap
+set(elem)                           := HashSet<{elem.boxed}>
+  uses: hashSet
+mutset(elem)                        := HashSet<{elem.boxed}>
+  uses: hashSet
+optional(elem)                      := {elem.boxed}
+either(ok, err)                     := Either<{ok.boxed}, {err.boxed}>
+variant(cases)                      := Variant
+// A function type is named for its number of parameters: `Fn2<Long, String, Boolean>`, or `Act2<...>` when it gives nothing.
+closure(params, result)             := Fn{arity}<{params.boxed}, {result.boxed}>
+  uses: functions
+closure(params: empty, result)      := Fn0<{result.boxed}>
+  uses: functions
+closure(params, result: void)       := Act{arity}<{params.boxed}>
+  uses: functions
+closure(params: empty, result: void) := Act0
+  uses: functions
+func(params, result)                := Fn{arity}<{params.boxed}, {result.boxed}>
+  uses: functions
+func(params: empty, result)         := Fn0<{result.boxed}>
+  uses: functions
+func(params, result: void)          := Act{arity}<{params.boxed}>
+  uses: functions
+func(params: empty, result: void)   := Act0
+  uses: functions
+// A pointer is a kernel's buffer, indexed as an array; a pointer to a function is the function.
+ptr(elem)                           := {elem}[]
+ptr(elem: func closure)             := {elem}
+coro(elem)                          := Coroutine<{elem.boxed}>
+vec(elem, size)                     := {elem}[]
+matrix(elem, size)                  := Grid<{elem.boxed}>
+fixed(elem, size)                   := {elem}[]
+buffer(elem, size)                  := {elem}[]
+grid(elem, rows, cols)              := Grid<{elem.boxed}>
+tensor(elem, dims)                  := Grid<{elem.boxed}>
+sparse(elem)                        := Sparse<{elem.boxed}>
+
+// A type inside <...> is a class: `boxed` writes Long for long.
+any.boxed(value)                    := {value}
+i8.boxed                            := Byte
+i16.boxed                           := Short
+i32.boxed                           := Integer
+i64.boxed                           := Long
+u8.boxed                            := Integer
+u16.boxed                           := Integer
+u32.boxed                           := Long
+u64.boxed                           := Long
+bool.boxed                          := Boolean
+float.boxed                         := Float
+double.boxed                        := Double
+void.boxed                          := Void
+
+either.ok(ok, err)                  := Either.<{ok.boxed}, {err.boxed}>ok
+either.err(ok, err)                 := Either.<{ok.boxed}, {err.boxed}>err
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := null
+i8.zero                             := (byte) 0
+i16.zero                            := (short) 0
+i32.zero                            := 0
+i64.zero                            := 0L
+u8.zero                             := 0
+u16.zero                            := 0
+u32.zero                            := 0L
+u64.zero                            := 0L
+bool.zero                           := false
+float.zero                          := 0.0f
+double.zero                         := 0.0
+string.zero                         := ""
+array.zero(elem)                    := new ArrayList<>()
+  uses: arrayList
+mutarray.zero(elem)                 := new ArrayList<>()
+  uses: arrayList
+map.zero(key, value)                := new HashMap<>()
+  uses: hashMap
+mutmap.zero(key, value)             := new HashMap<>()
+  uses: hashMap
+set.zero(elem)                      := new HashSet<>()
+  uses: hashSet
+mutset.zero(elem)                   := new HashSet<>()
+  uses: hashSet
+fixed.zero(elem, size)              := new {elem}[{size}]
+buffer.zero(elem, size)             := new {elem}[{size}]
+vec.zero(elem, size)                := new {elem}[{size}]
+grid.zero(elem, rows, cols)         := new Grid<>(new int[] {{rows}, {cols}}, {elem.zero})
+  uses: grid
+matrix.zero(elem, size)             := new Grid<>(new int[] {{size}, {size}}, {elem.zero})
+  uses: grid
+tensor.zero(elem, dims)             := new Grid<>(new int[] {{dims}}, {elem.zero})
+  uses: grid
+sparse.zero(elem)                   := new Sparse<>({elem.zero})
+  uses: sparse
+
+## operators
+=== := ==
+!== := !=
+levels: ->, ?, ||, &&, |, ^, &, == !=, < <= > >= instanceof, << >> >>>, + -, * / %
+
+## reserved
+// Java's own words, and the names its helpers and built-ins use: a name that is one of them gets a _ after it.
+abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally
+float for goto if implements import instanceof int interface long native new package private protected public return short
+static strictfp super switch synchronized this throw throws transient try void volatile while true false null var record
+yield sealed permits when
+Main String Object Long Integer Short Byte Boolean Double Float Void Math System Objects Arrays List ArrayList HashMap HashSet
+Map Set Thread Coroutine Variant Either Thrown Grid Sparse Fn0 Fn1 Fn2 Fn3 Fn4 Act0 Act1 Act2 Act3 Act4 coroutine
+fail present pushed truncate withItem withEntry concat lanes textLength textByte textSlice textFind hashText utf8 machine
+
+## imports
+// Each is written once at the top when a rule or a support file that uses it is written.
+arrayList := import java.util.ArrayList;
+arrays := import java.util.Arrays;
+hashMap := import java.util.HashMap;
+hashSet := import java.util.HashSet;
+list := import java.util.List;
+objects := import java.util.Objects;
+
+## support
+// Each file is written after the imports and files its `uses:` line names.
+fail := runtime/Fail.java
+present := runtime/Present.java
+thrown := runtime/Thrown.java
+either := runtime/Either.java
+  uses: objects
+variant := runtime/Variant.java
+coroutine := runtime/Coroutine.java
+pushed := runtime/Pushed.java
+  uses: arrayList
+truncate := runtime/Truncate.java
+  uses: arrayList
+with := runtime/With.java
+  uses: arrayList, hashMap, hashSet
+concat := runtime/Concat.java
+  uses: arrayList
+functions := runtime/Functions.java
+text := runtime/Text.java
+  uses: arrays
+hashText := runtime/HashText.java
+grid := runtime/Grid.java
+  uses: arrays
+sparse := runtime/Sparse.java
+  uses: arrayList
+lanes := runtime/Lanes.java
+shuffle := runtime/Shuffle.java
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code.
+line := //# from {file}:{line}:{column} {code}

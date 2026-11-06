@@ -1,0 +1,4 @@
+func main() -> i64 {
+  var a: i64 = 1
+  return nothere
+}

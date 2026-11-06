@@ -1,0 +1,13 @@
+ CPU ms  GPU ms  launches   problem
+     13      78         1   SAXPY, 4,194,304 numbers (map)
+      0      15        16   prefix sum, 65,536 numbers (scan)
+     37       2         1   matrix multiply, 256 x 256 (gather)
+    250     172       200   Game of Life, 256 x 256, 200 generations (stencil)
+     22       2         1   N-body gravity, 2,048 bodies (all pairs)
+    158      27         1   Monte Carlo pi, 16.7 million random points
+    estimate of pi from the GPU's points: 3.141
+      2     410      2048   sort, 2,048 numbers (odd-even sort)
+
+Splitting a problem into parts (partitioning):
+    Monte Carlo split into 4 launches of 16,384 threads: every thread's count equals the single launch's
+    Life split into top and bottom halves with swapped boundary rows: identical to the whole board for 20 generations

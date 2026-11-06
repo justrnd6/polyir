@@ -1,0 +1,35 @@
+func offText(got: string, want: string) -> double {
+  if (got == want) {
+    return 0.0
+  }
+  return 1.0
+}
+
+func checkFirstAndLast() -> double {
+  let xs: mutarray<i64> = [3, 1, 4]
+  let words: array<string> = ["a", "b"]
+  return offText("${first(xs)} ${last(xs)} ${first(words)}${last(words)}", "3 4 ab")
+}
+
+func checkDrop() -> double {
+  let xs: mutarray<i64> = [1, 2, 3]
+  let rest: mutarray<i64> = drop(xs, 1)
+  let none: mutarray<i64> = drop(xs, 5)
+  return offText("${rest.len()} ${rest[0]} ${rest[1]} ${none.len()}", "2 2 3 0")
+}
+
+func first<T>(xs: array<T>) -> T {
+  return xs[0]
+}
+
+func last<T>(xs: array<T>) -> T {
+  return xs[xs.len() - 1]
+}
+
+func drop<T>(xs: array<T>, n: i64) -> mutarray<T> {
+  let out: mutarray<T> = mutarray<T>()
+  for (i = n; i < xs.len(); i = i + 1) {
+    out.push(xs[i])
+  }
+  return out
+}

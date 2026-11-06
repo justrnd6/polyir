@@ -1,0 +1,33 @@
+func isSpaceChar(c: i8) -> bool {
+  return c == 32 || c == 9 || c == 10 || c == 13
+}
+
+func trim(s: string) -> string {
+  var from: i64 = 0
+  for (; from < s.len() && isSpaceChar(s[from]); ) {
+    from = from + 1
+  }
+  var to: i64 = s.len()
+  for (; to > from && isSpaceChar(s[to - 1]); ) {
+    to = to - 1
+  }
+  return s.slice(from, to)
+}
+
+func main() -> i64 {
+  print("hello from polyir")
+  let name: string = "café"
+  let n: i64 = 3
+  print("${name} has ${str(name.len())} bytes; ${str(n)} + 1 = ${str(n + 1)}")
+  print("a tab:\tand a quote: \"done\"")
+  print(trim("a text block" + "\n" + "  keeps its inner indent" + "\n"))
+  print(name.slice(0, 3))
+  print(str(name.find("é", 0)))
+  print(str(name.find("tea", 0)))
+  print(str(name.len() * 10))
+  print(str(name == "café"))
+  let first: i8 = name[0]
+  print(str(first))
+  print(str(first))
+  return name.len() + name.find("é", 0) * 10
+}

@@ -1,0 +1,81 @@
+// Which tool builds each target, Gradle-style: a convention per target, which a Polyfile's `use TOOL for TARGET`
+// changes. `direct` means polyir builds and runs the target itself (`polyir main.poly --run --target T`).
+import "Project.poly"
+
+func toolFor(p: Project, target: string) -> string {
+  for (u in p.uses) {
+    if (u.target == target) {
+      return u.tool
+    }
+  }
+  return conventionFor(target)
+}
+
+func conventionFor(target: string) -> string {
+  if (target == "c" || target == "cpp") {
+    return "cmake"
+  }
+  if (target == "java" || target == "kotlin") {
+    return "gradle"
+  }
+  if (target == "rust") {
+    return "cargo"
+  }
+  if (target == "js" || target == "ts") {
+    return "npm"
+  }
+  if (target == "python") {
+    return "pip"
+  }
+  return "direct"
+}
+
+// The tools a target may be built with: the convention, and the alternatives `use` accepts.
+func toolsFor(target: string) -> string {
+  if (target == "js" || target == "ts") {
+    return " npm yarn direct "
+  }
+  return " ${conventionFor(target)} direct "
+}
+
+// The program's name as the generated code spells it: the main file's name (`src/main.poly` is `main`).
+func programName(p: Project) -> string {
+  let file: string = lastPart(p.main)
+  if (file.endsWith(".poly")) {
+    return file.slice(0, len(file) - 5)
+  }
+  return file
+}
+
+// The name a Java or Kotlin class gets from it: `main` is `Main`.
+func className(p: Project) -> string {
+  let name: string = programName(p)
+  if (len(name) == 0) {
+    return name
+  }
+  return upper(name[0]) + name.slice(1, len(name))
+}
+
+func upper(c: char) -> string {
+  if (c >= 'a' && c <= 'z') {
+    return str((c.toI64() - 32).toI8())
+  }
+  return str(c)
+}
+
+// The shell line that prints where a tool is: PATH first, else where a toolchain lands when it is not on PATH
+// (Gradle's own Node, rustup's cargo and rustc, SDKMAN's Kotlin, Gradle and Java). It prints nothing when the tool is
+// nowhere.
+func toolSearch(tool: string) -> string {
+  return "command -v ${tool} 2>/dev/null || ${fallbackSearch(tool)}"
+}
+
+func fallbackSearch(tool: string) -> string {
+  if (tool == "node" || tool == "npm") {
+    return "ls -d \"$HOME\"/.gradle/nodejs/node-*/bin/${tool} 2>/dev/null | tail -1"
+  }
+  if (tool == "cargo" || tool == "rustc") {
+    return "ls \"$HOME\"/.cargo/bin/${tool} 2>/dev/null"
+  }
+  return "ls \"$HOME\"/.sdkman/candidates/*/current/bin/${tool} 2>/dev/null | head -1"
+}

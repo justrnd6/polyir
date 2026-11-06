@@ -1,0 +1,46 @@
+// meta-build for a front end that is not written in polyir (Nina, through the C++ polyir emits): plain strings in,
+// a plain list of strings out, so no polyir type has to cross into the other language.
+//
+//   planWords(polyfile, dir, os, cpu)
+//
+// lists the project's plan as one record after another, each starting with its kind:
+//
+//   problem TEXT                                           a Polyfile problem (then there is nothing else)
+//   file PATH TEXT                                         a file to write
+//   step GOAL TARGET DIR OUTPUT HINT COUNT WORD...         a command: COUNT words follow
+import "Polyfile.poly"
+import "Plan.poly"
+
+func planWords(polyfile: string, dir: string, os: string, cpu: string) -> mutarray<string> {
+  let p: Project = readPolyfile(polyfile, dir, Host(os: os, cpu: cpu))
+  let out: mutarray<string>
+  for (problem in p.problems) {
+    out.push("problem")
+    out.push(problem)
+  }
+  if (len(p.problems) == 0) {
+    planRecords(plan(p), out)
+  }
+  return out
+}
+
+func planRecords(made: Plan, out: mutarray<string>) -> void {
+  for (f in made.files) {
+    out.push("file")
+    out.push(f.path)
+    out.push(f.text)
+  }
+  for (s in made.steps) {
+    stepRecord(s, out)
+  }
+}
+
+func stepRecord(s: Step, out: mutarray<string>) -> void {
+  let fields: mutarray<string> = ["step", s.goal, s.target, s.dir, s.output, s.hint, str(len(s.cmd))]
+  for (field in fields) {
+    out.push(field)
+  }
+  for (word in s.cmd) {
+    out.push(word)
+  }
+}

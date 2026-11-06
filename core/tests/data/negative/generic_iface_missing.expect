@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  6:21: Pair_i64_f64 does not implement Shape: it needs func scale(k: f64) -> f64
+$ --analyze --strict
+exit 1
+check failed:
+  6:21: Pair_i64_f64 does not implement Shape: it needs func scale(k: f64) -> f64
+$ --emit-hir-json
+exit 1
+check failed:
+  6:21: Pair_i64_f64 does not implement Shape: it needs func scale(k: f64) -> f64
+$ --emit-msl
+exit 1
+kernel check failed:
+  6:21: Pair_i64_f64 does not implement Shape: it needs func scale(k: f64) -> f64

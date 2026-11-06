@@ -1,0 +1,47 @@
+// A stencil kernel on the GPU (Vulkan), checked against the CPU. Each thread
+// averages its element with its two neighbours, so it must read the WHOLE input
+// array (`uniform src`) and know which element it is (`index i`).
+//
+//   polyir --emit-msl smooth.poly > smooth.spv
+//   polyir smooth-vulkan.poly --out smooth-vulkan && ./smooth-vulkan        (run in this folder; tests/gpu.sh does it all)
+//
+// The program exits with 0 when every GPU result equals the CPU result.
+import "../Vulkan.poly"
+
+kernel func smooth(index i: i32, uniform src: ptr<float>, uniform n: i32) -> float {
+    if (i == 0) { return src[i] }
+    if (i == n - 1) { return src[i] }
+    return (src[i - 1] + src[i] + src[i + 1]) / 3.0
+}
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    // Two storage buffers (src and the result); push constants: count, n.
+    let pipeline: i64 = vulkanPipeline(gpu, "smooth.spv", 2, 8)
+    if (pipeline == 0) { return 11 }
+    return compareWithCpu(gpu, pipeline)
+}
+
+func compareWithCpu(gpu: i64, pipeline: i64) -> i64 {
+    let xs: float[6]
+    xs[0] = 3.0
+    xs[1] = 9.0
+    xs[2] = 0.0
+    xs[3] = 6.0
+    xs[4] = 12.0
+    xs[5] = 3.0
+    let input: i64 = vulkanBuffer(gpu, xs.toI64(), 24)
+    let output: i64 = vulkanEmptyBuffer(gpu, 24)
+    if (input == 0 || output == 0) { return 12 }
+    let push: i32[2]
+    push[0] = 6
+    push[1] = 6
+    if (vulkanDispatch(gpu, pipeline, 6, push.toI64(), input, output, 0, 0) == 0) { return 12 }
+    let results: ptr<float> = vulkanContents(output).toPtr()
+    let cpuInput: ptr<float> = xs.toI64().toPtr()
+    for (i = 0; i < 6; i = i + 1) {
+        if (results[i] != smooth(i, cpuInput, 6)) { return 13 }
+    }
+    return 0
+}

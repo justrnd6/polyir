@@ -1,0 +1,481 @@
+// THE CAMERA FROM SCRATCH, shared by camera.poly (Metal) and camera-vulkan.poly (Vulkan). A virtual film set: a tiled floor
+// and three toy blocks, in METRES, and a camera that works out where every corner of the set lands in the picture.
+//
+// The world's axes: x to the right, y UP, z toward the viewer (so a camera at its default turn looks along -z). The floor is
+// at y = 0. Everything about the camera is in the one kernel `project`; read the comment above it.
+//
+// The importing file supplies `makePipeline(ctx, source, name) -> i64` (the kernel, ready to run) and
+// `launchProject(ctx, pipeline, points, pointCount, cam) -> ptr<float>` (runs `project` for every point and returns four
+// numbers for each), and needs shared/picture.poly and shared/print.poly.
+
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+extern func tanf(x: float) -> float
+
+// ---- THE CAMERA ----
+// `pts` holds the set's corners, three numbers each: x, y, z in metres. `cam` describes the camera:
+//   cam[0..2]  where it stands (x, y, z, metres)
+//   cam[3]     yaw: turning to the right (positive) or left, in radians    (PAN)
+//   cam[4]     pitch: tilting up (positive) or down                         (TILT)
+//   cam[5]     roll: leaning the camera over (positive turns the picture clockwise)  (ROLL, the "Dutch angle")
+//   cam[6]     the lens: how tall a view it has, in degrees (the field of view)
+//   cam[7..8]  the picture's width and height in pixels
+//   cam[9]     the nearest distance it can see (points closer than this, or behind it, are not drawn)
+// The result for each point is four numbers: the pixel column, the pixel row, the distance in front of the camera in metres
+// (the DEPTH), and 1.0 if the point can be seen or 0.0 if it cannot.
+kernel func project(index i: i32, uniform pts: ptr<float>, uniform cam: ptr<float>) -> vec<float, 4> {
+    // STEP 1. Where is the point compared with the camera? Subtract the camera's position: "walk to the camera".
+    let dx: float = pts[i * 3] - cam[0]
+    let dy: float = pts[i * 3 + 1] - cam[1]
+    let dz: float = pts[i * 3 + 2] - cam[2]
+    // The camera's own three directions, worked out from where it is turned: right, up, and forward.
+    let sy: float = sinf(cam[3])
+    let cy: float = cosf(cam[3])
+    let sp: float = sinf(cam[4])
+    let cp: float = cosf(cam[4])
+    // STEP 2. How far is the point to the camera's right, above the camera, and in front of it? Each answer is a dot product:
+    // multiply the point's offset by the direction and add (the length of the offset's "shadow" along that direction).
+    let right: float = dx * cy + dz * sy
+    let above: float = dx * (0.0 - sy * sp) + dy * cp + dz * (cy * sp)
+    let ahead: float = dx * (sy * cp) + dy * sp + dz * (0.0 - cy * cp)
+    // Rolling the camera turns the picture in its own flat plane.
+    let x1: float = right * cosf(cam[5]) + above * sinf(cam[5])
+    let y1: float = above * cosf(cam[5]) - right * sinf(cam[5])
+    // Behind the camera, or too close: there is nothing to draw.
+    if (ahead < cam[9]) { return vec[0.0, 0.0, ahead, 0.0] }
+    // STEP 3. Shrink with distance: divide by how far ahead the point is. Twice as far, half as big. `half` is how far up the
+    // picture reaches at distance 1: the tangent of half the field of view. The picture is wider than tall by cam[7] / cam[8].
+    let half: float = tanf(cam[6] * 0.00872664626)
+    let nx: float = (x1 / ahead) / (half * (cam[7] / cam[8]))
+    let ny: float = (y1 / ahead) / half
+    // STEP 4. From "-1 to 1 across the picture" to pixels. (Pixel rows count DOWN from the top, so the up direction flips.)
+    return vec[(nx * 0.5 + 0.5) * cam[7], (0.5 - ny * 0.5) * cam[8], ahead, 1.0]
+}
+
+// ---- Building a camera ----
+
+// The camera array from friendly numbers: position in metres, the three turns in DEGREES, the lens in degrees, the picture size.
+func makeCamera(x: float, y: float, z: float, yaw: float, pitch: float, roll: float, fov: float, w: float, h: float) -> ptr<float> {
+    let cam: ptr<float> = calloc(16, 4).toPtr()
+    cam[0] = x
+    cam[1] = y
+    cam[2] = z
+    cam[3] = yaw * 0.01745329252
+    cam[4] = pitch * 0.01745329252
+    cam[5] = roll * 0.01745329252
+    cam[6] = fov
+    cam[7] = w
+    cam[8] = h
+    cam[9] = 0.1
+    return cam
+}
+
+// ---- The set: a list of corners and a list of edges joining them ----
+// verts: 3 numbers per corner; edges: 2 corner numbers per edge; shades: how bright to draw each edge;
+// counts[0] is how many corners, counts[1] how many edges there are so far.
+
+func addVertex(verts: ptr<float>, counts: ptr<i64>, x: float, y: float, z: float) -> i64 {
+    let at: i64 = counts[0]
+    verts[at * 3] = x
+    verts[at * 3 + 1] = y
+    verts[at * 3 + 2] = z
+    counts[0] = at + 1
+    return at
+}
+
+func addEdge(edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>, a: i64, b: i64, shade: float) -> i64 {
+    let at: i64 = counts[1]
+    edges[at * 2] = a
+    edges[at * 2 + 1] = b
+    shades[at] = shade
+    counts[1] = at + 1
+    return at
+}
+
+// A box centred at (cx, cy, cz) with the given width (x), height (y) and depth (z): 8 corners, 12 edges.
+func addBox(verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>, cx: float, cy: float, cz: float, sx: float, sy: float, sz: float, shade: float) -> i64 {
+    let first: i64 = counts[0]
+    for (corner = 0; corner < 8; corner = corner + 1) {
+        let px: float = cx + sx * 0.5 * (2.0 * (corner % 2).toFloat() - 1.0)
+        let py: float = cy + sy * 0.5 * (2.0 * ((corner / 2) % 2).toFloat() - 1.0)
+        let pz: float = cz + sz * 0.5 * (2.0 * ((corner / 4) % 2).toFloat() - 1.0)
+        addVertex(verts, counts, px, py, pz)
+    }
+    // Two corners are joined by an edge when their numbers differ in exactly one of the three bits (x, y, z).
+    for (a = 0; a < 8; a = a + 1) {
+        for (bit = 0; bit < 3; bit = bit + 1) {
+            var step: i64 = 1
+            if (bit == 1) { step = 2 }
+            if (bit == 2) { step = 4 }
+            if ((a / step) % 2 == 0) { addEdge(edges, shades, counts, first + a, first + a + step, shade) }
+        }
+    }
+    return 0
+}
+
+func addLine(verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, shade: float) -> i64 {
+    let a: i64 = addVertex(verts, counts, x0, y0, z0)
+    let b: i64 = addVertex(verts, counts, x1, y1, z1)
+    return addEdge(edges, shades, counts, a, b, shade)
+}
+
+// The toy room: a tiled floor (lines 2 metres apart, running away from the camera), and three blocks. The first block (1 metre
+// wide, 8 metres in front of the origin) is the SUBJECT that the lens experiments keep their eye on.
+func buildSet(verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>) -> i64 {
+    for (k = 0; k < 7; k = k + 1) {
+        let x: float = (k - 3).toFloat() * 2.0
+        addLine(verts, edges, shades, counts, x, 0.0, 4.0, x, 0.0, -40.0, 0.4)
+    }
+    for (k = 0; k < 12; k = k + 1) {
+        let z: float = 4.0 - 4.0 * k.toFloat()
+        addLine(verts, edges, shades, counts, -6.0, 0.0, z, 6.0, 0.0, z, 0.4)
+    }
+    addBox(verts, edges, shades, counts, 0.0, 0.5, -8.0, 1.0, 1.0, 1.0, 1.0)
+    addBox(verts, edges, shades, counts, -3.0, 0.75, -14.0, 1.5, 1.5, 1.5, 0.85)
+    addBox(verts, edges, shades, counts, 3.5, 1.0, -20.0, 2.0, 2.0, 2.0, 0.85)
+    return 0
+}
+
+// ---- Drawing ----
+
+// A straight line between two screen positions, into a panel of a larger picture; the parts outside the panel are skipped.
+func drawLine(img: ptr<float>, imgW: i64, left: i64, top: i64, panelW: i64, panelH: i64, x0: float, y0: float, x1: float, y1: float, shade: float) -> i64 {
+    let dx: float = x1 - x0
+    let dy: float = y1 - y0
+    var steps: float = dx
+    if (steps < 0.0) { steps = 0.0 - steps }
+    var tall: float = dy
+    if (tall < 0.0) { tall = 0.0 - tall }
+    if (tall > steps) { steps = tall }
+    if (steps > 4000.0) { return 0 }
+    let n: i64 = steps.toI64() + 1
+    for (k = 0; k <= n; k = k + 1) {
+        let t: float = k.toFloat() / n.toFloat()
+        let fx: float = x0 + dx * t
+        let fy: float = y0 + dy * t
+        if (fx >= 0.0 && fx < panelW.toFloat() && fy >= 0.0 && fy < panelH.toFloat()) {
+            img[(top + fy.toI64()) * imgW + left + fx.toI64()] = shade
+        }
+    }
+    return 0
+}
+
+// An edge with one corner in front of the camera and one behind it is CUT where it crosses the nearest distance the camera
+// can see (the "near plane"), and only the part in front is drawn. The cut point is found by walking along the edge: a corner
+// that is `da` metres ahead and one that is `db` metres ahead (one of them below the near distance) are joined by points
+// whose depth changes steadily, so the point at depth `near` is a fraction (near - da) / (db - da) of the way from the first
+// to the second. Its picture position comes from the same `project` rule. (Depths come from the GPU's answers in `proj`.)
+func drawClipped(proj: ptr<float>, verts: ptr<float>, cam: ptr<float>, a: i64, b: i64, img: ptr<float>, imgW: i64, left: i64, top: i64, shade: float) -> i64 {
+    let panelW: i64 = cam[7].toI64()
+    let panelH: i64 = cam[8].toI64()
+    let seenA: i64 = (proj[a * 4 + 3] + 0.5).toI64()
+    let seenB: i64 = (proj[b * 4 + 3] + 0.5).toI64()
+    if (seenA == 1 && seenB == 1) {
+        return drawLine(img, imgW, left, top, panelW, panelH, proj[a * 4], proj[a * 4 + 1], proj[b * 4], proj[b * 4 + 1], shade)
+    }
+    if (seenA == 0 && seenB == 0) { return 0 }
+    // Exactly one corner can be seen: call it `kept`, and cut the edge towards the other.
+    var kept: i64 = a
+    var lost: i64 = b
+    if (seenB == 1) {
+        kept = b
+        lost = a
+    }
+    let keptDepth: float = proj[kept * 4 + 2]
+    let lostDepth: float = proj[lost * 4 + 2]
+    let t: float = (cam[9] * 1.01 - keptDepth) / (lostDepth - keptDepth)
+    let cx: float = verts[kept * 3] + t * (verts[lost * 3] - verts[kept * 3])
+    let cy: float = verts[kept * 3 + 1] + t * (verts[lost * 3 + 1] - verts[kept * 3 + 1])
+    let cz: float = verts[kept * 3 + 2] + t * (verts[lost * 3 + 2] - verts[kept * 3 + 2])
+    let cut: vec<float, 4> = where1(cx, cy, cz, cam)
+    return drawLine(img, imgW, left, top, panelW, panelH, proj[kept * 4], proj[kept * 4 + 1], cut[0], cut[1], shade)
+}
+
+// One view of the set into the panel at (left, top) of the picture. The GPU works out where every corner lands; the CPU joins
+// them with lines, cutting an edge that passes the camera. Returns the GPU's answers (4 numbers for each corner).
+func renderView(ctx: i64, pipeline: i64, verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>, cam: ptr<float>, img: ptr<float>, imgW: i64, left: i64, top: i64) -> ptr<float> {
+    let panelW: i64 = cam[7].toI64()
+    let panelH: i64 = cam[8].toI64()
+    for (y = 0; y < panelH; y = y + 1) {
+        for (x = 0; x < panelW; x = x + 1) {
+            img[(top + y) * imgW + left + x] = 0.06
+        }
+    }
+    let proj: ptr<float> = launchProject(ctx, pipeline, verts, counts[0], cam)
+    for (e = 0; e < counts[1]; e = e + 1) {
+        drawClipped(proj, verts, cam, edges[e * 2], edges[e * 2 + 1], img, imgW, left, top, shades[e])
+    }
+    return proj
+}
+
+// ---- Checks ----
+
+func near(a: float, b: float, tolerance: float) -> i64 {
+    var gap: float = a - b
+    if (gap < 0.0) { gap = 0.0 - gap }
+    if (gap <= tolerance) { return 1 }
+    return 0
+}
+
+// The same kernel on the CPU for every corner, compared with the GPU's answers. A corner very close to the camera lands far
+// outside the picture, where even a tiny rounding difference is many pixels, so the allowed difference grows with the size of
+// the number (one part in 10,000) on top of 0.05 of a pixel.
+func gpuMatchesCpu(proj: ptr<float>, verts: ptr<float>, cam: ptr<float>, n: i64) -> i64 {
+    for (i = 0; i < n; i = i + 1) {
+        let cpu: vec<float, 4> = project(i.toI32(), verts, cam)
+        if (near(proj[i * 4 + 3], cpu[3], 0.0) == 0) { return 0 }
+        if (cpu[3] > 0.5) {
+            var bigX: float = cpu[0]
+            if (bigX < 0.0) { bigX = 0.0 - bigX }
+            var bigY: float = cpu[1]
+            if (bigY < 0.0) { bigY = 0.0 - bigY }
+            if (near(proj[i * 4], cpu[0], 0.05 + 0.0001 * bigX) == 0) { return 0 }
+            if (near(proj[i * 4 + 1], cpu[1], 0.05 + 0.0001 * bigY) == 0) { return 0 }
+            if (near(proj[i * 4 + 2], cpu[2], 0.001) == 0) { return 0 }
+        }
+    }
+    return 1
+}
+
+// Where one point lands, by the kernel on the CPU: a 4-number answer as an array.
+func where1(x: float, y: float, z: float, cam: ptr<float>) -> vec<float, 4> {
+    let p: ptr<float> = calloc(4, 4).toPtr()
+    p[0] = x
+    p[1] = y
+    p[2] = z
+    return project(0, p, cam)
+}
+
+// The facts about a camera that you can check against common sense. Each returns 1 if it holds.
+func commonSense() -> i64 {
+    let w: float = 1920.0
+    let h: float = 1080.0
+    let level: ptr<float> = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 60.0, w, h)
+    // 1. Straight ahead lands in the middle of the picture.
+    let ahead: vec<float, 4> = where1(0.0, 1.5, -10.0, level)
+    if (near(ahead[0], 960.0, 0.01) == 0 || near(ahead[1], 540.0, 0.01) == 0) { return 0 }
+    // 2. Twice as far away, half as far from the middle (similar triangles).
+    let near4: vec<float, 4> = where1(1.0, 1.5, -4.0, level)
+    let far8: vec<float, 4> = where1(1.0, 1.5, -8.0, level)
+    if (near((near4[0] - 960.0) * 0.5, far8[0] - 960.0, 0.001) == 0) { return 0 }
+    // 3. Something behind the camera cannot be seen.
+    let behind: vec<float, 4> = where1(0.0, 1.5, 5.0, level)
+    if (near(behind[3], 0.0, 0.0) == 0) { return 0 }
+    // 4. A point exactly half the field of view above straight ahead lands on the top edge of the picture.
+    let edge: vec<float, 4> = where1(0.0, 1.5 + 10.0 * tanf(0.5235987756), -10.0, level)
+    if (near(edge[1], 0.0, 0.01) == 0) { return 0 }
+    // 5. Turning the camera right by 20 degrees is the same as turning the whole world left about the camera by 20 degrees.
+    let turned: ptr<float> = makeCamera(0.0, 1.5, 0.0, 20.0, 0.0, 0.0, 60.0, w, h)
+    let a: vec<float, 4> = where1(3.0, 1.0, -10.0, turned)
+    let c: float = cosf(0.3490658504)
+    let s: float = sinf(0.3490658504)
+    let b: vec<float, 4> = where1(3.0 * c + (-10.0) * s, 1.0, 0.0 - 3.0 * s + (-10.0) * c, level)
+    if (near(a[0], b[0], 0.001) == 0 || near(a[1], b[1], 0.001) == 0) { return 0 }
+    // 6. Moving the camera 1 metre to the right is the same as moving the world 1 metre to the left.
+    let moved: ptr<float> = makeCamera(1.0, 1.5, 0.0, 0.0, 0.0, 0.0, 60.0, w, h)
+    let d: vec<float, 4> = where1(3.0, 1.0, -10.0, moved)
+    let e: vec<float, 4> = where1(2.0, 1.0, -10.0, level)
+    if (near(d[0], e[0], 0.001) == 0 || near(d[1], e[1], 0.001) == 0) { return 0 }
+    // 7. A narrower lens makes the same thing bigger: halving the tangent of half the field of view doubles the offset.
+    let wide: ptr<float> = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 90.0, w, h)
+    let tele: ptr<float> = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 53.13010235, w, h)
+    let ww: vec<float, 4> = where1(1.0, 1.5, -10.0, wide)
+    let tt: vec<float, 4> = where1(1.0, 1.5, -10.0, tele)
+    if (near((tt[0] - 960.0), (ww[0] - 960.0) * 2.0, 0.01) == 0) { return 0 }
+    return 1
+}
+
+// The worked example of the chapter: a point 2 m to the right and 0.5 m below the camera's eye, 10 m in front of it, seen by a
+// 60 degree lens on a 1920 x 1080 picture. By hand (section 14.10) it lands at about (1147.1, 586.8).
+func workedExample(ctx: i64, pipeline: i64) -> i64 {
+    let cam: ptr<float> = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 60.0, 1920.0, 1080.0)
+    let pts: ptr<float> = calloc(3, 4).toPtr()
+    pts[0] = 2.0
+    pts[1] = 1.0
+    pts[2] = -10.0
+    let gpu: ptr<float> = launchProject(ctx, pipeline, pts, 1, cam)
+    say("worked example, the point (2, 1, -10) seen from (0, 1.5, 0):  pixel column ")
+    sayDecimal(gpu[0])
+    say(", row ")
+    sayDecimal(gpu[1])
+    say(", depth ")
+    sayDecimal(gpu[2])
+    say(" m")
+    newline()
+    if (near(gpu[0], 1147.1, 0.1) == 0 || near(gpu[1], 586.8, 0.1) == 0 || near(gpu[2], 10.0, 0.001) == 0) { return 0 }
+    return 1
+}
+
+// ---- Turning the camera: pan (yaw) and tilt (pitch), section 14.14 ----
+
+// Where does the point (x, y, z) land for a camera standing at (0, 1.5, 0) that is turned by `yaw` and `pitch` degrees (1920 x 1080,
+// a 60 degree lens)? Runs the GPU kernel and returns the column and row in `out`.
+func landing(ctx: i64, pipeline: i64, yaw: float, pitch: float, x: float, y: float, z: float, out: ptr<float>) -> i64 {
+    let cam: ptr<float> = makeCamera(0.0, 1.5, 0.0, yaw, pitch, 0.0, 60.0, 1920.0, 1080.0)
+    let pts: ptr<float> = calloc(3, 4).toPtr()
+    pts[0] = x
+    pts[1] = y
+    pts[2] = z
+    let gpu: ptr<float> = launchProject(ctx, pipeline, pts, 1, cam)
+    out[0] = gpu[0]
+    out[1] = gpu[1]
+    return gpu[3].toI64()
+}
+
+// An angle in whole degrees with its sign: +10, -90, +180.
+func sayAngle(degrees: float) -> i64 {
+    var shown: i64 = degrees.toI64()
+    var sign: string = "+"
+    if (shown < 0) {
+        sign = "-"
+        shown = 0 - shown
+    }
+    if (shown < 100) { say(" ") }
+    if (shown < 10) { say(" ") }
+    say(sign)
+    return sayNumber(shown)
+}
+
+func sayTurn(yaw: float, pitch: float, where: string, out: ptr<float>) -> i64 {
+    say("    yaw ")
+    sayAngle(yaw)
+    say(", pitch ")
+    sayAngle(pitch)
+    say(" -> ")
+    say(where)
+    say(": column ")
+    sayDecimal(out[0])
+    say(", row ")
+    sayDecimal(out[1])
+    return newline()
+}
+
+// A pan or a tilt of 10 degrees moves a point that was straight ahead by the same number of pixels, 165, in the opposite direction.
+func turnSlides(ctx: i64, pipeline: i64) -> i64 {
+    let out: ptr<float> = calloc(2, 4).toPtr()
+    say("a point straight ahead, (0, 1.5, -10), after turning the camera (it was at column 960, row 540):")
+    newline()
+    landing(ctx, pipeline, 10.0, 0.0, 0.0, 1.5, -10.0, out)
+    sayTurn(10.0, 0.0, "pan right 10", out)
+    if (near(out[0], 795.08, 0.1) == 0 || near(out[1], 540.0, 0.01) == 0) { return 0 }
+    landing(ctx, pipeline, 0.0 - 10.0, 0.0, 0.0, 1.5, -10.0, out)
+    sayTurn(0.0 - 10.0, 0.0, "pan left 10 ", out)
+    if (near(out[0], 1124.92, 0.1) == 0) { return 0 }
+    landing(ctx, pipeline, 0.0, 10.0, 0.0, 1.5, -10.0, out)
+    sayTurn(0.0, 10.0, "look up 10  ", out)
+    if (near(out[0], 960.0, 0.01) == 0 || near(out[1], 704.9, 0.1) == 0) { return 0 }
+    landing(ctx, pipeline, 0.0, 0.0 - 10.0, 0.0, 1.5, -10.0, out)
+    sayTurn(0.0, 0.0 - 10.0, "look down 10", out)
+    if (near(out[1], 375.1, 0.1) == 0) { return 0 }
+    return 1
+}
+
+// One turn and the thing it makes the camera look straight at: that thing must land in the exact middle of the picture.
+func looksAt(ctx: i64, pipeline: i64, yaw: float, pitch: float, x: float, y: float, z: float, what: string) -> i64 {
+    let out: ptr<float> = calloc(2, 4).toPtr()
+    let seen: i64 = landing(ctx, pipeline, yaw, pitch, x, y, z, out)
+    sayTurn(yaw, pitch, what, out)
+    if (seen == 0) { return 0 }
+    if (near(out[0], 960.0, 0.05) == 0 || near(out[1], 540.0, 0.05) == 0) { return 0 }
+    return 1
+}
+
+// What the numbers mean: each (yaw, pitch) makes the camera look straight at one named spot of the room.
+func turnMeanings(ctx: i64, pipeline: i64) -> i64 {
+    say("which spot of the room each turn looks straight at (it must land in the middle, column 960, row 540):")
+    newline()
+    if (looksAt(ctx, pipeline, 0.0, 0.0, 0.0, 1.5, -10.0, "the back wall, straight ahead") == 0) { return 0 }
+    if (looksAt(ctx, pipeline, 90.0, 0.0, 10.0, 1.5, 0.0, "the wall on the right (+x)") == 0) { return 0 }
+    if (looksAt(ctx, pipeline, 0.0 - 90.0, 0.0, 0.0 - 10.0, 1.5, 0.0, "the wall on the left (-x)") == 0) { return 0 }
+    if (looksAt(ctx, pipeline, 180.0, 0.0, 0.0, 1.5, 10.0, "the wall behind (+z)") == 0) { return 0 }
+    if (looksAt(ctx, pipeline, 0.0, 45.0, 0.0, 11.5, -10.0, "halfway up the back wall") == 0) { return 0 }
+    if (looksAt(ctx, pipeline, 0.0, 0.0 - 45.0, 0.0, 0.0 - 8.5, -10.0, "halfway down, into the floor") == 0) { return 0 }
+    return looksAt(ctx, pipeline, 0.0, 90.0, 0.0, 11.5, 0.0, "straight up, the ceiling")
+}
+
+func turning(ctx: i64, pipeline: i64) -> i64 {
+    if (turnSlides(ctx, pipeline) == 0) { return 0 }
+    return turnMeanings(ctx, pipeline)
+}
+
+// ---- The demonstrations: three pictures ----
+
+// Six views of the set, 200 x 120 each, in a 3 x 2 grid: the camera as you would direct it on a film set.
+func cameraMoves(ctx: i64, pipeline: i64, verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>) -> i64 {
+    let img: ptr<float> = calloc(600 * 240, 4).toPtr()
+    let cams: ptr<i64> = calloc(6, 8).toPtr()
+    cams[0] = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 60.0, 200.0, 120.0).toI64()
+    cams[1] = makeCamera(2.0, 1.5, 0.0, 0.0, 0.0, 0.0, 60.0, 200.0, 120.0).toI64()
+    cams[2] = makeCamera(0.0, 1.5, 0.0, 25.0, 0.0, 0.0, 60.0, 200.0, 120.0).toI64()
+    cams[3] = makeCamera(0.0, 1.5, 0.0, 0.0, -15.0, 0.0, 60.0, 200.0, 120.0).toI64()
+    cams[4] = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 15.0, 60.0, 200.0, 120.0).toI64()
+    cams[5] = makeCamera(0.0, 1.5, -4.0, 0.0, 0.0, 0.0, 60.0, 200.0, 120.0).toI64()
+    for (v = 0; v < 6; v = v + 1) {
+        let cam: ptr<float> = cams[v].toPtr()
+        let proj: ptr<float> = renderView(ctx, pipeline, verts, edges, shades, counts, cam, img, 600, (v % 3) * 200, (v / 3) * 120)
+        if (gpuMatchesCpu(proj, verts, cam, counts[0]) == 0) { return 13 }
+    }
+    savePicture("camera-1-moves.pgm", img, 600, 240)
+    return 0
+}
+
+// Three views from the camera's spot with only the LENS changed: 90, 60 and 30 degrees (a zoom).
+func zoomViews(ctx: i64, pipeline: i64, verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>) -> i64 {
+    let img: ptr<float> = calloc(600 * 120, 4).toPtr()
+    for (v = 0; v < 3; v = v + 1) {
+        var fov: float = 90.0
+        if (v == 1) { fov = 60.0 }
+        if (v == 2) { fov = 30.0 }
+        let cam: ptr<float> = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, fov, 200.0, 120.0)
+        let proj: ptr<float> = renderView(ctx, pipeline, verts, edges, shades, counts, cam, img, 600, v * 200, 0)
+        if (gpuMatchesCpu(proj, verts, cam, counts[0]) == 0) { return 13 }
+    }
+    savePicture("camera-2-zoom.pgm", img, 600, 120)
+    return 0
+}
+
+// Three views where the lens AND the camera's distance change together so that the front block stays the same size: the
+// "dolly zoom" (the Vertigo effect). Block 1 is 8 m in front of the origin; the camera backs away as the lens narrows. For a
+// 90 degree lens at 8 m the block has some size; a 60 degree lens needs 8 * tan(45) / tan(30) = 13.86 m, and a 40 degree lens
+// needs 8 * tan(45) / tan(20) = 21.98 m, to give the block the same size.
+func dollyZoomViews(ctx: i64, pipeline: i64, verts: ptr<float>, edges: ptr<i64>, shades: ptr<float>, counts: ptr<i64>) -> i64 {
+    let img: ptr<float> = calloc(600 * 120, 4).toPtr()
+    let cams: ptr<i64> = calloc(3, 8).toPtr()
+    cams[0] = makeCamera(0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 90.0, 200.0, 120.0).toI64()
+    cams[1] = makeCamera(0.0, 1.5, 5.86, 0.0, 0.0, 0.0, 60.0, 200.0, 120.0).toI64()
+    cams[2] = makeCamera(0.0, 1.5, 13.98, 0.0, 0.0, 0.0, 40.0, 200.0, 120.0).toI64()
+    // The front block's nearest top corners, to measure its width on the screen in each view.
+    for (v = 0; v < 3; v = v + 1) {
+        let cam: ptr<float> = cams[v].toPtr()
+        let proj: ptr<float> = renderView(ctx, pipeline, verts, edges, shades, counts, cam, img, 600, v * 200, 0)
+        if (gpuMatchesCpu(proj, verts, cam, counts[0]) == 0) { return 13 }
+    }
+    savePicture("camera-3-dolly-zoom.pgm", img, 600, 120)
+    return 0
+}
+
+func runAll(ctx: i64, source: string) -> i64 {
+    let pipeline: i64 = makePipeline(ctx, source, "project")
+    if (pipeline == 0) { return 12 }
+    let verts: ptr<float> = calloc(600 * 3, 4).toPtr()
+    let edges: ptr<i64> = calloc(900 * 2, 8).toPtr()
+    let shades: ptr<float> = calloc(900, 4).toPtr()
+    let counts: ptr<i64> = calloc(2, 8).toPtr()
+    buildSet(verts, edges, shades, counts)
+    say("the set: ")
+    sayNumber(counts[0])
+    say(" corners, ")
+    sayNumber(counts[1])
+    say(" edges")
+    newline()
+    if (commonSense() == 0) { return 14 }
+    say("common-sense checks: straight ahead is the centre; twice as far is half the offset; behind is unseen; the edge of the lens is the edge of the picture; turning the camera = turning the world the other way; moving right = moving the world left; a narrower lens magnifies")
+    newline()
+    if (workedExample(ctx, pipeline) == 0) { return 14 }
+    if (turning(ctx, pipeline) == 0) { return 14 }
+    var code: i64 = cameraMoves(ctx, pipeline, verts, edges, shades, counts)
+    if (code != 0) { return code }
+    code = zoomViews(ctx, pipeline, verts, edges, shades, counts)
+    if (code != 0) { return code }
+    return dollyZoomViews(ctx, pipeline, verts, edges, shades, counts)
+}

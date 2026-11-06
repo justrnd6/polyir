@@ -1,0 +1,32 @@
+// LISTS: working with arrays and mutarrays, as part of polyir. Built on `len`, `xs[i]` and `push`, so it runs on every target.
+//
+//   import "../../stdlib/Lists.poly"       (the path is relative to the importing file)
+//
+// The import is optional: these are BUILT INTO the language. A program that calls them without defining or importing them
+// gets them added by the compiler (src/front/Prelude.cpp, which embeds this file; after editing it run
+// `python3 core/stdlib/sync-prelude.py`). Only what a program uses is added. A `match` list pattern with a rest
+// (`[first, ...rest]`) uses `drop`.
+//
+// Every function is generic and reads as a method too: `xs.drop(1)` is `drop(xs, 1)`, for an `array<T>` or a `mutarray<T>`.
+//
+//   first last      an end of a non-empty list
+//   drop            a new list without the first n elements
+
+// The first element (the list must have one).
+func first<T>(xs: array<T>) -> T {
+  return xs[0]
+}
+
+// The last element (the list must have one).
+func last<T>(xs: array<T>) -> T {
+  return xs[len(xs) - 1]
+}
+
+// A new list of the elements after the first `n`: [1, 2, 3] dropping 1 is [2, 3]. Dropping more than there are gives none.
+func drop<T>(xs: array<T>, n: i64) -> mutarray<T> {
+  let out: mutarray<T>
+  for (i = n; i < len(xs); i = i + 1) {
+    out.push(xs[i])
+  }
+  return out
+}

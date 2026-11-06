@@ -1,0 +1,84 @@
+// Reading WAV files. The fixtures in fixtures/ (ideas/audio/tests/fixtures) are written byte by byte by make-fixtures.py (not by polyir's
+// own writer), so the reader is checked against an independent description of the format.
+import "../Sound.poly"
+import "../../../core/tests/programs/Check.poly"
+
+extern func remove(path: string) -> i64
+
+func fixture(name: string) -> Sound {
+    return soundLoadWav(name)
+}
+
+// 8-bit samples are unsigned (128 is silence): bytes 0, 64, 128, 192, 255.
+func checkEightBit() -> double {
+    let s: Sound = fixture("fixtures/pcm8-mono.wav")
+    return offInt(s.count, 5) + offInt(s.rate, 8000) + offInt(s.channels, 1) + off(s.samples[0], 0.0 - 1.0) + off(s.samples[1], 0.0 - 0.5) + off(s.samples[2], 0.0) + off(s.samples[3], 0.5) + off(s.samples[4], 0.9921875)
+}
+
+// 16-bit stereo, with an unknown odd-sized LIST chunk before the data that must be skipped (with its padding byte).
+func checkSixteenBitStereo() -> double {
+    let s: Sound = fixture("fixtures/pcm16-stereo.wav")
+    let header: double = offInt(s.count, 4) + offInt(s.rate, 44100) + offInt(s.channels, 2)
+    let d: ptr<float> = s.samples
+    return header + off(d[0], 0.0) + off(d[1], 0.0) + off(d[2], 0.5) + off(d[3], 0.0 - 0.5) + off(d[4], 0.99996948) + off(d[5], 0.0 - 1.0) + off(d[6], 0.0 - 0.25) + off(d[7], 0.25)
+}
+
+func checkTwentyFourBit() -> double {
+    let s: Sound = fixture("fixtures/pcm24-mono.wav")
+    return offInt(s.count, 4) + offInt(s.rate, 22050) + off(s.samples[0], 0.5) + off(s.samples[1], 0.0 - 0.5) + off(s.samples[2], 0.99999988) + off(s.samples[3], 0.0 - 1.0)
+}
+
+func checkThirtyTwoBit() -> double {
+    let s: Sound = fixture("fixtures/pcm32-mono.wav")
+    return offInt(s.count, 4) + offInt(s.rate, 48000) + off(s.samples[0], 0.5) + off(s.samples[1], 0.0 - 0.5) + off(s.samples[2], 1.0) + off(s.samples[3], 0.0 - 1.0)
+}
+
+func checkFloat32Stereo() -> double {
+    let s: Sound = fixture("fixtures/float32-stereo.wav")
+    let d: ptr<float> = s.samples
+    return offInt(s.count, 3) + offInt(s.channels, 2) + offInt(s.rate, 32000) + off(d[0], 0.25) + off(d[1], 0.0 - 0.75) + off(d[2], 1.0) + off(d[3], 0.0 - 1.0) + off(d[4], 0.125) + off(d[5], 0.0)
+}
+
+func checkFloat64() -> double {
+    let s: Sound = fixture("fixtures/float64-mono.wav")
+    return offInt(s.count, 3) + offInt(s.rate, 16000) + off(s.samples[0], 0.5) + off(s.samples[1], 0.0 - 0.5) + off(s.samples[2], 0.125)
+}
+
+// The "extensible" header newer programs write: the real format (PCM) is inside an extension.
+func checkExtensibleHeader() -> double {
+    let s: Sound = fixture("fixtures/extensible16.wav")
+    let d: ptr<float> = s.samples
+    return offInt(s.count, 2) + offInt(s.channels, 2) + offInt(s.rate, 44100) + off(d[0], 0.030517578) + off(d[1], 0.0 - 0.030517578) + off(d[2], 0.061035156) + off(d[3], 0.0 - 0.061035156)
+}
+
+// A recording cut short: the data chunk claims 1000 bytes but only 8 (4 samples) are there.
+func checkTruncatedData() -> double {
+    let s: Sound = fixture("fixtures/truncated.wav")
+    return offInt(s.count, 4) + off(s.samples[3], 0.012207031)
+}
+
+func checkNotAWavFile() -> double {
+    let s: Sound = fixture("fixtures/not-audio.wav")
+    return offInt(s.count, 0)
+}
+
+func checkMissingFile() -> double {
+    let s: Sound = fixture("fixtures/there-is-no-such-file.wav")
+    return offInt(s.count, 0)
+}
+
+// Writing: the file's size and header fields are right (read back with the reader above, and by hand).
+func checkSaveThenLoadMono() -> double {
+    let s: Sound = soundNew(0.05, 8000)
+    s.tone(0, 440.0, 0.5, 0.0, 0.05)
+    s.saveWav("tests-mono-roundtrip.wav")
+    let back: Sound = soundLoadWav("tests-mono-roundtrip.wav")
+    remove("tests-mono-roundtrip.wav")
+    var worst: float = 0.0
+    for (i = 0; i < s.count; i = i + 1) {
+        var gap: float = back.samples[i] - s.samples[i]
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > worst) { worst = gap }
+    }
+    return offInt(back.count, 400) + offInt(back.rate, 8000) + offInt(back.channels, 1) + worst.toDouble()
+}

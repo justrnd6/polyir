@@ -1,0 +1,28 @@
+extern func sinf(x: float) -> float
+kernel func k1(x: float) -> float {
+  goto out()
+  label out():
+  return x
+}
+kernel func k2(x: float) -> float {
+  try {
+    throw 1
+  } catch (e) {
+    return x
+  }
+  return x
+}
+kernel func k3(x: float) -> float {
+  switch (1) {
+    1 => a()
+    else => b()
+  }
+  label a():
+  return x
+  label b():
+  return x
+}
+kernel func k4(x: float) -> float {
+  sinf(x)
+  return x
+}

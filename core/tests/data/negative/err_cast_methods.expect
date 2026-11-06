@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  err_cast_methods.poly:4:18: unknown function toNope
+$ --analyze --strict
+exit 1
+check failed:
+  err_cast_methods.poly:4:18: unknown function toNope
+$ --emit-hir-json
+exit 1
+check failed:
+  err_cast_methods.poly:4:18: unknown function toNope
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_cast_methods.poly:4:18: unknown function toNope

@@ -1,0 +1,40 @@
+// Calling real C library functions: `extern func` declares a signature
+// with NO body — it compiles to a plain LLVM `declare`, exactly like
+// `std Llvm`'s own `LlvmModule.external`, and links against whatever
+// provides it at build time. `putchar`/`getchar` are real libc
+// functions, already linked into every C program — no extra library
+// needed, which is why they're used here instead of `printf` (variadic
+// C functions aren't supported in v1).
+//
+// No string literals in polyir v1 either, so output is spelled as raw
+// character codes — `writeLine` below is "polyir io\n" one `putchar` at
+// a time.
+//
+//   polyir build io.poly --out /tmp/io && /tmp/io
+//   (prints "polyir io", reads one byte, echoes it back)
+
+extern func putchar(c: i32) -> i32
+extern func getchar() -> i32
+
+func writeLine() -> i32 {
+  putchar(104)   // h
+  putchar(108)   // l
+  putchar(108)   // l
+  putchar(118)   // v
+  putchar(109)   // m
+  putchar(32)    //  (space)
+  putchar(105)   // i
+  putchar(111)   // o
+  return putchar(10)   // \n
+}
+
+func echoOneByte() -> i32 {
+  let c: i32 = getchar()
+  return putchar(c)
+}
+
+func main() -> i64 {
+  writeLine()
+  echoOneByte()
+  return 0
+}

@@ -1,0 +1,4 @@
+func f(a: i64) -> i64 {
+  if (a > 0) { return 1 }
+}
+func main() -> i64 { return f(1) }

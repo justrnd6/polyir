@@ -1,0 +1,5 @@
+// `poly up` here builds the program for each target with that target's own tool, runs it, and compares.
+name hello
+main src/main.poly
+targets native c cpp java js python rust
+target native

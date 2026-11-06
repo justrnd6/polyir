@@ -1,0 +1,25 @@
+// CRC-32 from each target's own library.
+//
+// `import LANG "module"` names a host module the program uses on that target: a library the interpreter loads
+// (`native`), a C header, an npm package, a Python module. Only that target uses it.
+//
+// `extern func` is a function the host provides, here in zlib's own shape so the interpreter can call zlib directly.
+// polyir checks every call against the signature, and each target writes the call its own way (`$0` is the first
+// argument). The other libraries take just the text.
+import native "z"
+import c "zlib.h"
+import js "crc-32" as crc
+import python "crcmod.predefined"
+
+extern func crc32(seed: i64, data: string, size: i64) -> i64
+  = native "crc32"
+  | c "(int64_t) crc32((unsigned long) $0, (const unsigned char *) $1, (unsigned) $2)"
+  | java "com.google.common.hash.Hashing.crc32().hashString($1, java.nio.charset.StandardCharsets.UTF_8).padToLong()"
+  | rust "crc32fast::hash($1.as_bytes()) as i64"
+  | js "BigInt(crc.str($1) >>> 0)"
+  | python "crcmod.predefined.mkPredefinedCrcFun('crc-32')($1.encode())"
+
+// The CRC-32 of a whole text.
+func checksum(text: string) -> i64 {
+  return crc32(0, text, len(text))
+}

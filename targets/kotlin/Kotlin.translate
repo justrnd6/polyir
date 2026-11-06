@@ -1,0 +1,527 @@
+# Kotlin
+source: polyir
+target: kotlin
+style: indent 4, braces same-line, names keep, paths ., qualify relative, generics kept, extension kt
+
+// A checked program as one Kotlin file for the JVM. A struct is a data class (it compares by its fields), a module an
+// `object`, a static function a member of its struct's companion object. Kotlin has polyir's whole numbers, unsigned ones
+// too; Byte and Short arithmetic is done in Int and brought back. A closure is an anonymous function, so its `return` is
+// its own. A coroutine is an `iterator { }` builder.
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  {support}
+
+  {items}
+program(support, items, main: void) :=
+  {imports}
+
+  {support}
+
+  {items}
+program(support, items, main) :=
+  {imports}
+
+  {support}
+
+  {items}
+
+  fun main(args: Array<String>) {
+      exitProcess(main().toInt())
+  }
+  uses: exitProcess
+
+module(name, items)                 := object {name} {items}
+
+// A struct is a data class; one with no fields is a plain class, and one with nothing but fields has no body.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  data class {name}<{typeParams}>({fields.param}) {
+      {methods}
+
+      companion object {statics?}
+
+      {nested}
+  }
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  data class {name}<{typeParams}>({fields.param}) : {implements} {
+      {methods}
+
+      companion object {statics?}
+
+      {nested}
+  }
+struct(name, typeParams, fields: empty, methods, nested, statics) :=
+  class {name}<{typeParams}> {
+      {methods}
+
+      companion object {statics?}
+
+      {nested}
+  }
+struct(name, typeParams, fields: empty, methods, nested, statics, implements) :=
+  class {name}<{typeParams}> : {implements} {
+      {methods}
+
+      companion object {statics?}
+
+      {nested}
+  }
+struct(name, typeParams, fields, methods: empty, nested: empty, statics: empty) := data class {name}<{typeParams}>({fields.param})
+field(name, type)                   := val {name}: {type}
+field(name, type, value)            := val {name}: {type}
+field.param(name, type)             := val {name}: {type}
+field.param(name, type, value)      := val {name}: {type}
+field.param(name, type, isMutable)  := var {name}: {type}
+field.param(name, type, value, isMutable) := var {name}: {type}
+
+method(name, params, result, body)  := fun {name}({params}): {result} {body}
+method(name, params, result, body, overrides) := override fun {name}({params}): {result} {body}
+static(name, params, result, body)  := fun {name}({params}): {result} {body}
+func(name, typeParams, params, result, body) := fun <{typeParams}> {name}({params}): {result} {body}
+
+// A coroutine is the values an `iterator { }` builder yields; a `return` in it ends the builder.
+coro(name, params, yields, body) :=
+  fun {name}({params}): Coroutine<{yields}> = Coroutine(iterator {
+      {body}
+  })
+  uses: variant, coroutine
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) := fun {name}({params}): {result} {body}
+param(name, type)                   := {name}: {type}
+param.bare(name, type)              := {name}
+
+interface(name, methods)            := interface {name} {methods}
+signature(name, params, result)     := fun {name}({params}): {result}
+
+// The C functions Kotlin has, through kotlin.math; any other one it cannot call.
+extern(name, params, result)        := unsupported "Kotlin cannot call a C function"
+extern(name: sin cos tan sqrt floor ceil exp abs, params, result) :=
+  uses: math
+extern(name: labs llabs fabs, params, result) := private fun {name}({params}): {result} = abs({params.bare})
+  uses: math
+extern(name: log, params, result)   := private fun log(x: Double): Double = ln(x)
+  uses: math
+extern(name: pow, params, result)   := private fun pow(x: Double, y: Double): Double = x.pow(y)
+  uses: math
+extern(name: fmax, params, result)  := private fun fmax(x: Double, y: Double): Double = max(x, y)
+  uses: math
+extern(name: fmin, params, result)  := private fun fmin(x: Double, y: Double): Double = min(x, y)
+  uses: math
+extern(name: sinf, params, result)  := private fun sinf(x: Float): Float = sin(x)
+  uses: math
+extern(name: cosf, params, result)  := private fun cosf(x: Float): Float = cos(x)
+  uses: math
+extern(name: tanf, params, result)  := private fun tanf(x: Float): Float = tan(x)
+  uses: math
+extern(name: sqrtf, params, result) := private fun sqrtf(x: Float): Float = sqrt(x)
+  uses: math
+extern(name: floorf, params, result) := private fun floorf(x: Float): Float = floor(x)
+  uses: math
+extern(name: ceilf, params, result) := private fun ceilf(x: Float): Float = ceil(x)
+  uses: math
+extern(name: logf, params, result)  := private fun logf(x: Float): Float = ln(x)
+  uses: math
+extern(name: expf, params, result)  := private fun expf(x: Float): Float = exp(x)
+  uses: math
+extern(name: fabsf, params, result) := private fun fabsf(x: Float): Float = abs(x)
+  uses: math
+extern(name: powf, params, result)  := private fun powf(x: Float, y: Float): Float = x.pow(y)
+  uses: math
+extern(name: fmaxf, params, result) := private fun fmaxf(x: Float, y: Float): Float = max(x, y)
+  uses: math
+extern(name: fminf, params, result) := private fun fminf(x: Float, y: Float): Float = min(x, y)
+  uses: math
+extern(name: getchar, params, result) := private fun getchar(): {result} = System.`in`.read().to{result}()
+extern(name: putchar, params, result) :=
+  private fun putchar({params}): {result} {
+      System.out.write({params.bare}.toInt())
+      System.out.flush()
+      return {params.bare}
+  }
+
+global(name, type, value)           := var {name}: {type} = {value}
+import(module)                      := unsupported "Kotlin has no modules of another language to import"
+import(module, alias)               := unsupported "Kotlin has no modules of another language to import"
+// An imported .poly file is another file of the same package: its declarations need no import.
+use(name, path, names)              :=
+
+## statements
+let(name, type, value)              := val {name}: {type} = {value}
+var(name, type)                     := var {name}: {type} = {type.zero}
+var(name, type, value)              := var {name}: {type} = {value}
+assign(target, value)               := {target} = {value}
+store(object, index, value)         := {object}[{index.int}] = {value}
+store(object: map mutmap, index, value) := {object}[{index}] = {value}
+store(object: sparse, index, value) := {object}.set({value}, {index}, 0L)
+store(object: grid matrix tensor, index, value) := {object}.set({value}, {index})
+store(object, indices, value)       := {object}.set({value}, {indices})
+expr(value)                         := {value.statement}
+if(cond, then)                      := if ({cond}) {then}
+if(cond, then, else)                := if ({cond}) {then} else {else}
+if(cond, then, elseIf)              := if ({cond}) {then} else {elseIf}
+while(cond, body)                   := while ({cond}) {body}
+// Kotlin has no counted loop: a `for` is its counters and a `while`, in a block of their own; a counter used after the loop is
+// declared before it.
+for(counters, cond, steps, body) :=
+  run {
+      {counters}
+      while ({cond}) {
+          {body}
+          {steps}
+      }
+  }
+for(counters, cond, steps, body, usedAfter) := lower
+counter(name, type, value)          := var {name}: {type} = {value}
+step(name, value)                   := {name} = {value}
+foreach(name, source, body)         := for ({name} in {source}) {body}
+foreach(name, source: map mutmap, body) := for ({name} in {source}.keys) {body}
+return                              := return
+return(value)                       := return {value}
+return(inCoroutine)                 := return@iterator
+try(body, name, handler) :=
+  try {body} catch (thrown: Thrown) {
+      val {name}: Long = thrown.value
+      {handler}
+  }
+  uses: thrown
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  try {body} catch (thrown: Throwable) {
+      {cleanup}
+      throw thrown
+  }
+throw(value)                        := throw Thrown({value})
+  uses: thrown
+yield(value)                        := yield({value})
+// A switch of blocks, which `match` and `switch` lower to: Kotlin's `when`, an arm per line; a sum is written as its `if`
+// chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool string, arms) :=
+  when ({value}) {
+      {arms}
+  }
+select(value: int bool string, arms, else) :=
+  when ({value}) {
+      {arms}
+      else -> {else}
+  }
+arm(keys, body)                     := {keys} -> {body}
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the branches of a `when` in a loop; each ends with a jump or a return.
+machine(state, cases) :=
+  machine@ while (true) {
+      when ({state}) {
+          {cases}
+      }
+  }
+case(state, number, body)           := {number}L -> {body}
+jump(state, number) :=
+  {state} = {number}L
+  continue@machine
+
+## expressions
+int(value)                          := {value}
+int(value: i64)                     := {value}L
+int(value: i8)                      := {value}.toByte()
+int(value: i16)                     := {value}.toShort()
+int(value: u8)                      := {value}u.toUByte()
+int(value: u16)                     := {value}u.toUShort()
+int(value: u32)                     := {value}u
+int(value: u64)                     := {value}uL
+float(value)                        := {value}
+float(value: float)                 := {value}f
+bool(value)                         := {value}
+string(value)                       := "{value}"
+  escape: $ as \$
+unit                                := Unit
+name(name)                          := {name}
+this                                := this
+funcref(name)                       := ::{name}
+funcref(name, holder, own)          := {holder}::{own}
+
+// Int and Long wrap as polyir's do; Byte and Short arithmetic is done in Int and brought back, UByte and UShort's in UInt.
+// A shift counts in an Int.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: i8, op: + - * / % & | ^, right) := ({left}.toInt() {op} {right}.toInt()).toByte()
+binary(left: i16, op: + - * / % & | ^, right) := ({left}.toInt() {op} {right}.toInt()).toShort()
+binary(left: u8, op: + - * / % & | ^, right) := ({left}.toUInt() {op} {right}.toUInt()).toUByte()
+binary(left: u16, op: + - * / % & | ^, right) := ({left}.toUInt() {op} {right}.toUInt()).toUShort()
+binary(left: i32 i64 u32 u64, op: << >>, right) := {left} {op} {right}.toInt()
+binary(left: i8, op: << >>, right)  := ({left}.toInt() {op} {right}.toInt()).toByte()
+binary(left: i16, op: << >>, right) := ({left}.toInt() {op} {right}.toInt()).toShort()
+binary(left: u8, op: << >>, right)  := ({left}.toUInt() {op} {right}.toInt()).toUByte()
+binary(left: u16, op: << >>, right) := ({left}.toUInt() {op} {right}.toInt()).toUShort()
+binary(left: array mutarray, op: +, right) := ({left} + {right}).toMutableList()
+// A vector's operators work lane by lane.
+binary(left: vec, op: + - * / %, right) := lanes({left}, {right}) { x, y -> x {op} y }
+  uses: lanes
+
+unary(op, operand)                  := {op}{operand}
+unary(op: ~, operand)               := {operand}.inv()
+unary(op: -, operand: i8)           := (-{operand}).toByte()
+unary(op: -, operand: i16)          := (-{operand}).toShort()
+
+// A number of one type as another: Kotlin's own conversions, which wrap as polyir's do.
+cast(value, type)                   := {value}.to{type}()
+// A pointer is a list here, so it has no address to turn into a number, or back.
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+cast(value: bool, type)             := (if ({value}) 1 else 0).to{type}()
+cast(value: i64, type: bool)        := {value} != 0L
+cast(value: i8 i16 i32 u8 u16 u32 u64 float double, type: bool) := {value}.toInt() != 0
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := if ({cond}) {then} else {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+methodcall(object, name, args)      := {object}.{name}({args})
+invoke(callee, args)                := {callee}({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object}.{name}
+
+// A list is indexed by an Int. A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := {object}[{index.int}]
+index(object: map mutmap, index, type) := {object}[{index}] ?: {type.zero}
+index(object: sparse, index, type)  := {object}.get({index}, 0L)
+index(object: grid matrix tensor, index, type) := {object}.get({index})
+index(object, indices, type)        := {object}.get({indices})
+any.int(value)                      := {value}.toInt()
+any.int(value: i32)                 := {value}
+int.int(value)                      := {value}
+
+new(name, values)                   := {name}({values})
+new(name, typeArgs, values)         := {name}({values})
+init(name, value)                   := {value}
+list(values)                        := mutableListOf({values})
+vec(values, type)                   := mutableListOf({values})
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+// A closure is an anonymous function: a `return` in it is its own.
+closure(params, result, body)       := fun({params}): {result} {body}
+lambda(params, value)               := { {params.bare} -> {value} }
+lambda(params: empty, value)        := { {value} }
+some(type, value)                   := {value}
+none(type)                          := null
+// An `either` is an Either: `Either.ok<Long, String>(1L)`, with `isOk`, `okValue` and `errValue`.
+ok(type, value)                     := {type.ok}({value})
+  uses: either
+err(type, value)                    := {type.err}({value})
+  uses: either
+variant(type, case, value)          := Variant({case}L, {value})
+  uses: variant
+// A whole number goes in as a Long, as the case reads it back: a literal alone would be an Int.
+variant(type, case, value: i64)     := Variant({case}L, ({value}).toLong())
+  uses: variant
+
+// Text with holes is a string template; a char (`i8`) is the character of its byte.
+interp(pieces)                      := "{pieces}"
+text(value)                         := {value}
+  escape: $ as \$
+hole(value)                         := ${{value}}
+hole(value: i8 u8)                  := ${({value}.toInt() and 0xFF).toChar()}
+
+## builtins
+// Sizes are Longs (i64) in the program. A string counts its UTF-8 bytes, as on every target.
+len(object)                         := {object}.size.toLong()
+len(object: string)                 := textLength({object})
+  uses: text
+capacity(object)                    := {object}.size.toLong()
+rows(object)                        := {object}.dims[0].toLong()
+cols(object)                        := {object}.dims[1].toLong()
+dim(object, axis)                   := {object}.dims[{axis.int}].toLong()
+
+// A push whose list is not used is Kotlin's add; one used as a value gives the list (`pushed`).
+push(object, value)                 := pushed({object}, {value})
+  uses: pushed
+push.statement(object, value)       := {object}.add({value})
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := {value}.toLong()
+hash(value: bool)                   := if ({value}) 1L else 0L
+hash(value: string)                 := hashText({value})
+  uses: hashText
+
+shuffle(object, lanes)              := listOf({lanes.int}).map { {object}[it] }.toMutableList()
+atomicLoad(object, order)           := unsupported "this Kotlin has no memory shared with C to read atomically"
+atomicStore(object, value, order)   := unsupported "this Kotlin has no memory shared with C to write atomically"
+atomicRmw(object, op, value, order) := unsupported "this Kotlin has no memory shared with C to change atomically"
+cmpxchg(object, expected, value, success, failure) := unsupported "this Kotlin has no memory shared with C to change atomically"
+fence(order)                        := unsupported "this Kotlin has no memory shared with C to order"
+
+// A variant is a Variant (the number of its case and its value), an `either` an Either.
+tag(object)                         := {object}.tag
+isCase(object, case)                := {object}.tag == {case}L
+unwrapAt(object, case, type)        := {object}.value as {type}
+isOk(object)                        := {object}.isOk
+isErr(object)                       := !{object}.isOk
+unwrapOk(object)                    := {object}.okValue
+unwrapErr(object)                   := {object}.errValue
+isSome(object)                      := {object} != null
+isNone(object)                      := {object} == null
+unwrap(object)                      := {object} ?: fail("unwrap of an empty optional")
+  uses: fail
+
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+// The builder hears nothing of a close: a coroutine closed is not resumed again.
+yielded(value)                      := run { yield({value}); false }
+
+// `copy`, `freeze` and `thaw` make a new collection holding the same items; a data class has its own copy().
+copy(object)                        := {object}.copy()
+copy(object: array mutarray fixed buffer vec) := {object}.toMutableList()
+copy(object: map mutmap)            := {object}.toMutableMap()
+copy(object: set mutset)            := {object}.toMutableSet()
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := ({object} + {value}).toMutableList()
+with(object: set mutset, value)     := ({object} + {value}).toMutableSet()
+with(object, key, value)            := ({object} + ({key} to {value})).toMutableMap()
+has(object, key)                    := {object}.contains({key})
+has(object: map mutmap, key)        := {object}.containsKey({key})
+add(object, value)                  := {object}.add({value})
+remove(object, key)                 := {object}.remove({key})
+remove(object: map mutmap, key)     := {object}.remove({key}) != null
+truncate(object, size)              := truncate({object}, {size})
+  uses: truncate
+
+str(value)                          := {value}.toString()
+str(value: i8 u8)                   := ({value}.toInt() and 0xFF).toChar().toString()
+str(value: string)                  := {value}
+charAt(object, index)               := textByte({object}, {index})
+  uses: text
+slice(object, from, to)             := textSlice({object}, {from}, {to})
+  uses: text
+find(object, part, from)            := textFind({object}, {part}, {from})
+  uses: text
+print(value)                        := println({value})
+fail(value)                         := fail({value})
+  uses: fail
+
+## types
+i8                                  := Byte
+i16                                 := Short
+i32                                 := Int
+i64                                 := Long
+u8                                  := UByte
+u16                                 := UShort
+u32                                 := UInt
+u64                                 := ULong
+bool                                := Boolean
+float                               := Float
+double                              := Double
+string                              := String
+void                                := Unit
+struct(name)                        := {name}
+instance(name, args)                := {name}<{args}>
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}<{args}>
+array(elem)                         := MutableList<{elem}>
+mutarray(elem)                      := MutableList<{elem}>
+map(key, value)                     := MutableMap<{key}, {value}>
+mutmap(key, value)                  := MutableMap<{key}, {value}>
+set(elem)                           := MutableSet<{elem}>
+mutset(elem)                        := MutableSet<{elem}>
+optional(elem)                      := {elem}?
+either(ok, err)                     := Either<{ok}, {err}>
+variant(cases)                      := Variant
+closure(params, result)             := ({params}) -> {result}
+func(params, result)                := ({params}) -> {result}
+// A pointer is a kernel's buffer, indexed as a list; a pointer to a function is the function.
+ptr(elem)                           := MutableList<{elem}>
+ptr(elem: func closure)             := {elem}
+coro(elem)                          := Coroutine<{elem}>
+vec(elem, size)                     := MutableList<{elem}>
+matrix(elem, size)                  := Grid<{elem}>
+fixed(elem, size)                   := MutableList<{elem}>
+buffer(elem, size)                  := MutableList<{elem}>
+grid(elem, rows, cols)              := Grid<{elem}>
+tensor(elem, dims)                  := Grid<{elem}>
+sparse(elem)                        := Sparse<{elem}>
+
+either.ok(ok, err)                  := Either.ok<{ok}, {err}>
+either.err(ok, err)                 := Either.err<{ok}, {err}>
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := null
+i8.zero                             := 0.toByte()
+i16.zero                            := 0.toShort()
+i32.zero                            := 0
+i64.zero                            := 0L
+u8.zero                             := 0u.toUByte()
+u16.zero                            := 0u.toUShort()
+u32.zero                            := 0u
+u64.zero                            := 0uL
+bool.zero                           := false
+float.zero                          := 0.0f
+double.zero                         := 0.0
+string.zero                         := ""
+array.zero(elem)                    := mutableListOf()
+mutarray.zero(elem)                 := mutableListOf()
+map.zero(key, value)                := mutableMapOf()
+mutmap.zero(key, value)             := mutableMapOf()
+set.zero(elem)                      := mutableSetOf()
+mutset.zero(elem)                   := mutableSetOf()
+fixed.zero(elem, size)              := MutableList({size}) { {elem.zero} }
+buffer.zero(elem, size)             := MutableList({size}) { {elem.zero} }
+vec.zero(elem, size)                := MutableList({size}) { {elem.zero} }
+grid.zero(elem, rows, cols)         := Grid(listOf({rows}, {cols}), {elem.zero})
+  uses: grid
+matrix.zero(elem, size)             := Grid(listOf({size}, {size}), {elem.zero})
+  uses: grid
+tensor.zero(elem, dims)             := Grid(listOf({dims}), {elem.zero})
+  uses: grid
+sparse.zero(elem)                   := Sparse({elem.zero})
+  uses: sparse
+
+## operators
+& := and
+| := or
+^ := xor
+<< := shl
+>> := shr
+levels: else, ||, &&, == != === !==, < <= > >=, in is, ?:, and or xor shl shr ushr to, .., + -, * / %, as
+
+## reserved
+// Kotlin's own words, and the names its helpers and built-ins use: a name that is one of them gets a _ after it.
+as break class continue do else false for fun if in interface is null object package return super this throw true try
+typealias typeof val var when while
+Any Unit Nothing String Long Int Short Byte Boolean Double Float UByte UShort UInt ULong List MutableList Map MutableMap
+Set MutableSet Coroutine Variant Either Thrown Grid Sparse fail pushed truncate lanes textLength textByte textSlice textFind
+hashText exitProcess println iterator machine
+
+## imports
+// Each is written once at the top when a rule or a support file that uses it is written.
+math := import kotlin.math.*
+exitProcess := import kotlin.system.exitProcess
+
+## support
+fail := runtime/Fail.kt
+thrown := runtime/Thrown.kt
+either := runtime/Either.kt
+variant := runtime/Variant.kt
+coroutine := runtime/Coroutine.kt
+pushed := runtime/Pushed.kt
+truncate := runtime/Truncate.kt
+text := runtime/Text.kt
+hashText := runtime/HashText.kt
+grid := runtime/Grid.kt
+sparse := runtime/Sparse.kt
+lanes := runtime/Lanes.kt
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code.
+line := //# from {file}:{line}:{column} {code}

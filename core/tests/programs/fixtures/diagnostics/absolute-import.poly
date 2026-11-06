@@ -1,0 +1,2 @@
+import "/nonexistent/polyir-absolute.poly"
+func first() -> i64 { return 1 }

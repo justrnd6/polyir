@@ -1,0 +1,49 @@
+// Sound output, written in polyir: plays samples on this machine's speakers. Like the Metal and
+// Vulkan runtimes it is plain polyir calling the operating system's C interface through `extern
+// func`, so a program that imports it must be built natively (`polyir file --out name`); `--jit`
+// refuses it.
+//
+// There are two ways to make sound.
+//
+//   PLAY A FINISHED SOUND:
+//     soundPlay(song)                         // a Sound built with ideas/audio/Sound.poly, mono or stereo
+//     audioPlay(samples, count, 44100)        // or raw samples: floats from -1 to 1, one channel
+//
+//   MAKE SOUND AS IT PLAYS (a game, an instrument, anything live): give the speakers a FILL FUNCTION that
+//   they call whenever they need more, a few dozen times a second (see audio/Stream.poly for exactly what
+//   it receives and returns):
+//     audioStream(fill, state, 2, 44100, 10.0)     // stereo, at most ten seconds
+//
+// WHICH OPERATING SYSTEM. The three files in audio/ each open the speakers one way (macOS: AudioQueue with a
+// callback; Linux: ALSA, a blocking write loop; Windows: waveOut). The `{os}` in the import below becomes
+// `macos`, `linux` or `windows`, the system the program is built on. Only the macOS one has been run; the
+// other two are written from the systems' documentation and are compiled by the tests but UNTESTED on a
+// real Linux or Windows machine.
+import "Stream.poly"
+import "{os}.poly"
+
+// Plays what `fill` makes, `channels` channels at `rate` frames a second, for at most `seconds` (0 = until
+// `fill` returns 0), scaled by `volume` (1 = unchanged; 0 keeps the speakers running but silent, which is
+// how the tests check a live stream without making noise). Returns when it is over: 0 on success, or the
+// system's error code.
+func audioStreamAt(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64>, state: i64, channels: i64, rate: i64,
+        seconds: float, volume: float) -> i64 {
+    return audioStreamRun(streamNew(fill, state, channels, rate, seconds, volume))
+}
+
+// The same at full volume.
+func audioStream(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64>, state: i64, channels: i64, rate: i64,
+        seconds: float) -> i64 {
+    return audioStreamAt(fill, state, channels, rate, seconds, 1.0)
+}
+
+// Plays a Sound (see ideas/audio/Sound.poly), mono or stereo, and returns when it has finished.
+func soundPlay(s: Sound) -> i64 {
+    return audioStreamRun(soundStream(s, 1.0))
+}
+
+// Plays `count` mono samples (floats from -1 to 1) at `rate` samples per second and returns when they have
+// finished. Returns 0 on success, or the system's error code.
+func audioPlay(samples: ptr<float>, count: i64, rate: i64) -> i64 {
+    return soundPlay(Sound(samples: samples, count: count, rate: rate, channels: 1))
+}

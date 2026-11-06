@@ -1,0 +1,39 @@
+// A GPU kernel run on this machine's GPU and checked against the CPU.
+//
+//   polyir --emit-msl scale.poly > scale.metal       (the kernel as Metal source)
+//   polyir scale.poly --out scale && ./scale          (needs Apple Silicon; run in this folder)
+//
+// The program exits with 0 when every GPU result equals the CPU result.
+import "../Metal.poly"
+
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k + 1.0
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let pipeline: i64 = metalPipeline(device, metalReadFile("scale.metal"), "scale")
+    if (pipeline == 0) { return 11 }
+    return compareWithCpu(device, pipeline)
+}
+
+// Run on the GPU, then compare each element with the same kernel run on the CPU.
+func compareWithCpu(device: i64, pipeline: i64) -> i64 {
+    let xs: float[4]
+    xs[0] = 1.0
+    xs[1] = 2.5
+    xs[2] = 0.0
+    xs[3] = 8.0
+    let factor: float[1]
+    factor[0] = 3.0
+    let input: i64 = metalBuffer(device, xs.toI64(), 16)
+    let uniformK: i64 = metalBuffer(device, factor.toI64(), 4)
+    let output: i64 = metalEmptyBuffer(device, 16)
+    if (metalDispatch(device, pipeline, 4, input, uniformK, output, 0) == 0) { return 12 }
+    let results: ptr<float> = metalContents(output).toPtr()
+    for (i = 0; i < 4; i = i + 1) {
+        if (results[i] != scale(xs[i], factor[0])) { return 13 }
+    }
+    return 0
+}

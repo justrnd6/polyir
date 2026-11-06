@@ -1,0 +1,293 @@
+// LEFT-HANDED VERSUS RIGHT-HANDED z, shared by handed-vulkan.poly. One kernel, `view`, is a camera that stands still (no turn)
+// and can be told which kind of room it lives in. It shows three things (chapter 14, section 14.9):
+//   1. In a RIGHT-handed room the camera looks along -z, so a LARGER z is NEARER. In a LEFT-handed room it looks along +z, so a
+//      larger z is FARTHER. The tables print z next to the depth the camera gets from it.
+//   2. The same room written in the other system is the same numbers with z negated: the two pictures are identical.
+//   3. Mix the systems up (the right-handed numbers given to a left-handed camera that still looks along -z) and the picture is
+//      a MIRROR IMAGE. A letter F makes it plain.
+//
+// The importing file supplies `makePipeline(ctx, source, name) -> i64` and `launchView(ctx, pipeline, points, pointCount, cam)
+// -> ptr<float>` (runs `view` for every point and returns four numbers for each), and needs shared/print.poly.
+
+extern func tanf(x: float) -> float
+extern func fabsf(x: float) -> float
+
+// ---- THE CAMERA ----
+// `cam` describes it:
+//   cam[0]     the room's handedness: +1 right-handed, -1 left-handed
+//   cam[1]     which way the camera faces along z: -1 looks toward smaller z, +1 toward larger z
+//   cam[2..4]  where it stands (x, y, z, metres)
+//   cam[5]     the lens: how tall a view it has, in degrees
+//   cam[6..7]  the picture's width and height in pixels
+//   cam[8]     the nearest distance it can see
+// The result for each point is four numbers: the pixel column, the pixel row, the DEPTH in metres, and 1.0 if it can be seen
+// or 0.0 if it cannot (behind the camera).
+kernel func view(index i: i32, uniform pts: ptr<float>, uniform cam: ptr<float>) -> vec<float, 4> {
+    let dx: float = pts[i * 3] - cam[2]
+    let dy: float = pts[i * 3 + 1] - cam[3]
+    let dz: float = pts[i * 3 + 2] - cam[4]
+    // DEPTH: how far ahead. Ahead is the way the camera faces: along -z gives (camera z - point z), along +z gives (point z - camera z).
+    let depth: float = dz * cam[1]
+    // RIGHT: the camera's right side. Right is "forward x up" in a right-handed room and "up x forward" in a left-handed one, which for a
+    // camera looking along the z-axis works out as a sign: -(handedness * facing) times x.
+    let right: float = dx * (0.0 - cam[0] * cam[1])
+    if (depth < cam[8]) { return vec[0.0, 0.0, depth, 0.0] }
+    let half: float = tanf(cam[5] * 0.00872664626)
+    let nx: float = (right / depth) / (half * (cam[6] / cam[7]))
+    let ny: float = (dy / depth) / half
+    return vec[(nx * 0.5 + 0.5) * cam[6], (0.5 - ny * 0.5) * cam[7], depth, 1.0]
+}
+
+// The same sums on the CPU, for the check; writes the four numbers for point `i` into `out`.
+func viewOnCpu(cam: ptr<float>, pts: ptr<float>, i: i64, out: ptr<float>) -> i64 {
+    let depth: float = (pts[i * 3 + 2] - cam[4]) * cam[1]
+    let right: float = (pts[i * 3] - cam[2]) * (0.0 - cam[0] * cam[1])
+    out[i * 4 + 2] = depth
+    out[i * 4 + 3] = 0.0
+    if (depth < cam[8]) { return 0 }
+    let half: float = tanf(cam[5] * 0.00872664626)
+    out[i * 4] = ((right / depth) / (half * (cam[6] / cam[7])) * 0.5 + 0.5) * cam[6]
+    out[i * 4 + 1] = (0.5 - ((pts[i * 3 + 1] - cam[3]) / depth / half) * 0.5) * cam[7]
+    out[i * 4 + 3] = 1.0
+    return 0
+}
+
+func makeView(hand: float, facing: float, x: float, y: float, z: float, fov: float, w: float, h: float) -> ptr<float> {
+    let cam: ptr<float> = calloc(16, 4).toPtr()
+    cam[0] = hand
+    cam[1] = facing
+    cam[2] = x
+    cam[3] = y
+    cam[4] = z
+    cam[5] = fov
+    cam[6] = w
+    cam[7] = h
+    cam[8] = 0.1
+    return cam
+}
+
+// ---- Checking the GPU against the CPU ----
+
+func closeEnough(a: float, b: float) -> i64 {
+    if (fabsf(a - b) <= 0.0005 * (1.0 + fabsf(b))) { return 1 }
+    return 0
+}
+
+// Runs `view` on the GPU and the CPU for the same camera and points; 1 when every number agrees.
+func gpuMatchesCpu(ctx: i64, pipeline: i64, points: ptr<float>, count: i64, cam: ptr<float>) -> i64 {
+    let gpu: ptr<float> = launchView(ctx, pipeline, points, count, cam)
+    let cpu: ptr<float> = calloc(count * 4, 4).toPtr()
+    for (i = 0; i < count; i = i + 1) {
+        viewOnCpu(cam, points, i, cpu)
+        for (k = 0; k < 4; k = k + 1) {
+            if (closeEnough(gpu[i * 4 + k], cpu[i * 4 + k]) == 0) { return 0 }
+        }
+    }
+    return 1
+}
+
+// ---- Part 1: what does a larger z mean? ----
+
+// Four points on a line out from the camera, at z = -10, -5, +5 and +10, all 1 metre to the right of the middle.
+func fourPoints() -> ptr<float> {
+    let pts: ptr<float> = calloc(12, 4).toPtr()
+    for (k = 0; k < 4; k = k + 1) {
+        pts[k * 3] = 1.0
+        pts[k * 3 + 1] = 0.0
+    }
+    pts[2] = 0.0 - 10.0
+    pts[5] = 0.0 - 5.0
+    pts[8] = 5.0
+    pts[11] = 10.0
+    return pts
+}
+
+func sayWhatISee(z: float, result: ptr<float>, k: i64) -> i64 {
+    say("    z = ")
+    if (fabsf(z) < 10.0) { say(" ") }
+    if (z < 0.0) { say("-") } else { say("+") }
+    sayNumber(fabsf(z).toI64())
+    if (result[k * 4 + 3] > 0.5) {
+        say("   depth ")
+        sayRight(result[k * 4 + 2].toI64(), 2)
+        say("   seen at column ")
+        sayDecimal(result[k * 4])
+    } else {
+        say("   behind the camera (depth would be ")
+        sayDecimal(result[k * 4 + 2])
+        say(")")
+    }
+    return newline()
+}
+
+func zTable(ctx: i64, pipeline: i64, hand: float, facing: float, title: string) -> ptr<float> {
+    let pts: ptr<float> = fourPoints()
+    let cam: ptr<float> = makeView(hand, facing, 0.0, 0.0, 0.0, 60.0, 1000.0, 1000.0)
+    let result: ptr<float> = launchView(ctx, pipeline, pts, 4, cam)
+    say(title)
+    newline()
+    for (k = 0; k < 4; k = k + 1) {
+        sayWhatISee(pts[k * 3 + 2], result, k)
+    }
+    return result
+}
+
+func depthOf(result: ptr<float>, k: i64) -> float { return result[k * 4 + 2] }
+
+func columnOf(result: ptr<float>, k: i64) -> float { return result[k * 4] }
+
+func seen(result: ptr<float>, k: i64) -> i64 {
+    if (result[k * 4 + 3] > 0.5) { return 1 }
+    return 0
+}
+
+// How far a point is from the middle column of a 1000-pixel picture.
+func offsetOf(result: ptr<float>, k: i64) -> float { return columnOf(result, k) - 500.0 }
+
+// Right-handed (points 0 and 1 are z = -10 and -5): z INCREASES, the depth halves, the offset from the middle doubles, and the
+// points at +5 and +10 are behind the camera. A point 1 m to the RIGHT (+x) must land in the right half of the picture in both rooms. Left-handed (points 2 and 3 are z = +5 and +10): the same story the other way round:
+// z DECREASES from +10 to +5, the depth halves, the offset doubles, and the points at negative z are behind the camera.
+func rightHandedFacts(r: ptr<float>) -> i64 {
+    if (closeEnough(depthOf(r, 0), 10.0) == 0) { return 0 }
+    if (closeEnough(depthOf(r, 1), 5.0) == 0) { return 0 }
+    if (closeEnough(offsetOf(r, 1), 2.0 * offsetOf(r, 0)) == 0) { return 0 }
+    if (seen(r, 0) + seen(r, 1) != 2) { return 0 }
+    if (offsetOf(r, 0) <= 0.0) { return 0 }
+    if (seen(r, 2) + seen(r, 3) != 0) { return 0 }
+    return 1
+}
+
+func leftHandedFacts(l: ptr<float>) -> i64 {
+    if (closeEnough(depthOf(l, 3), 10.0) == 0) { return 0 }
+    if (closeEnough(depthOf(l, 2), 5.0) == 0) { return 0 }
+    if (closeEnough(offsetOf(l, 2), 2.0 * offsetOf(l, 3)) == 0) { return 0 }
+    if (seen(l, 2) + seen(l, 3) != 2) { return 0 }
+    if (offsetOf(l, 3) <= 0.0) { return 0 }
+    if (seen(l, 0) + seen(l, 1) != 0) { return 0 }
+    return 1
+}
+
+func largerZ(ctx: i64, pipeline: i64) -> i64 {
+    let right: ptr<float> = zTable(ctx, pipeline, 1.0, 0.0 - 1.0, "right-handed room, camera looks along -z (this guide):")
+    let left: ptr<float> = zTable(ctx, pipeline, 0.0 - 1.0, 1.0, "left-handed room, camera looks along +z:")
+    if (rightHandedFacts(right) == 0) { return 0 }
+    return leftHandedFacts(left)
+}
+
+// ---- Parts 2 and 3: the same room in both systems, and the mirror image ----
+
+// A letter F, 4 metres tall and 2 wide, standing on the floor with its middle at x = 0, `z` metres along the z-axis. It is not
+// symmetric, so a mirror image of it is easy to tell from the real thing: the arms of a real F point to the RIGHT.
+func letterF(pts: ptr<float>, z: float) -> i64 {
+    var n: i64 = 0
+    for (k = 0; k <= 32; k = k + 1) {
+        addPoint(pts, n, 0.0 - 1.0, k.toFloat() * 0.125, z)
+        n = n + 1
+    }
+    for (k = 1; k <= 16; k = k + 1) {
+        addPoint(pts, n, 0.0 - 1.0 + k.toFloat() * 0.125, 4.0, z)
+        n = n + 1
+    }
+    for (k = 1; k <= 12; k = k + 1) {
+        addPoint(pts, n, 0.0 - 1.0 + k.toFloat() * 0.125, 2.0, z)
+        n = n + 1
+    }
+    return n
+}
+
+func addPoint(pts: ptr<float>, n: i64, x: float, y: float, z: float) -> i64 {
+    pts[n * 3] = x
+    pts[n * 3 + 1] = y
+    pts[n * 3 + 2] = z
+    return n
+}
+
+// Draws the F's projected points as '#' into the text cells that begin at `start` in `cells`: 24 columns by 12 rows of text. The picture is 24 by 24 pixels, and a text
+// row is two pixels tall (characters are about twice as tall as wide), so the F keeps its shape.
+func plotInto(cells: ptr<i8>, start: i64, result: ptr<float>, count: i64) -> i64 {
+    for (c = 0; c < 24 * 12; c = c + 1) {
+        cells[start + c] = 46
+    }
+    for (i = 0; i < count; i = i + 1) {
+        if (seen(result, i) == 1) {
+            let col: i64 = result[i * 4].toI64()
+            let row: i64 = (result[i * 4 + 1] / 2.0).toI64()
+            if (col >= 0 && col < 24 && row >= 0 && row < 12) { cells[start + row * 24 + col] = 35 }
+        }
+    }
+    return 0
+}
+
+// Three grids side by side, one text line at a time.
+func printPanels(grids: ptr<i8>) -> i64 {
+    let line: ptr<i8> = calloc(100, 1).toPtr()
+    for (r = 0; r < 12; r = r + 1) {
+        for (p = 0; p < 3; p = p + 1) {
+            for (c = 0; c < 28; c = c + 1) {
+                var ch: i64 = 32
+                if (c < 24) { ch = grids[p * 288 + r * 24 + c] }
+                line[p * 28 + c] = ch.toI8()
+            }
+        }
+        write(1, line.toI64().toPtr(), 80)
+        newline()
+    }
+    return 0
+}
+
+// Mirror image: same rows and same depths; every column is the picture's width minus the right-handed column.
+func isMirrored(a: ptr<float>, b: ptr<float>, count: i64) -> i64 {
+    for (i = 0; i < count; i = i + 1) {
+        if (closeEnough(a[i * 4] + b[i * 4], 24.0) == 0) { return 0 }
+        if (closeEnough(a[i * 4 + 1], b[i * 4 + 1]) == 0) { return 0 }
+        if (closeEnough(a[i * 4 + 2], b[i * 4 + 2]) == 0) { return 0 }
+    }
+    return 1
+}
+
+func identical(a: ptr<float>, b: ptr<float>, count: i64) -> i64 {
+    for (i = 0; i < count; i = i + 1) {
+        for (k = 0; k < 4; k = k + 1) {
+            if (closeEnough(a[i * 4 + k], b[i * 4 + k]) == 0) { return 0 }
+        }
+    }
+    return 1
+}
+
+func theLetterF(ctx: i64, pipeline: i64) -> i64 {
+    let authored: ptr<float> = calloc(64 * 3, 4).toPtr()
+    let count: i64 = letterF(authored, 0.0 - 10.0)
+    let negated: ptr<float> = calloc(64 * 3, 4).toPtr()
+    letterF(negated, 10.0)
+    let rightCam: ptr<float> = makeView(1.0, 0.0 - 1.0, 0.0, 2.0, 0.0, 30.0, 24.0, 24.0)
+    let leftBack: ptr<float> = makeView(0.0 - 1.0, 0.0 - 1.0, 0.0, 2.0, 0.0, 30.0, 24.0, 24.0)
+    let leftCam: ptr<float> = makeView(0.0 - 1.0, 1.0, 0.0, 2.0, 0.0, 30.0, 24.0, 24.0)
+    if (gpuMatchesCpu(ctx, pipeline, authored, count, rightCam) == 0) { return 13 }
+    if (gpuMatchesCpu(ctx, pipeline, authored, count, leftBack) == 0) { return 13 }
+    if (gpuMatchesCpu(ctx, pipeline, negated, count, leftCam) == 0) { return 13 }
+    let one: ptr<float> = launchView(ctx, pipeline, authored, count, rightCam)
+    let two: ptr<float> = launchView(ctx, pipeline, authored, count, leftBack)
+    let three: ptr<float> = launchView(ctx, pipeline, negated, count, leftCam)
+    let grids: ptr<i8> = calloc(3 * 288, 1).toPtr()
+    plotInto(grids, 0, one, count)
+    plotInto(grids, 288, two, count)
+    plotInto(grids, 576, three, count)
+    say("a letter F, 4 m tall, 10 m from the camera; the arms of a real F point to the right:")
+    newline()
+    say("right-handed, looks -z      left-handed, looks -z       left-handed, looks +z")
+    newline()
+    printPanels(grids)
+    say("F as authored (z = -10)     same numbers: MIRRORED      z negated (z = +10)")
+    newline()
+    if (isMirrored(one, two, count) == 0) { return 14 }
+    if (identical(one, three, count) == 0) { return 14 }
+    return 0
+}
+
+func runAll(ctx: i64) -> i64 {
+    let pipeline: i64 = makePipeline(ctx, "", "view")
+    if (pipeline == 0) { return 12 }
+    if (largerZ(ctx, pipeline) == 0) { return 14 }
+    newline()
+    return theLetterF(ctx, pipeline)
+}

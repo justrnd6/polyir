@@ -1,0 +1,2 @@
+targets/cpp/Cpp.translate:412: `cast(value: ptr, type)` is unsupported: a pointer is a list here, not an address
+targets/cpp/Cpp.translate:413: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

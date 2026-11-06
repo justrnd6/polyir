@@ -1,0 +1,69 @@
+// COLOUR AS A SIGNAL on the GPU (Metal). The kernels (shared/colour.poly) work on brightness and colour
+// separately: view each alone, rotate the hue, scale the saturation, blur only the colour or only the
+// brightness, sharpen only the brightness. A 160 x 120 test picture (a hue sweep with fine stripes and a
+// disc) goes through each one. Also drawn on the CPU: a "vectorscope", every pixel plotted at its (I, Q).
+//
+//   polyir --emit-msl colour.poly > colour.metal
+//   polyir colour.poly --out colour && ./colour        (Apple Silicon; run in this folder)
+//
+// Saves colour-*.ppm (pictures) and colour-scopes.pgm. Exit 0 means every GPU picture equals the CPU's
+// and the maths held: chromaBlur kept every pixel's brightness, scaleColour(0) made greys, a full turn of
+// the hue changed nothing. 10 no GPU, 11 the Metal source is missing, 12 a dispatch failed, 13 the GPU and
+// CPU disagree, 14 a property failed. (colour-vulkan.poly is the same program for Vulkan.)
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/colour.poly"
+
+// One kernel over the whole picture on the GPU: the RGBA result.
+func runKernel(device: i64, source: string, name: string, img: ptr<float>, opts: ptr<float>, w: i64, h: i64) -> ptr<float> {
+    let pipeline: i64 = metalPipeline(device, source, name)
+    if (pipeline == 0) { return 0.toPtr() }
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    buffers[0] = metalBuffer(device, img.toI64(), w * h * 16)
+    buffers[1] = metalBuffer(device, opts.toI64(), 16)
+    buffers[2] = metalEmptyBuffer(device, w * h * 16)
+    if (metalDispatchBuffers(device, pipeline, w * h, buffers, 3) == 0) { return 0.toPtr() }
+    return metalContents(buffers[2]).toPtr()
+}
+
+// Runs one kernel, checks it against the CPU, and saves it.
+func demo(device: i64, source: string, name: string, setting: float, file: string, img: ptr<float>, w: i64, h: i64) -> ptr<float> {
+    let opts: ptr<float> = settings(w, h, setting)
+    let gpu: ptr<float> = runKernel(device, source, name, img, opts, w, h)
+    if (gpu.toI64() == 0) { return 0.toPtr() }
+    if (agrees(name, gpu, img, opts, w * h) == 0) { return 1.toPtr() }
+    saveColorPicture(file, gpu, w, h)
+    return gpu
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("colour.metal")
+    if (source == "") { return 11 }
+    let w: i64 = 160
+    let h: i64 = 120
+    let img: ptr<float> = testPicture(w, h)
+    saveColorPicture("colour-1-source.ppm", img, w, h)
+    let results: ptr<i64> = calloc(8, 8).toPtr()
+    let code: i64 = runAll(device, source, img, w, h, results)
+    if (code != 0) { return code }
+    return properties(results, img, w, h, "colour-scopes.pgm")
+}
+
+// Each kernel; the pictures are kept in `results` (as addresses) for the property checks.
+func runAll(device: i64, source: string, img: ptr<float>, w: i64, h: i64, results: ptr<i64>) -> i64 {
+    results[0] = demo(device, source, "luma", 0.0, "colour-2-luma.ppm", img, w, h).toI64()
+    results[1] = demo(device, source, "hueOnly", 0.0, "colour-3-hue-only.ppm", img, w, h).toI64()
+    results[2] = demo(device, source, "rotateHue", 1.0471976, "colour-4-rotate-60.ppm", img, w, h).toI64()
+    results[3] = demo(device, source, "scaleColour", 0.0, "colour-5-grey.ppm", img, w, h).toI64()
+    results[4] = demo(device, source, "chromaBlur", 4.0, "colour-6-chroma-blur.ppm", img, w, h).toI64()
+    results[5] = demo(device, source, "lumaBlur", 4.0, "colour-7-luma-blur.ppm", img, w, h).toI64()
+    results[6] = demo(device, source, "sharpenLuma", 1.5, "colour-8-sharpen-luma.ppm", img, w, h).toI64()
+    results[7] = demo(device, source, "rotateHue", 6.2831853, "colour-9-full-turn.ppm", img, w, h).toI64()
+    for (k = 0; k < 8; k = k + 1) {
+        if (results[k] == 0) { return 12 }
+        if (results[k] == 1) { return 13 }
+    }
+    return 0
+}

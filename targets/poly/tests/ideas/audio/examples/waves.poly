@@ -1,0 +1,14 @@
+import "../Wave.poly"
+
+func concertAHeight() -> i64 {
+  let quarterCycle: float = (0.25 / noteFrequency(69.0))
+  return (sine(noteFrequency(69.0) * quarterCycle) * 1000.0).toI64()
+}
+
+func softAttack() -> i64 {
+  return (fade(0.5, 1.0, 1.0, 4.0) * 1000.0).toI64()
+}
+
+func chordSample(t: float) -> float {
+  return (0.3 * (sine(noteFrequency(60.0) * t) + sine(noteFrequency(64.0) * t) + sine(noteFrequency(67.0) * t)))
+}

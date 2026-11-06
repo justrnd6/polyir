@@ -1,0 +1,22 @@
+// Full C operator precedence, tightest to loosest: `* / %`, `+ -`,
+// `<< >>`, `&`, `^`, `|`, comparisons, `&&`, `||` (so `a || b && c` is
+// `a || (b && c)`). Both checks below would print a visibly DIFFERENT
+// number if polyir got the relative precedence of `&`/`^`/`|` or `<<`/`>>`
+// wrong. `&&` and `||` also short-circuit: the right side is skipped when
+// the left side has already decided the answer (core/tests/programs/LogicTests.poly).
+//
+//   polyir run operators.poly --entry bitwisePrecedenceCheck   -> 7
+//   polyir run operators.poly --entry shiftPrecedenceCheck     -> 0
+
+func bitwisePrecedenceCheck() -> i64 {
+  let a: i64 = 6
+  let b: i64 = 3
+  let c: i64 = 1
+  let d: i64 = 2
+  return a | b & c ^ d
+}
+
+func shiftPrecedenceCheck() -> i64 {
+  let x: i64 = 1
+  return x << 2 & 3
+}

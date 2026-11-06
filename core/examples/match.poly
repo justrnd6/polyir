@@ -1,0 +1,88 @@
+// `match` picks a value (or runs a block) by what a value is: an exact key, a condition, or a pattern that takes a value
+// apart. `switch` with block arms does the same as a statement. Both lower to a switch where every arm is an exact key, and
+// to an `if` chain otherwise, so the program written back (`--emit-poly`) or translated still reads like the match.
+//
+//   polyir-check match.poly --interp
+//   polyir-check match.poly --emit-poly      (the switch and the if chains it lowers to)
+
+// Exact keys, with alternatives: a switch.
+func sizeOf(n: i64) -> string {
+  return match (n) {
+    0 => "none"
+    1 | 2 | 3 => "a few"
+    else => "many"
+  }
+}
+
+// Conditions, tested in order: a `match` with no subject.
+func gradeOf(score: i64) -> string {
+  return match {
+    score >= 90 => "A"
+    score >= 80 => "B"
+    else => "C"
+  }
+}
+
+// Strings: keys, and the string's own methods as conditions among them.
+func kindOf(path: string) -> string {
+  return match (path) {
+    "Ninafile" | "Polyfile" => "build"
+    path.endsWith(".poly") => "polyir"
+    path.startsWith("README") => "docs"
+    else => "other"
+  }
+}
+
+// An optional: `Some(n)` binds the payload, and a guard tests it.
+func shown(found: optional<i64>) -> string {
+  return match (found) {
+    Some(n) if n > 100 => "big ${n}"
+    Some(n) => "found ${n}"
+    None => "nothing"
+  }
+}
+
+// An either, from a call that runs once.
+func safeDivide(a: i64, b: i64) -> either<i64, string> {
+  if (b == 0) {
+    return eitherErr<i64, string>("divide by zero")
+  }
+  return eitherOk<i64, string>(a / b)
+}
+
+func quotient(a: i64, b: i64) -> string {
+  return match (safeDivide(a, b)) {
+    Ok(q) => "quotient ${q}"
+    Err(why) => why
+  }
+}
+
+// A list, taken apart: `...rest` is the rest of it (the built-in Lists library's `drop`).
+func said(xs: array<i64>) -> string {
+  return match (xs) {
+    [] => "empty"
+    [x] => "just ${x}"
+    [first, ...rest] => "${first}, then ${len(rest)} more"
+  }
+}
+
+// `switch` with block arms: a condition and a guard sit among the exact keys.
+func report(code: i64) -> void {
+  switch (code) {
+    200 | 204 => { print("done") }
+    code >= 500 => { print("retry ${code}") }
+    s if s >= 400 => { print("failed with ${s}") }
+    else => { print("? ${code}") }
+  }
+}
+
+func main() -> i64 {
+  print(sizeOf(2))
+  print(gradeOf(85))
+  print(kindOf("main.poly"))
+  print(shown(Some<i64>(500)))
+  print(quotient(7, 2))
+  print(said([3, 4, 5]))
+  report(404)
+  return 0
+}

@@ -1,0 +1,5 @@
+import "euclid.poly"
+
+func main() -> i64 {
+  return gcd(48, 18) * 10 + lcm(4, 6)
+}

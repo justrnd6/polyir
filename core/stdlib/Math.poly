@@ -1,0 +1,44 @@
+// MATH: small, general-purpose functions on floats, as part of polyir: the sign of a number, the part after its
+// decimal point, a number held between two limits, and a slide from one value to another.
+//
+//   import "../../core/stdlib/Math.poly"       (from ideas/audio/Wave.poly: the path is relative to the importing file)
+//
+// The import is optional: these functions are BUILT INTO the language. A program that calls `sign`, `fract`,
+// `clamp` or `mix` without defining or importing them gets this library added by the compiler (core/src/front/Prelude.cpp,
+// which embeds the text of this file; after editing it run `python3 core/stdlib/sync-prelude.py`). Only the functions a program uses, and what they call, are added.
+//
+// Every function here is a `kernel func` on `float`s, so each one
+//   * runs on the CPU like any function (and can be tested there),
+//   * runs on a GPU inside other kernels (`--emit-msl`, `--emit-glsl`), and
+//   * is checked by the kernel rules, so it can never use anything a GPU cannot do.
+//
+//   sign       -1, 0 or +1
+//   fract      the part after the decimal point, 0 up to 1
+//   clamp      a number held between a low and a high limit
+//   mix        a slide from a to b (also called lerp)
+extern func floorf(x: float) -> float
+
+// -1 for a negative number, 0 for zero, +1 for a positive number. (Not the sine function.)
+kernel func sign(x: float) -> float {
+    if (x > 0.0) { return 1.0 }
+    if (x < 0.0) { return 0.0 - 1.0 }
+    return 0.0
+}
+
+// The part after the decimal point, always 0 up to (but not including) 1: fract(2.75) is 0.75
+// and fract(-0.25) is 0.75 as well, so repeating patterns continue smoothly through zero.
+kernel func fract(x: float) -> float {
+    return x - floorf(x)
+}
+
+// x held between low and high: below low gives low, above high gives high.
+kernel func clamp(x: float, low: float, high: float) -> float {
+    if (x < low) { return low }
+    if (x > high) { return high }
+    return x
+}
+
+// Slide from a to b: t = 0 gives a, t = 1 gives b, t = 0.5 the middle (also called lerp).
+kernel func mix(a: float, b: float, t: float) -> float {
+    return a + (b - a) * t
+}

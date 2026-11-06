@@ -1,0 +1,35 @@
+// GPU kernels: each `kernel func` is written for ONE element and also runs on the CPU.
+// `polyir --emit-msl examples/kernels.poly` prints the Metal version.
+extern func sqrtf(x: float) -> float
+
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k
+}
+
+kernel func norm(a: float, b: float) -> float {
+    let s: float = scale(a, 2.0) + b * b
+    return sqrtf(s)
+}
+
+kernel func sumTo(n: i32) -> i32 {
+    var acc: i32 = 0
+    for (i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+            acc = acc + i
+        }
+    }
+    return acc
+}
+
+kernel func lane(v: vec<float, 4>) -> float {
+    return v[0] + v[3]
+}
+
+// A kernel can also read a whole array: `uniform src: ptr<float>` is shared by
+// every thread, and `index i` is the number of the element being computed. This
+// is a three-point average, a "stencil". At the two ends it keeps the value.
+kernel func smooth(index i: i32, uniform src: ptr<float>, uniform n: i32) -> float {
+    if (i == 0) { return src[i] }
+    if (i == n - 1) { return src[i] }
+    return (src[i - 1] + src[i] + src[i + 1]) / 3.0
+}

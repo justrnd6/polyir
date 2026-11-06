@@ -1,0 +1,3 @@
+import "lib/broken.poly"
+
+func main() -> i64 { return 0 }

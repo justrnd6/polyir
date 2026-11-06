@@ -1,0 +1,17 @@
+// Labels are PARAMETERIZED blocks: block ARGUMENTS stand in for
+// hand-written phi nodes. `label loop(a: i64, b: i64):` reads like a tiny
+// function signature because that's what it compiles to — one `LlvmPhi`
+// per parameter, fed by every `goto`/`branch` that names the label.
+//
+//   polyir run labels.poly --entry gcd --args "48 18"   -> 6
+
+func gcd(a0: i64, b0: i64) -> i64 {
+  goto loop(a0, b0)
+label loop(a: i64, b: i64):
+  branch b == 0 ? done(a) : body(a, b)
+label body(a: i64, b: i64):
+  let r: i64 = a % b
+  goto loop(b, r)
+label done(result: i64):
+  return result
+}

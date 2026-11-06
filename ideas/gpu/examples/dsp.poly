@@ -1,0 +1,204 @@
+// SIGNALS AND FREQUENCIES on the GPU (Metal): digital signal processing (DSP) with an
+// image row, an image, and sine waves. A "signal" is just a list of numbers measured
+// one after another; the DFT (discrete Fourier transform) says which wave speeds
+// (frequencies) the list is made of. Every frequency is worked out independently, so
+// each GPU thread takes one frequency (or one 2D frequency of an image).
+//
+//   polyir --emit-msl dsp.poly > dsp.metal
+//   polyir dsp.poly --out dsp && ./dsp        (Apple Silicon; run in this folder)
+//
+// 1D plots (dsp-1 ... dsp-4, drawn as "stems", one per sample) and 2D pictures
+// (dsp-5 ... dsp-7) are saved as grey images. Each GPU result is checked against the CPU
+// running the same kernel. Exit 0 means they all matched; 10 no GPU, 11 the Metal source
+// is missing, 12 a dispatch failed, 13 a result differs from the CPU's.
+import "../Metal.poly"
+import "shared/picture.poly"
+import "shared/plot.poly"
+import "shared/spectrum.poly"   // the 1D transform, `dft`
+
+extern func sqrtf(x: float) -> float
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+extern func logf(x: float) -> float
+
+// ── the kernels ──────────────────────────────────────────────────────────────
+// 2D DFT of an s x s image: the same idea with waves that vary across the picture. A
+// frequency (u, v) is a wave of stripes that repeats u times left to right and v times
+// top to bottom. Output pixel i shows one (u, v): the picture is shifted so frequency
+// (0, 0) (the overall brightness) is in the middle, and the strength is squashed with a
+// logarithm so weak frequencies can still be seen.
+// p: 0 the image width s   1 the squash gain
+kernel func dft2d(index i: i32, uniform img: ptr<float>, uniform p: ptr<float>) -> float {
+    let s: i32 = p[0].toI32()
+    let u: i32 = (i % s + s / 2) % s
+    let v: i32 = (i / s + s / 2) % s
+    var re: float = 0.0
+    var im: float = 0.0
+    for (y = 0; y < s; y = y + 1) {
+        for (x = 0; x < s; x = x + 1) {
+            let turns: float = ((u * x + v * y) % s).toFloat() / s.toFloat()
+            re = re + img[y * s + x] * cosf(6.2831853 * turns)
+            im = im - img[y * s + x] * sinf(6.2831853 * turns)
+        }
+    }
+    let strength: float = sqrtf(re * re + im * im) / (s * s).toFloat()
+    return logf(1.0 + p[1] * strength) / logf(1.0 + p[1])
+}
+
+// ── the CPU side: signals, plots, running the kernels ───────────────────────
+// Two waves added: one repeating 5 times across the list (height 1), one 20 times (height 0.5).
+func twoSines(x: ptr<float>, n: i64) -> i64 {
+    for (j = 0; j < n; j = j + 1) {
+        let t: float = j.toFloat() / n.toFloat()
+        x[j] = sinf(6.2831853 * 5.0 * t) + 0.5 * sinf(6.2831853 * 20.0 * t)
+    }
+    return 0
+}
+
+// One wave repeating 50 times across only 64 samples: too fast for that many samples.
+func tooFast(x: ptr<float>, n: i64) -> i64 {
+    for (j = 0; j < n; j = j + 1) {
+        x[j] = sinf(6.2831853 * 50.0 * j.toFloat() / n.toFloat())
+    }
+    return 0
+}
+
+// Stripes across the picture: `across` repeats left to right, `down` repeats top to bottom.
+func stripes(img: ptr<float>, s: i64, across: float, down: float) -> i64 {
+    for (y = 0; y < s; y = y + 1) {
+        for (x = 0; x < s; x = x + 1) {
+            let turns: float = (across * x.toFloat() + down * y.toFloat()) / s.toFloat()
+            img[y * s + x] = 0.5 + 0.5 * sinf(6.2831853 * turns)
+        }
+    }
+    return 0
+}
+
+// A short "smoothing" filter and an "edge" filter, laid in a list of 64 zeros, to see which
+// frequencies each one lets through.
+func blurFilter(x: ptr<float>, n: i64) -> i64 {
+    for (j = 0; j < n; j = j + 1) { x[j] = 0.0 }
+    x[0] = 0.3333
+    x[1] = 0.3333
+    x[2] = 0.3333
+    return 0
+}
+
+func edgeFilter(x: ptr<float>, n: i64) -> i64 {
+    for (j = 0; j < n; j = j + 1) { x[j] = 0.0 }
+    x[0] = 0.0 - 1.0
+    x[2] = 1.0
+    return 0
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("dsp.metal")
+    if (spectra1D(device, source) != 0) { return 13 }
+    return spectra2D(device, source)
+}
+
+// Run the 1D transform of `x` (n samples) on the GPU and check it against the CPU.
+// Returns the n answers (or 0 if the GPU failed or disagreed).
+func transform1D(device: i64, source: string, x: ptr<float>, n: i64) -> ptr<float> {
+    let pipeline: i64 = metalPipeline(device, source, "dft")
+    if (pipeline == 0) { return 0.toPtr() }
+    let p: ptr<float> = calloc(2, 4).toPtr()
+    p[0] = n.toFloat()
+    let out: i64 = metalEmptyBuffer(device, n * 4)
+    if (metalDispatch(device, pipeline, n, metalBuffer(device, x.toI64(), n * 4), metalBuffer(device, p.toI64(), 8), out, 0) == 0) { return 0.toPtr() }
+    let gpu: ptr<float> = metalContents(out).toPtr()
+    for (k = 0; k < n; k = k + 1) {
+        var gap: float = gpu[k] - dft(k, x, p)
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > 0.002) { return 0.toPtr() }
+    }
+    return gpu
+}
+
+// Save a signal plot and its spectrum plot (the first `shown` frequencies).
+func plotPair(signalName: string, spectrumName: string, x: ptr<float>, n: i64, spectrum: ptr<float>, shown: i64, signalHigh: float, spectrumHigh: float) -> i64 {
+    let pic: ptr<float> = calloc(256 * 96, 4).toPtr()
+    drawStems(pic, 256, 96, x, n, 0.0 - signalHigh, signalHigh)
+    savePicture(signalName, pic, 256, 96)
+    drawStems(pic, 256, 96, spectrum, shown, 0.0, spectrumHigh)
+    savePicture(spectrumName, pic, 256, 96)
+    return 0
+}
+
+func scaleBy(values: ptr<float>, n: i64, factor: float) -> i64 {
+    for (k = 0; k < n; k = k + 1) {
+        values[k] = values[k] * factor
+    }
+    return 0
+}
+
+func spectra1D(device: i64, source: string) -> i64 {
+    // 1. Two waves added: the spectrum shows exactly those two speeds, with their heights.
+    let x: ptr<float> = calloc(128, 4).toPtr()
+    twoSines(x, 128)
+    let s1: ptr<float> = transform1D(device, source, x, 128)
+    if (s1.toI64() == 0) { return 1 }
+    plotPair("dsp-1-signal.pgm", "dsp-1-spectrum.pgm", x, 128, s1, 64, 1.6, 1.2)
+    // 2. Aliasing: 50 repeats in 64 samples. The spectrum claims 14 (= 64 - 50).
+    let y: ptr<float> = calloc(64, 4).toPtr()
+    tooFast(y, 64)
+    let s2: ptr<float> = transform1D(device, source, y, 64)
+    if (s2.toI64() == 0) { return 1 }
+    plotPair("dsp-2-alias-signal.pgm", "dsp-2-alias-spectrum.pgm", y, 64, s2, 33, 1.2, 1.2)
+    // 3. One row of a picture is a signal too: a row through the bright disc and the dark square.
+    let img: ptr<float> = calloc(4096, 4).toPtr()
+    fillScene(img)
+    let row: ptr<float> = calloc(64, 4).toPtr()
+    for (c = 0; c < 64; c = c + 1) {
+        row[c] = img[44 * 64 + c] - 0.5
+    }
+    let s3: ptr<float> = transform1D(device, source, row, 64)
+    if (s3.toI64() == 0) { return 1 }
+    plotPair("dsp-3-row-signal.pgm", "dsp-3-row-spectrum.pgm", row, 64, s3, 33, 0.6, 0.35)
+    // 4. What two filters do to each frequency: blur keeps slow waves, the edge filter keeps fast ones.
+    let f: ptr<float> = calloc(64, 4).toPtr()
+    blurFilter(f, 64)
+    let blurResponse: ptr<float> = transform1D(device, source, f, 64)
+    if (blurResponse.toI64() == 0) { return 1 }
+    // The transform divides by the list length; a filter's "response" is the raw size, so undo that.
+    scaleBy(blurResponse, 33, 32.0)
+    plotPair("dsp-4-blur-kernel.pgm", "dsp-4-blur-response.pgm", f, 64, blurResponse, 33, 1.0, 2.2)
+    edgeFilter(f, 64)
+    let edgeResponse: ptr<float> = transform1D(device, source, f, 64)
+    if (edgeResponse.toI64() == 0) { return 1 }
+    scaleBy(edgeResponse, 33, 32.0)
+    plotPair("dsp-4-edge-kernel.pgm", "dsp-4-edge-response.pgm", f, 64, edgeResponse, 33, 1.0, 2.2)
+    return 0
+}
+
+// The 2D transform of a 64 x 64 image on the GPU, checked against the CPU.
+func transform2D(device: i64, source: string, img: ptr<float>, name: string, spectrumName: string) -> i64 {
+    let pipeline: i64 = metalPipeline(device, source, "dft2d")
+    if (pipeline == 0) { return 1 }
+    let p: ptr<float> = calloc(2, 4).toPtr()
+    p[0] = 64.0
+    p[1] = 400.0
+    let out: i64 = metalEmptyBuffer(device, 4096 * 4)
+    if (metalDispatch(device, pipeline, 4096, metalBuffer(device, img.toI64(), 4096 * 4), metalBuffer(device, p.toI64(), 8), out, 0) == 0) { return 1 }
+    let gpu: ptr<float> = metalContents(out).toPtr()
+    savePicture(name, img, 64, 64)
+    savePicture(spectrumName, gpu, 64, 64)
+    for (i = 0; i < 4096; i = i + 1) {
+        var gap: float = gpu[i] - dft2d(i, img, p)
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > 0.01) { return 1 }
+    }
+    return 0
+}
+
+func spectra2D(device: i64, source: string) -> i64 {
+    let img: ptr<float> = calloc(4096, 4).toPtr()
+    stripes(img, 64, 6.0, 0.0)
+    if (transform2D(device, source, img, "dsp-5-stripes.pgm", "dsp-5-stripes-spectrum.pgm") != 0) { return 13 }
+    stripes(img, 64, 4.0, 3.0)
+    if (transform2D(device, source, img, "dsp-6-diagonal.pgm", "dsp-6-diagonal-spectrum.pgm") != 0) { return 13 }
+    fillScene(img)
+    return transform2D(device, source, img, "dsp-7-scene.pgm", "dsp-7-scene-spectrum.pgm") * 13
+}

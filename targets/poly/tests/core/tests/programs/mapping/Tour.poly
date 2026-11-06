@@ -1,0 +1,84 @@
+struct Pt(x: i64, y: i64) {
+}
+
+struct Counter(var n: i64, name: string) {
+}
+
+interface Shape {
+  func area() -> i64
+}
+
+struct Sq(side: i64) : Shape {
+  func area() -> i64 {
+    return this.side * this.side
+  }
+}
+
+struct Rect(w: i64, h: i64) : Shape {
+  func area() -> i64 {
+    return this.w * this.h
+  }
+}
+
+func totalArea(shapes: mutarray<Shape>) -> i64 {
+  var sum: i64 = 0
+  for (i = 0; i < shapes.len(); i = i + 1) {
+    sum = sum + shapes[i].area()
+  }
+  return sum
+}
+
+func risky(x: i64) -> i64 {
+  if (x < 0) {
+    throw 7
+  }
+  return x
+}
+
+func guarded(x: i64) -> i64 {
+  var out: i64 = 0
+  try {
+    out = risky(x)
+  } catch (code) {
+    out = code * 10
+  }
+  return out
+}
+
+func main() -> i64 {
+  var score: i64 = 0
+  let p: Pt = Pt(x: 3, y: 4)
+  let q: Pt = Pt(x: 3, y: 4)
+  if (p == q) {
+    score = score + 1
+  }
+  let c: Counter = Counter(n: 5, name: "hits")
+  let d: Counter = c
+  d.n = d.n + 1
+  if (c === d) {
+    score = score + c.n
+  }
+  let shapes: mutarray<Shape> = mutarray<Shape>()
+  shapes.push(Sq(side: 3))
+  shapes.push(Rect(w: 2, h: 5))
+  score = score + totalArea(shapes)
+  var calls: i64 = 0
+  let tick: closure() -> i64 = closure() -> i64 {
+    calls = calls + 1
+    return calls
+  }
+  let first: i64 = tick()
+  let second: i64 = tick()
+  score = score + first + second + calls
+  let stock: mutmap<string, i64> = mutmap<string, i64>(8)
+  stock["apple"] = 3
+  stock["pear"] = 4
+  score = score + stock["apple"] * stock["pear"]
+  let b: Box<i64> = Box(value: 7)
+  score = score + b.value
+  score = score + guarded(5) + guarded(0 - 1)
+  return score
+}
+
+struct Box<T>(value: T) {
+}

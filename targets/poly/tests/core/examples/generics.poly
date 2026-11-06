@@ -1,0 +1,74 @@
+func boxedI64() -> i64 {
+  let b: Box<i64> = Box(value: 42)
+  return b.getValue()
+}
+
+func boxedBoth() -> i64 {
+  let bi: Box<i64> = Box(value: 100)
+  let bd: Box<double> = Box(value: 2.0)
+  return bi.getValue() + bd.getValue().toI64()
+}
+
+func pairOfIntAndDouble() -> i64 {
+  let p: Pair_i64_double = Pair_i64_double(a: 7, b: 8.5)
+  return p.sumAsInt()
+}
+
+func doubledI64() -> i64 {
+  let d: Doubler_i64 = Doubler_i64(value: 21)
+  return d.doubled()
+}
+
+func containerOk() -> i64 {
+  let c: Container<i64> = Container(value: eitherOk<i64, i64>(42))
+  return c.unwrapOrDefault(0)
+}
+
+func makePairResult(ok: i64) -> either<Pair_i64_i64, i64> {
+  if (ok == 0) {
+    return eitherErr<Pair_i64_i64, i64>(-1)
+  }
+  return eitherOk<Pair_i64_i64, i64>(Pair_i64_i64(a: 11, b: 22))
+}
+
+func pairResultOrErr(ok: i64) -> i64 {
+  let r: either<Pair_i64_i64, i64> = makePairResult(ok)
+  if (r.isErr()) {
+    return r.unwrapErr()
+  }
+  let p: Pair_i64_i64 = r.unwrapOk()
+  return p.a * 100 + p.b
+}
+
+struct Box<T>(value: T) {
+  func getValue() -> T {
+    return this.value
+  }
+}
+
+struct Pair_i64_double(a: i64, b: double) {
+  func sumAsInt() -> i64 {
+    return this.a.toI64() + this.b.toI64()
+  }
+}
+
+struct Doubler_i64(value: i64) {
+  func doubled() -> i64 {
+    return this.value + this.value
+  }
+}
+
+struct Container<T>(value: either<T, i64>) {
+  func unwrapOrDefault(def: T) -> T {
+    if (this.value.isErr()) {
+      return def
+    }
+    return this.value.unwrapOk()
+  }
+}
+
+struct Pair_i64_i64(a: i64, b: i64) {
+  func sumAsInt() -> i64 {
+    return this.a.toI64() + this.b.toI64()
+  }
+}

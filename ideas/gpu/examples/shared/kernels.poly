@@ -1,0 +1,54 @@
+// The kernel set the conformance examples run on the CPU, on Metal and on
+// Vulkan. It covers each kind of kernel parameter and the main language
+// features a kernel may use:
+//   scale  an element input and a uniform value
+//   norm   two element inputs, a call to another kernel, and a math function
+//   sumTo  integers and a loop that carries a value
+//   lane   a 4-element vector input
+//   smooth a whole-array read and the element number (a stencil)
+//   leftover the remainder `a % b` of two floats, including numbers that divide evenly (2867 % 47 is 0, not 47)
+extern func sqrtf(x: float) -> float
+
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k + 1.0
+}
+
+kernel func norm(a: float, b: float) -> float {
+    let s: float = scale(a, 2.0) + b * b
+    return sqrtf(s)
+}
+
+kernel func sumTo(n: i32) -> i32 {
+    var acc: i32 = 0
+    for (i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+            acc = acc + i
+        }
+    }
+    return acc
+}
+
+kernel func lane(v: vec<float, 4>) -> float {
+    return v[0] + v[3]
+}
+
+kernel func smooth(index i: i32, uniform src: ptr<float>, uniform n: i32) -> float {
+    if (i == 0) { return src[i] }
+    if (i == n - 1) { return src[i] }
+    return (src[i - 1] + src[i] + src[i + 1]) / 3.0
+}
+
+kernel func leftover(a: float, b: float) -> float {
+    return a % b
+}
+
+// Two floats agree when they differ by less than a millionth of their size
+// (the GPU's `sqrt` and `/` may round the last bit differently from the CPU).
+func close(a: float, b: float) -> i64 {
+    var diff: float = a - b
+    if (diff < 0.0) { diff = 0.0 - diff }
+    var size: float = b
+    if (size < 0.0) { size = 0.0 - size }
+    if (diff <= 0.000001 * (size + 1.0)) { return 1 }
+    return 0
+}

@@ -1,0 +1,20 @@
+$ --analyze
+exit 0
+warning:
+  lint_closure_assign.poly:3:7: 'miss' is declared `var` but never reassigned in 'main' — use `let` instead
+ok
+$ --analyze --strict
+exit 1
+lint failed:
+  lint_closure_assign.poly:3:7: 'miss' is declared `var` but never reassigned in 'main' — use `let` instead
+$ --emit-hir-json
+exit 0
+warning:
+  lint_closure_assign.poly:3:7: 'miss' is declared `var` but never reassigned in 'main' — use `let` instead
+[{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HVarDecl","name":"hit","ty":{"k":"HInt","bits":64},"init":{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[2,18]},"at":[2,7]},{"k":"HVarDecl","name":"miss","ty":{"k":"HInt","bits":64},"init":{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[3,19]},"at":[3,7]},{"k":"HLet","name":"f","ty":{"k":"HClosure","params":[{"k":"HInt","bits":64}],"ret":{"k":"HInt","bits":64}},"value":{"k":"HClosureLit","paramNames":["x"],"paramTypes":[{"k":"HInt","bits":64}],"body":[{"k":"HAssign","target":{"k":"HLoadSlot","name":"hit","ty":{"k":"HInt","bits":64},"at":[5,5]},"value":{"k":"HLocal","name":"x","ty":{"k":"HInt","bits":64},"at":[5,11]},"at":[5,5]},{"k":"HReturn","value":{"k":"HLoadSlot","name":"hit","ty":{"k":"HInt","bits":64},"at":[6,12]},"at":[6,12]}],"captures":["hit","x","hit"],"ty":{"k":"HClosure","params":[{"k":"HInt","bits":64}],"ret":{"k":"HInt","bits":64}},"at":[0,0]},"at":[4,7]},{"k":"HReturn","value":{"k":"HBinary","op":"Add","left":{"k":"HCallIndirect","callee":{"k":"HLocal","name":"f","ty":{"k":"HClosure","params":[{"k":"HInt","bits":64}],"ret":{"k":"HInt","bits":64}},"at":[8,10]},"args":[{"k":"HConstInt","value":2,"ty":{"k":"HInt","bits":64},"at":[8,12]}],"ty":{"k":"HInt","bits":64},"at":[8,10]},"right":{"k":"HLoadSlot","name":"miss","ty":{"k":"HInt","bits":64},"at":[8,17]},"ty":{"k":"HInt","bits":64},"at":[8,15]},"at":[8,15]}],"isCoroutine":false,"at":[1,6]}]
+$ --emit-msl
+exit 1
+warning:
+  lint_closure_assign.poly:3:7: 'miss' is declared `var` but never reassigned in 'main' — use `let` instead
+kernel check failed:
+  no `kernel func` found

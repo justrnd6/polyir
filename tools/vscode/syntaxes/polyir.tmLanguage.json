@@ -1,0 +1,653 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "polyir",
+  "scopeName": "source.poly",
+  "comment": "polyir (.poly). The language's keywords are its lexer's (core/src/front/Lexer.hpp); keep the keyword lists here in step with it.",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#chars"
+    },
+    {
+      "include": "#meta-decl"
+    },
+    {
+      "include": "#import-decl"
+    },
+    {
+      "include": "#struct-decl"
+    },
+    {
+      "include": "#interface-decl"
+    },
+    {
+      "include": "#struct-impls"
+    },
+    {
+      "include": "#extern-decl"
+    },
+    {
+      "include": "#bridge-decl"
+    },
+    {
+      "include": "#host-binding"
+    },
+    {
+      "include": "#func-decl"
+    },
+    {
+      "include": "#label-decl"
+    },
+    {
+      "include": "#jump-targets"
+    },
+    {
+      "include": "#for-in"
+    },
+    {
+      "include": "#local-decl"
+    },
+    {
+      "include": "#param-marks"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#container-types"
+    },
+    {
+      "include": "#primitive-types"
+    },
+    {
+      "include": "#constructor-call"
+    },
+    {
+      "include": "#field-name"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#method-call"
+    },
+    {
+      "include": "#property"
+    },
+    {
+      "include": "#function-call"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#type-args"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#types"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.poly",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "comment": "No escapes in v1, the same as the lexer's STRING_LIT.",
+      "patterns": [
+        {
+          "name": "string.quoted.double.poly",
+          "match": "\"[^\"\\r\\n]*\""
+        }
+      ]
+    },
+    "chars": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.poly",
+          "match": "'[^'\\r\\n]'"
+        }
+      ]
+    },
+    "meta-decl": {
+      "comment": "meta \"license\" = \"MIT\" / meta area \"doc\" = \"\u2026\"",
+      "match": "^\\s*(meta)\\b(?:\\s+([A-Za-z_]\\w*))?",
+      "captures": {
+        "1": {
+          "name": "storage.type.meta.poly"
+        },
+        "2": {
+          "name": "entity.name.function.poly"
+        }
+      }
+    },
+    "import-decl": {
+      "comment": "import \"path.poly\" / import java \"Some.class\"",
+      "match": "^\\s*(import)\\b(?:\\s+([A-Za-z_]\\w*))?(?=\\s*\")",
+      "captures": {
+        "1": {
+          "name": "keyword.control.import.poly"
+        },
+        "2": {
+          "name": "support.constant.host.poly"
+        }
+      }
+    },
+    "type-params": {
+      "match": "\\G\\s*(<)([^<>]*)(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.typeparameters.begin.poly"
+        },
+        "2": {
+          "patterns": [
+            {
+              "match": "[A-Za-z_]\\w*",
+              "name": "entity.name.type.parameter.poly"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        "3": {
+          "name": "punctuation.definition.typeparameters.end.poly"
+        }
+      }
+    },
+    "struct-decl": {
+      "comment": "struct Name, struct Box<T>, struct Point(x: double, y: double) : Shape { \u2026 }. The paren field list may run over several lines.",
+      "begin": "\\b(struct)\\s+([A-Za-z_]\\w*)",
+      "beginCaptures": {
+        "1": {
+          "name": "storage.type.struct.poly"
+        },
+        "2": {
+          "name": "entity.name.type.struct.poly"
+        }
+      },
+      "end": "(?=\\{)|$",
+      "patterns": [
+        {
+          "include": "#type-params"
+        },
+        {
+          "include": "#impl-list"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#field-name"
+        },
+        {
+          "include": "#container-types"
+        },
+        {
+          "include": "#primitive-types"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#type-args"
+        },
+        {
+          "include": "#punctuation"
+        },
+        {
+          "include": "#types"
+        }
+      ]
+    },
+    "impl-list": {
+      "comment": "`: Shape, Named` after a struct's name or its field list.",
+      "match": "(:)\\s*([A-Za-z_]\\w*(?:\\s*,\\s*[A-Za-z_]\\w*)*)\\s*(?=\\{|$|//)",
+      "captures": {
+        "1": {
+          "name": "punctuation.separator.inherits.poly"
+        },
+        "2": {
+          "patterns": [
+            {
+              "match": "[A-Za-z_]\\w*",
+              "name": "entity.other.inherited-class.poly"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        }
+      }
+    },
+    "struct-impls": {
+      "comment": "The closing `) : Shape {` of a paren field list written over several lines.",
+      "match": "^\\s*(\\))\\s*(:)\\s*([A-Za-z_]\\w*(?:\\s*,\\s*[A-Za-z_]\\w*)*)",
+      "captures": {
+        "1": {
+          "name": "punctuation.section.parens.poly"
+        },
+        "2": {
+          "name": "punctuation.separator.inherits.poly"
+        },
+        "3": {
+          "patterns": [
+            {
+              "match": "[A-Za-z_]\\w*",
+              "name": "entity.other.inherited-class.poly"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        }
+      }
+    },
+    "interface-decl": {
+      "match": "\\b(interface)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "storage.type.interface.poly"
+        },
+        "2": {
+          "name": "entity.name.type.interface.poly"
+        }
+      }
+    },
+    "extern-decl": {
+      "comment": "extern func f(\u2026) -> T / extern type Name<T> / extern interface Name",
+      "patterns": [
+        {
+          "match": "\\b(extern)\\s+(func)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.extern.poly"
+            },
+            "2": {
+              "name": "storage.type.function.poly"
+            },
+            "3": {
+              "name": "entity.name.function.poly"
+            }
+          }
+        },
+        {
+          "match": "\\b(extern)\\s+(type|interface)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.extern.poly"
+            },
+            "2": {
+              "name": "storage.type.poly"
+            },
+            "3": {
+              "name": "entity.name.type.poly"
+            }
+          }
+        }
+      ]
+    },
+    "bridge-decl": {
+      "comment": "bridge Type <-> java \"host.Type\" { toHost = \"\u2026\" }",
+      "match": "\\b(bridge)\\b",
+      "captures": {
+        "1": {
+          "name": "storage.type.bridge.poly"
+        }
+      }
+    },
+    "host-binding": {
+      "comment": "A host binding: = java \"java.util.ArrayList\" | js \"Array\" (also after `<->` in a bridge).",
+      "match": "(?:(?<==)|(?<=\\|)|(?<=<->))\\s*([a-z][a-z0-9]*)\\s+(?=\")",
+      "captures": {
+        "1": {
+          "name": "support.constant.host.poly"
+        }
+      }
+    },
+    "func-decl": {
+      "comment": "func f, kernel func f, coro func f (an interface method too).",
+      "match": "\\b(?:(kernel)\\s+)?(?:(coro)\\s+)?(func)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "storage.modifier.kernel.poly"
+        },
+        "2": {
+          "name": "storage.modifier.coro.poly"
+        },
+        "3": {
+          "name": "storage.type.function.poly"
+        },
+        "4": {
+          "name": "entity.name.function.poly"
+        }
+      }
+    },
+    "label-decl": {
+      "match": "\\b(label)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "keyword.other.label.poly"
+        },
+        "2": {
+          "name": "entity.name.label.poly"
+        }
+      }
+    },
+    "jump-targets": {
+      "comment": "The labels a goto, a branch (`? t(\u2026) : e(\u2026)`) or a switch arm (`=> t(\u2026)`) jumps to.",
+      "patterns": [
+        {
+          "match": "\\b(goto)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.goto.poly"
+            },
+            "2": {
+              "name": "entity.name.label.poly"
+            }
+          }
+        },
+        {
+          "match": "(\\?|=>|(?<=\\))\\s*:)\\s*([A-Za-z_]\\w*)(?=\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.jump.poly"
+            },
+            "2": {
+              "name": "entity.name.label.poly"
+            }
+          }
+        }
+      ]
+    },
+    "for-in": {
+      "comment": "for (x in gen) \u2014 a loop over a coroutine's values.",
+      "match": "\\b(for)\\s*(\\()\\s*([A-Za-z_]\\w*)\\s+(in)\\b",
+      "captures": {
+        "1": {
+          "name": "keyword.control.loop.poly"
+        },
+        "2": {
+          "name": "punctuation.section.parens.poly"
+        },
+        "3": {
+          "name": "variable.other.local.poly"
+        },
+        "4": {
+          "name": "keyword.control.in.poly"
+        }
+      }
+    },
+    "local-decl": {
+      "match": "\\b(let|var|val|global)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "storage.type.local.poly"
+        },
+        "2": {
+          "name": "variable.other.local.poly"
+        }
+      }
+    },
+    "param-marks": {
+      "comment": "uniform / index / writable / workgroup on a kernel func parameter.",
+      "match": "\\b(uniform|index|writable|workgroup)\\b(?=\\s+[A-Za-z_]\\w*\\s*:)",
+      "captures": {
+        "1": {
+          "name": "storage.modifier.kernel.poly"
+        }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.poly",
+          "match": "\\b(if|else|for|switch|match|goto|branch|return|try|catch|throw|yield)\\b"
+        },
+        {
+          "name": "keyword.other.label.poly",
+          "match": "\\blabel\\b"
+        },
+        {
+          "name": "storage.type.poly",
+          "match": "\\b(struct|interface|func|extern|type|let|var|val|global|import|meta|coro|bridge)\\b"
+        },
+        {
+          "name": "storage.modifier.poly",
+          "match": "\\b(static|kernel)\\b"
+        },
+        {
+          "name": "constant.language.poly",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "variable.language.this.poly",
+          "match": "\\bthis\\b"
+        },
+        {
+          "name": "support.function.constructor.poly",
+          "match": "\\b(eitherOk|eitherErr)\\b"
+        },
+        {
+          "name": "support.function.constructor.poly",
+          "match": "\\b(Some|None)\\b(?=\\s*<)"
+        },
+        {
+          "comment": "A match or switch arm's sum case: Some(n), None, Ok(v), Err(e).",
+          "name": "support.function.constructor.poly",
+          "match": "\\b(Some|None|Ok|Err)\\b(?!\\s*<)"
+        }
+      ]
+    },
+    "container-types": {
+      "comment": "type-position keywords taking <\u2026> type arguments, and the function / closure types that take (\u2026).",
+      "patterns": [
+        {
+          "name": "storage.type.container.poly",
+          "match": "\\b(ptr|vec|array|mutarray|buffer|map|mutmap|set|mutset|grid|tensor|sparse|variant|either|optional|coro)\\b(?=\\s*<)"
+        },
+        {
+          "name": "storage.type.function.poly",
+          "match": "\\b(closure|func)\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "primitive-types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.poly",
+          "match": "\\b(i1|i8|i16|i32|i64|u8|u16|u32|u64|float|double|char|string|void)\\b"
+        }
+      ]
+    },
+    "constructor-call": {
+      "comment": "Point(x: 1, y: 2): the constructor call; the field names are scoped by #field-name.",
+      "match": "\\b([A-Z]\\w*)\\s*(?=\\(\\s*[a-z_]\\w*\\s*:(?!:))",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.constructor.poly"
+        }
+      }
+    },
+    "field-name": {
+      "comment": "`name:` \u2014 a field, a parameter, or a field in a constructor call or struct literal.",
+      "match": "\\b([a-z_]\\w*)\\s*(:)(?![:=])",
+      "captures": {
+        "1": {
+          "name": "variable.other.member.poly"
+        },
+        "2": {
+          "name": "punctuation.separator.colon.poly"
+        }
+      }
+    },
+    "builtins": {
+      "comment": "bare builtins (push/len/hash/fence) and UFCS method names (.atomicLoad/.resume/.tag/...): names polyir's own compiler recognizes, not user methods.",
+      "patterns": [
+        {
+          "name": "support.function.builtin.poly",
+          "match": "(?<=\\.)(atomicLoad|atomicStore|atomicRmw|cmpxchg|push|len|with|has|add|remove|freeze|thaw|count|capacity|rows|cols|dim|hash|shuffle|tag|isCase|unwrapAt|isOk|isErr|unwrapOk|unwrapErr|isSome|isNone|unwrap|done|resume|close|yielded|copy|toI8|toI16|toI32|toI64|toU8|toU16|toU32|toU64|toFloat|toDouble|toPtr)\\b"
+        },
+        {
+          "name": "support.function.builtin.poly",
+          "match": "\\b(push|len|hash|fence)\\s*(?=\\()"
+        }
+      ]
+    },
+    "method-call": {
+      "match": "(?<=\\.)([A-Za-z_]\\w*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.method.poly"
+        }
+      }
+    },
+    "function-call": {
+      "match": "\\b([a-z_]\\w*)\\s*(?=\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.call.poly"
+        }
+      }
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.poly",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.poly",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "operators": {
+      "comment": "Longest first: === before ==, <-> before <, -> and => before - and =.",
+      "patterns": [
+        {
+          "name": "keyword.operator.identity.poly",
+          "match": "===|!=="
+        },
+        {
+          "name": "keyword.operator.bridge.poly",
+          "match": "<->"
+        },
+        {
+          "name": "punctuation.separator.arrow.poly",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.arrow.poly",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.comparison.poly",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.logical.poly",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.bitwise.poly",
+          "match": "<<|>>|&|\\||\\^|~"
+        },
+        {
+          "name": "keyword.operator.comparison.poly",
+          "match": "<|>"
+        },
+        {
+          "name": "keyword.operator.ternary.poly",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.assignment.poly",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.poly",
+          "match": "[-+*/%]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.braces.poly",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.brackets.poly",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.parens.poly",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.separator.comma.poly",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.colon.poly",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.terminator.poly",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.accessor.poly",
+          "match": "\\."
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.poly",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "property": {
+      "comment": "A field read or written through `.` (`this.side`, `p.x`).",
+      "match": "(?<=\\.)([a-z_]\\w*)\\b(?!\\s*\\()",
+      "captures": {
+        "1": {
+          "name": "variable.other.property.poly"
+        }
+      }
+    },
+    "type-args": {
+      "comment": "The <\u2026> of a generic type or a container (`ptr<float>`, `Box<i64>`): written right after the name, where a comparison has spaces.",
+      "patterns": [
+        {
+          "name": "punctuation.definition.typeparameters.begin.poly",
+          "match": "(?<=[A-Za-z0-9_])<(?=[A-Za-z_(])"
+        },
+        {
+          "name": "punctuation.definition.typeparameters.end.poly",
+          "match": "(?<=[A-Za-z0-9_>\\]])>(?![=>])"
+        }
+      ]
+    }
+  }
+}

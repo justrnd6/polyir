@@ -1,0 +1,87 @@
+// `plan`: a project in, the files to write and the commands to run out — the whole library in one call.
+//
+// Each target is built by its tool (Conventions.poly): the plan writes that tool's own project under build/<tool>/
+// (a CMakeLists.txt, a build.gradle.kts, a Cargo.toml, a package.json, a requirements.txt) with the program polyir
+// generates for it, and the steps run that tool. The tools resolve, download, verify and lock the dependencies;
+// meta-build only writes them down.
+import "Project.poly"
+import "Conventions.poly"
+import "gen/Cmake.poly"
+import "gen/Gradle.poly"
+import "gen/Cargo.poly"
+import "gen/Npm.poly"
+import "gen/Pip.poly"
+import "gen/Direct.poly"
+
+func plan(p: Project) -> Plan {
+  let out = Plan()
+  out.steps.push(bindingCheck(p))
+  for (t in p.targets) {
+    planTarget(p, t, out)
+  }
+  return out
+}
+
+// Before any target builds: does every extern the program calls have a binding for each target? (A missing one would
+// stop that target's build half way; this says so for all of them at once.)
+func bindingCheck(p: Project) -> Step {
+  return step("check", "", ["polyir", p.main, "--analyze", "--targets", p.targets.join(" ")],
+    "polyir is not on PATH")
+}
+
+func planTarget(p: Project, target: string, out: Plan) -> void {
+  let tool: string = toolFor(p, target)
+  if (tool == "cmake") {
+    cmakePlan(p, target, out)
+  }
+  if (tool == "gradle") {
+    gradlePlan(p, target, out)
+  }
+  if (tool == "cargo") {
+    cargoPlan(p, target, out)
+  }
+  if (tool == "npm" || tool == "yarn") {
+    npmPlan(p, target, tool, out)
+  }
+  if (tool == "pip") {
+    pipPlan(p, target, out)
+  }
+  if (tool == "direct") {
+    directPlan(p, target, out)
+  }
+}
+
+// The step that writes the program polyir generates for `target` into `file` (`--emit-<target>`).
+func emitStep(p: Project, target: string, file: string) -> Step {
+  return Step(goal: "build", target: target, dir: ".", cmd: ["polyir", p.main, "--emit-${target}"], output: file,
+    hint: "polyir is not on PATH")
+}
+
+// Which steps a goal runs: its own; and `build` builds, `run`, `test` and `up` build and then run. A goal that
+// build.poly makes up runs its own steps only.
+func wanted(stepGoal: string, goal: string) -> bool {
+  if (stepGoal == goal) {
+    return true
+  }
+  if (!isGoal(goal)) {
+    return false
+  }
+  if (stepGoal == "check" || stepGoal == "build") {
+    return true
+  }
+  return stepGoal == "run" && goal != "build"
+}
+
+// meta-build's own goals (build.poly can add more).
+func goals() -> mutarray<string> {
+  return ["up", "gen", "build", "run", "test", "tasks", "clean"]
+}
+
+func isGoal(goal: string) -> bool {
+  for (g in goals()) {
+    if (g == goal) {
+      return true
+    }
+  }
+  return false
+}

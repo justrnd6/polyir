@@ -1,0 +1,7 @@
+func take(s: string) -> i64 { return 0 }
+func main() -> i64 {
+  let a: i64 = "text"
+  let b: string = 5
+  let c: double = 1
+  return take(7) + a
+}

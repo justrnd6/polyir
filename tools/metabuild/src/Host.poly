@@ -1,0 +1,93 @@
+// HOST: the machine a program runs on — its files, its commands, its environment, the web.
+//
+//   import "Host.poly"       (from tools/metabuild/src: the path is relative to the importing file)
+//
+// The host layer runs in the interpreter (`polyir F.poly --interp`, `--run --target interp`, and the `poly` command);
+// every other target refuses a program that uses it. Each call is one plain question or action:
+//
+//   readText(path) -> string             "" when there is no such file
+//   writeText(path, text) -> bool        makes the folder first
+//   exists(path) -> bool    makeDirs(path) -> bool    removePath(path) -> bool    (a folder with all it holds)
+//   run(cmd, dir) -> Ran                 a command's exit status and output: run(["git", "status"], ".").out
+//   show(cmd, dir) -> i64                a command with its output on the terminal: its exit status
+//   showWith(cmd, dir, env) -> i64       the same with `NAME=value` settings added to its environment
+//   env(name) -> string                  "" when it is not set
+//   os() -> string     cpu() -> string   macos, linux or windows; arm64 or x64
+//   workingDir() -> string               the folder the program was started in
+//   args() -> mutarray<string>           the words after the program (`--args "up java"`)
+//   fetch(url) -> Ran                    an http(s) GET: `out` is the body when `code` is 0
+
+// What a command did: its exit status, what it printed, and what it printed as errors.
+struct Ran(code: i64, out: string, err: string)
+
+extern func polyirFsRead(path: string) -> string
+extern func polyirFsWrite(path: string, text: string) -> bool
+extern func polyirFsExists(path: string) -> bool
+extern func polyirFsMkdirs(path: string) -> bool
+extern func polyirFsRemove(path: string) -> bool
+extern func polyirRun(cmd: mutarray<string>, dir: string) -> Ran
+extern func polyirShow(cmd: mutarray<string>, dir: string, env: mutarray<string>) -> i64
+extern func polyirFetch(url: string) -> Ran
+extern func polyirEnv(name: string) -> string
+extern func polyirOs() -> string
+extern func polyirCpu() -> string
+extern func polyirCwd() -> string
+extern func polyirArgs() -> mutarray<string>
+
+func readText(path: string) -> string {
+  return polyirFsRead(path)
+}
+
+func writeText(path: string, text: string) -> bool {
+  return polyirFsWrite(path, text)
+}
+
+func exists(path: string) -> bool {
+  return polyirFsExists(path)
+}
+
+func makeDirs(path: string) -> bool {
+  return polyirFsMkdirs(path)
+}
+
+func removePath(path: string) -> bool {
+  return polyirFsRemove(path)
+}
+
+func run(cmd: mutarray<string>, dir: string) -> Ran {
+  return polyirRun(cmd, dir)
+}
+
+func show(cmd: mutarray<string>, dir: string) -> i64 {
+  let none: mutarray<string>
+  return polyirShow(cmd, dir, none)
+}
+
+// `show` with `NAME=value` settings added to the command's environment.
+func showWith(cmd: mutarray<string>, dir: string, env: mutarray<string>) -> i64 {
+  return polyirShow(cmd, dir, env)
+}
+
+func fetch(url: string) -> Ran {
+  return polyirFetch(url)
+}
+
+func env(name: string) -> string {
+  return polyirEnv(name)
+}
+
+func os() -> string {
+  return polyirOs()
+}
+
+func cpu() -> string {
+  return polyirCpu()
+}
+
+func workingDir() -> string {
+  return polyirCwd()
+}
+
+func args() -> mutarray<string> {
+  return polyirArgs()
+}

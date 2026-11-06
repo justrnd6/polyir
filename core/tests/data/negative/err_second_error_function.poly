@@ -1,0 +1,3 @@
+func a() -> i64 { return x }
+func b() -> i64 { return y }
+func main() -> i64 { return z }

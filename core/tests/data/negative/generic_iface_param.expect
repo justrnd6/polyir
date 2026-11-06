@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  7:8: Cell_f64.put does not match Sink.put: expected func put(x: i64) -> i64, found func put(x: f64) -> f64
+$ --analyze --strict
+exit 1
+check failed:
+  7:8: Cell_f64.put does not match Sink.put: expected func put(x: i64) -> i64, found func put(x: f64) -> f64
+$ --emit-hir-json
+exit 1
+check failed:
+  7:8: Cell_f64.put does not match Sink.put: expected func put(x: i64) -> i64, found func put(x: f64) -> f64
+$ --emit-msl
+exit 1
+kernel check failed:
+  7:8: Cell_f64.put does not match Sink.put: expected func put(x: i64) -> i64, found func put(x: f64) -> f64

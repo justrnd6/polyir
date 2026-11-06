@@ -1,0 +1,116 @@
+import "../../../core/stdlib/Math.poly"
+import "../../../core/tests/programs/Check.poly"
+import "../Wave.poly"
+
+func checkSignOfNegative() -> double {
+  return off(sign((0.0 - 3.0)), (0.0 - 1.0))
+}
+
+func checkSignOfZero() -> double {
+  return off(sign(0.0), 0.0)
+}
+
+func checkSignOfPositive() -> double {
+  return off(sign(2.0), 1.0)
+}
+
+func checkFractOfPositive() -> double {
+  return off(fract(2.75), 0.75)
+}
+
+func checkFractOfNegative() -> double {
+  return off(fract((0.0 - 0.25)), 0.75)
+}
+
+func checkClampAbove() -> double {
+  return off(clamp(5.0, (0.0 - 1.0), 2.0), 2.0)
+}
+
+func checkClampBelow() -> double {
+  return off(clamp((0.0 - 5.0), (0.0 - 1.0), 2.0), (0.0 - 1.0))
+}
+
+func checkMix() -> double {
+  return off(mix(10.0, 20.0, 0.25), 12.5)
+}
+
+func checkSinePeak() -> double {
+  return off(sine(0.25), 1.0)
+}
+
+func checkSineTrough() -> double {
+  return off(sine(0.75), (0.0 - 1.0))
+}
+
+func checkSineZeroCrossing() -> double {
+  return off(sine(1.5), 0.0)
+}
+
+func checkSquareHigh() -> double {
+  return off(square(0.25), 1.0)
+}
+
+func checkSquareLow() -> double {
+  return off(square(0.75), (0.0 - 1.0))
+}
+
+func checkSawtoothStart() -> double {
+  return off(sawtooth(0.0), (0.0 - 1.0))
+}
+
+func checkSawtoothThreeQuarters() -> double {
+  return off(sawtooth(0.75), 0.5)
+}
+
+func checkTriangleStart() -> double {
+  return off(triangle(0.0), (0.0 - 1.0))
+}
+
+func checkTrianglePeak() -> double {
+  return off(triangle(0.5), 1.0)
+}
+
+func checkTriangleMiddle() -> double {
+  return off(triangle(0.25), 0.0)
+}
+
+func checkConcertA() -> double {
+  return off(noteFrequency(69.0), 440.0)
+}
+
+func checkOctaveAboveConcertA() -> double {
+  return off(noteFrequency(81.0), 880.0)
+}
+
+func checkFadeInHalfway() -> double {
+  return off(fade(0.5, 1.0, 1.0, 4.0), 0.5)
+}
+
+func checkFadeHolds() -> double {
+  return off(fade(2.0, 1.0, 1.0, 4.0), 1.0)
+}
+
+func checkFadeOutHalfway() -> double {
+  return off(fade(3.5, 1.0, 1.0, 4.0), 0.5)
+}
+
+func checkNoiseRange() -> double {
+  var outside: i64 = 0
+  for (seed = 0; seed < 1000; seed = seed + 1) {
+    if (noise(seed.toI32()) > 1.0 || noise(seed.toI32()) < (0.0 - 1.0)) {
+      outside = outside + 1
+    }
+  }
+  return offInt(outside, 0)
+}
+
+func checkNoiseRepeats() -> double {
+  return off(noise(42) - noise(42), 0.0)
+}
+
+func checkNoiseVaries() -> double {
+  if (noise(1) == noise(2) && noise(2) == noise(3)) {
+    return 1.0
+  }
+  return 0.0
+}

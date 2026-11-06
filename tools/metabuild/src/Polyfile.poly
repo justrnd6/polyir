@@ -1,0 +1,245 @@
+// The Polyfile: a project described one setting per line, `key value…`, with `//` comments.
+//
+//   name gcd
+//   main src/main.poly                   the file with `main`; its imports resolve from it
+//   targets native c java rust js python
+//   target native                        what `poly run` uses when no target is given
+//   dep zlib from pkg-config
+//   dep zlib from brew on macos          `on OS[/CPU]` at the end keeps a line to those machines
+//   dep fmt from git https://github.com/fmtlib/fmt tag 10.2.1
+//   dep com.google.guava:guava:33.0.0-jre from maven
+//   dep serde 1.0 from cargo
+//   use yarn for js                      a tool other than the convention for a target
+//
+// A mistake is a problem naming its line; the project is still returned, with its problems, so every mistake is
+// reported at once.
+import "Project.poly"
+import "Platform.poly"
+import "Conventions.poly"
+
+// The project the Polyfile `text` (in folder `dir`) describes, as seen from `host`.
+func readPolyfile(text: string, dir: string, host: Host) -> Project {
+  let p = Project(name: lastPart(dir), dir: dir, main: "", entry: "main", target: "interp", host: host)
+  let all: mutarray<string> = text.lines()
+  for (i = 0; i < len(all); i = i + 1) {
+    readLine(p, all[i], i + 1)
+  }
+  if (p.main == "") {
+    p.problems.push("Polyfile: `main` names the file with the entry (main src/app.poly)")
+  }
+  for (d in p.deps) {
+    checkTaken(p, d)
+  }
+  return p
+}
+
+// A dep no target's tool takes is a mistake (a maven dep in a project with no java or kotlin target, say).
+func checkTaken(p: Project, d: Dep) -> void {
+  var taken: bool = false
+  for (t in p.targets) {
+    taken = taken || providerTools(d.provider).contains(" ${toolFor(p, t)} ")
+  }
+  if (!taken) {
+    p.problems.push("Polyfile:${d.line}: no target takes a ${d.provider} dep (they go to${providerTools(d.provider)}targets)")
+  }
+}
+
+// The tools that take a provider's deps.
+func providerTools(provider: string) -> string {
+  if (provider == "pkg-config" || provider == "brew") {
+    return " cmake "
+  }
+  if (provider == "git") {
+    return " cmake cargo npm yarn pip "
+  }
+  if (provider == "maven") {
+    return " gradle "
+  }
+  if (provider == "cargo") {
+    return " cargo "
+  }
+  if (provider == "npm") {
+    return " npm yarn "
+  }
+  return " pip "
+}
+
+// One line: blank lines, comments and lines for other machines are skipped.
+func readLine(p: Project, raw: string, line: i64) -> void {
+  let words: mutarray<string> = forThisHost(wordsOf(withoutComment(raw)), p.host)
+  if (len(words) == 1) {
+    p.problems.push("Polyfile:${line}: `${words[0]}` needs a value")
+  }
+  if (len(words) > 1) {
+    readSetting(p, words[0], wordsFrom(words, 1), line)
+  }
+}
+
+// The words without a final `on OS[/CPU]`, or none at all when the line is for another machine.
+func forThisHost(words: mutarray<string>, host: Host) -> mutarray<string> {
+  let n: i64 = len(words)
+  if (n < 3 || words[n - 2] != "on") {
+    return words
+  }
+  if (matchesHost(words[n - 1], host)) {
+    return words.truncate(n - 2)
+  }
+  return words.truncate(0)
+}
+
+func readSetting(p: Project, key: string, rest: mutarray<string>, line: i64) -> void {
+  let value: string = rest.join(" ")
+  if (key == "dep") {
+    readDep(p, rest, line)
+  } else if (key == "use") {
+    readUse(p, rest, line)
+  } else if (key == "targets") {
+    readTargets(p, rest, line)
+  } else if (key == "name") {
+    p.name = value
+  } else if (key == "main") {
+    p.main = value
+  } else if (key == "entry") {
+    p.entry = value
+  } else if (key == "target") {
+    p.target = knownTarget(p, value, line)
+  } else {
+    p.problems.push("Polyfile:${line}: unknown setting '${key}' (the settings are name, main, entry, target, targets, dep, use)")
+  }
+}
+
+func readTargets(p: Project, rest: mutarray<string>, line: i64) -> void {
+  for (t in rest) {
+    if (knownTarget(p, t, line) != "") {
+      p.targets.push(t)
+    }
+  }
+}
+
+// `t` if it is a target, else "" and a problem.
+func knownTarget(p: Project, t: string, line: i64) -> string {
+  if (targetNames().contains(" ${t} ")) {
+    return t
+  }
+  p.problems.push("Polyfile:${line}: '${t}' is not a target (${targetNames().trim()})")
+  return ""
+}
+
+func targetNames() -> string {
+  return " interp jit native wasm java kotlin js ts python swift c cpp objc rust "
+}
+
+// `dep NAME [VERSION] from PROVIDER [URL] [tag TAG]`.
+func readDep(p: Project, rest: mutarray<string>, line: i64) -> void {
+  let from: i64 = indexOfWord(rest, "from")
+  if (from < 1 || from > 2 || from + 1 >= len(rest)) {
+    p.problems.push("Polyfile:${line}: a dep is `dep NAME [VERSION] from PROVIDER` (dep zlib from pkg-config)")
+    return
+  }
+  addDep(p, depOf(rest, from, line))
+}
+
+func depOf(rest: mutarray<string>, from: i64, line: i64) -> Dep {
+  var version: string = ""
+  if (from == 2) {
+    version = rest[1]
+  }
+  let extra: mutarray<string> = wordsFrom(rest, from + 2)
+  return Dep(name: rest[0], version: version, provider: rest[from + 1], url: firstOr(extra, ""),
+    tag: wordAfter(extra, "tag"), line: line)
+}
+
+func addDep(p: Project, d: Dep) -> void {
+  let problem: string = depProblem(d)
+  if (problem == "") {
+    p.deps.push(d)
+  } else {
+    p.problems.push("Polyfile:${d.line}: ${problem}")
+  }
+}
+
+func depProblem(d: Dep) -> string {
+  if (!" pkg-config brew git maven cargo npm pip ".contains(" ${d.provider} ")) {
+    return "'${d.provider}' is not a provider (pkg-config, brew, git, maven, cargo, npm, pip)"
+  }
+  if (d.provider == "git" && !d.url.contains("://")) {
+    return "a git dep names its repository: dep ${d.name} from git https://… tag v1.0"
+  }
+  return ""
+}
+
+// `use TOOL for TARGET`.
+func readUse(p: Project, rest: mutarray<string>, line: i64) -> void {
+  if (len(rest) != 3 || rest[1] != "for") {
+    p.problems.push("Polyfile:${line}: `use TOOL for TARGET` (use yarn for js)")
+    return
+  }
+  addUse(p, Use(tool: rest[0], target: knownTarget(p, rest[2], line)), line)
+}
+
+func addUse(p: Project, u: Use, line: i64) -> void {
+  if (u.target == "") {
+    return
+  }
+  if (toolsFor(u.target).contains(" ${u.tool} ")) {
+    p.uses.push(u)
+  } else {
+    p.problems.push("Polyfile:${line}: ${u.target} is built with one of${toolsFor(u.target)}not ${u.tool}")
+  }
+}
+
+// ── words ──
+// The text before a `//` comment (a `//` inside a word, as in `https://`, is not one).
+func withoutComment(line: string) -> string {
+  if (line.trim().startsWith("//")) {
+    return ""
+  }
+  let at: i64 = line.find(" //")
+  if (at < 0) {
+    return line
+  }
+  return line.slice(0, at)
+}
+
+func wordsOf(line: string) -> mutarray<string> {
+  let words: mutarray<string>
+  for (w in line.replace("\t", " ").split(" ")) {
+    if (len(w) > 0) {
+      words.push(w)
+    }
+  }
+  return words
+}
+
+func wordsFrom(words: mutarray<string>, from: i64) -> mutarray<string> {
+  let out: mutarray<string>
+  for (i = from; i < len(words); i = i + 1) {
+    out.push(words[i])
+  }
+  return out
+}
+
+func indexOfWord(words: mutarray<string>, word: string) -> i64 {
+  for (i = 0; i < len(words); i = i + 1) {
+    if (words[i] == word) {
+      return i
+    }
+  }
+  return 0 - 1
+}
+
+// The word after `key`, or "".
+func wordAfter(words: mutarray<string>, key: string) -> string {
+  let at: i64 = indexOfWord(words, key)
+  if (at < 0 || at + 1 >= len(words)) {
+    return ""
+  }
+  return words[at + 1]
+}
+
+func firstOr(words: mutarray<string>, fallback: string) -> string {
+  if (len(words) == 0) {
+    return fallback
+  }
+  return words[0]
+}

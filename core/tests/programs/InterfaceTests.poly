@@ -1,0 +1,120 @@
+// Interfaces (examples/interfaces.poly has the tour; these check the details).
+import "Check.poly"
+import "../../examples/interfaces.poly"
+
+func checkConversionAtACall() -> double {
+    return offInt(directCall(), 920)
+}
+
+func checkConversionAtAReturn() -> double {
+    return offInt(chosen(), 36034)
+}
+
+func checkDarrayOfInterfaceValues() -> double {
+    return offInt(sumAll(), 41)
+}
+
+func checkInterfaceAsAStructField() -> double {
+    return offInt(viaField(), 307)
+}
+
+func checkOneStructTwoInterfaces() -> double {
+    return offInt(twoInterfaces(), 1016)
+}
+
+func checkInterfaceMethodTakingAnInterface() -> double {
+    return offInt(interfaceArgument(), 109)
+}
+
+// A different struct behind the same interface value type gives a different answer from the same call.
+func checkDispatchFollowsTheValue() -> double {
+    let a: Shape = Square(side: 5)
+    let b: Shape = Rect(w: 5, h: 2)
+    return offInt(a.area(), 25) + offInt(b.area(), 10)
+}
+
+// The same method name on two structs does not collide.
+func checkSameMethodNameOnTwoStructs() -> double {
+    let s: Square = Square(side: 3)
+    let r: Rect = Rect(w: 3, h: 4)
+    return offInt(s.area() + r.area(), 21)
+}
+
+// A value converted twice still calls the right method: the copy is made at the conversion.
+func checkConvertedValueIsACopy() -> double {
+    let s: Square = Square(side: 4)
+    let a: Shape = s
+    let b: Shape = s
+    return offInt(a.area() + b.area(), 32)
+}
+
+interface Scaler {
+    func half(x: float) -> float
+    func offset(by: i32) -> i64
+}
+
+struct Halver(base: i64) : Scaler {
+    func half(x: float) -> float {
+        return x / 2.0
+    }
+    func offset(by: i32) -> i64 {
+        return this.base + by.toI64()
+    }
+}
+
+// A literal argument is narrowed to the interface method's parameter type, as in an ordinary call.
+func checkArgumentWidthsFollowTheInterface() -> double {
+    let s: Scaler = Halver(base: 40)
+    return off(s.half(9.0), 4.5) + offInt(s.offset(2), 42)
+}
+
+func checkInterfaceInAnEither() -> double {
+    let r: either<Shape, i64> = eitherOk<Shape, i64>(Rect(w: 4, h: 4))
+    if (r.isErr()) { return 1.0 }
+    let s: Shape = r.unwrapOk()
+    return offInt(s.area(), 16)
+}
+
+func checkInterfaceCapturedByAClosure() -> double {
+    let s: Shape = Square(side: 7)
+    let f: closure() -> i64 = closure() -> i64 {
+        return s.area()
+    }
+    return offInt(f(), 49)
+}
+
+func checkInterfaceThroughAVar() -> double {
+    var s: Shape = Square(side: 2)
+    let first: i64 = s.area()
+    s = Rect(w: 3, h: 5)
+    return offInt(first * 100 + s.area(), 415)
+}
+
+// ── generic structs that claim an interface ─────────────────────────────────────
+// Each instantiation (`Cell<i64>`, `Cell<double>`) is its own struct and implements the interface by itself.
+interface Weighted {
+    func weight() -> i64
+}
+
+struct Cell<T>(value: T) : Weighted {
+    func weight() -> i64 { return 7 }
+    func get() -> T { return this.value }
+}
+
+func totalWeight(a: Weighted, b: Weighted) -> i64 {
+    return a.weight() + b.weight()
+}
+
+func checkGenericStructConvertsToAnInterface() -> double {
+    let a: Cell<i64> = Cell(value: 5)
+    let b: Cell<double> = Cell(value: 2.5)
+    return offInt(totalWeight(a, b), 14) + offInt(a.get(), 5) + off(b.get(), 2.5)
+}
+
+func checkGenericInterfaceValuesInADarray() -> double {
+    let all: mutarray<Weighted> = mutarray<Weighted>()
+    let a: Cell<i64> = Cell(value: 1)
+    push(all, a)
+    push(all, a)
+    return offInt(all[0].weight() + all[1].weight(), 14)
+}

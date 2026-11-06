@@ -1,0 +1,6 @@
+targets/js/Js.translate:143: `extern(name, params, result)` is unsupported: JavaScript cannot call a C function
+targets/js/Js.translate:414: `atomicLoad(object, order)` is unsupported: JavaScript has no memory to share between threads
+targets/js/Js.translate:415: `atomicStore(object, value, order)` is unsupported: JavaScript has no memory to share between threads
+targets/js/Js.translate:416: `atomicRmw(object, op, value, order)` is unsupported: JavaScript has no memory to share between threads
+targets/js/Js.translate:417: `cmpxchg(object, expected, value, success, failure)` is unsupported: JavaScript has no memory to share between threads
+targets/js/Js.translate:418: `fence(order)` is unsupported: JavaScript has no memory to share between threads

@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  7:8: Box_i64.area does not match Shape.area: expected func area() -> f64, found func area() -> i64
+$ --analyze --strict
+exit 1
+check failed:
+  7:8: Box_i64.area does not match Shape.area: expected func area() -> f64, found func area() -> i64
+$ --emit-hir-json
+exit 1
+check failed:
+  7:8: Box_i64.area does not match Shape.area: expected func area() -> f64, found func area() -> i64
+$ --emit-msl
+exit 1
+kernel check failed:
+  7:8: Box_i64.area does not match Shape.area: expected func area() -> f64, found func area() -> i64

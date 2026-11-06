@@ -1,0 +1,133 @@
+// Sets and maps keyed by a struct or a string, string concatenation and comparison, optionals inside structs, buffers, `var` fields that
+// hold strings, `switch`, loops with two counters, narrow integers and floats. rust-check.sh checks the result against Java (239).
+
+struct Point(x: i64, y: i64);
+
+struct Named(name: string, tag: optional<string>);
+
+struct Cell2(var v: i64, var note: string) {
+  func bump() -> i64 {
+    this.v = this.v + 1
+    return this.v
+  }
+}
+
+func double(x: i64) -> i64 { return x * 2 }
+func inc(x: i64) -> i64 { return x + 1 }
+
+func sets() -> i64 {
+  let seen: mutset<Point> = mutset<Point>(16)
+  seen.add(Point(x: 1, y: 2))
+  seen.add(Point(x: 3, y: 4))
+  seen.add(Point(x: 1, y: 2))
+  var score: i64 = len(seen)
+  if (seen.has(Point(x: 3, y: 4))) { score = score + 10 }
+  let words: mutset<string> = mutset<string>(8)
+  words.add("a")
+  words.add("b")
+  words.add("a")
+  score = score + len(words) * 100
+  return score
+}
+
+func maps() -> i64 {
+  let m: mutmap<string, i64> = mutmap<string, i64>(8)
+  m["x"] = 5
+  m["y"] = 6
+  m["x"] = m["x"] + 1
+  let byPoint: mutmap<Point, string> = mutmap<Point, string>(8)
+  byPoint[Point(x: 1, y: 1)] = "p"
+  var score: i64 = m["x"] * 10 + m["y"] + len(m)
+  if (byPoint.has(Point(x: 1, y: 1))) { score = score + 100 }
+  if (m["none"] == 0) { score = score + 1000 }
+  return score
+}
+
+func strs() -> i64 {
+  let a: string = "ab"
+  let b: string = a + "cd" + a
+  var score: i64 = len(b)
+  if (b == "abcdab") { score = score + 10 }
+  if (b != a) { score = score + 100 }
+  let q: string = "say hi {x}"
+  score = score + len(q)
+  return score
+}
+
+func opts() -> i64 {
+  let n: Named = Named(name: "a", tag: Some<string>("t"))
+  let m: Named = Named(name: "a", tag: Some<string>("t"))
+  let o: Named = Named(name: "a", tag: None<string>())
+  var score: i64 = 0
+  if (n == m) { score = score + 1 }
+  if (n == o) { score = score + 10 }
+  if (o.tag.isNone()) { score = score + 100 }
+  return score + len(n.tag.unwrap())
+}
+
+func bufs() -> i64 {
+  let b: buffer<i64, 4> = buffer<i64, 4>()
+  b[0] = 7
+  b[3] = 9
+  var s: i64 = 0
+  for (i = 0; i < 4; i = i + 1) { s = s + b[i] }
+  return s
+}
+
+func swaps() -> i64 {
+  let c: Cell2 = Cell2(v: 1, note: "n")
+  let d: Cell2 = c
+  d.bump()
+  c.note = c.note + "!"
+  if (d.note == "n!") { return c.v * 10 + len(d.note) }
+  return 0
+}
+
+func choose(k: i64) -> i64 {
+  switch (k) {
+    0 => zero()
+    1 => one()
+    else => many()
+  }
+label zero():
+  return 100
+label one():
+  return 200
+label many():
+  return 300
+}
+
+func loops(n: i64) -> i64 {
+  var s: i64 = 0
+  for (i = 0, j = n; i < j; i = i + 1, j = j - 1) {
+    s = s + i * j
+  }
+  var k: i64 = 0
+  for (t = 0; t < 4; t = t + 1) { k = k + 1 }
+  return s + k
+}
+
+func unsigned() -> i64 {
+  let a: u8 = 250
+  let b: u8 = a + 10
+  let c: u32 = 4000000000
+  let d: u32 = c + c
+  let e: i32 = 2147483647
+  let f: i32 = e + 1
+  return b.toI64() + d.toI64() + f.toI64() % 1000
+}
+
+func floats() -> i64 {
+  let x: double = 7.5
+  let y: double = 2.25
+  let z: double = x / 2.0 + y * 2.0
+  if (z > 8.0 && x != y) { return z.toI64() }
+  return 0
+}
+
+func main() -> i64 {
+  var score: i64 = 0
+  score = score + sets() + maps() + strs() + opts() + bufs() + swaps()
+  score = score + choose(0) + choose(1) + choose(5) + loops(6) + unsigned() + floats()
+  return score % 251
+}

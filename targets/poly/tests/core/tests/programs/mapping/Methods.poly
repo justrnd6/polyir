@@ -1,0 +1,136 @@
+struct Acc(var total: i64, var tag: string, var items: mutarray<i64>) {
+  func add(x: i64) -> i64 {
+    this.total = this.total + x
+    this.items.push(x)
+    return this.total
+  }
+
+  func later() -> closure() -> i64 {
+    return closure() -> i64 {
+      return this.total * 2
+    }
+  }
+
+  func describe() -> string {
+    return this.tag + ":" + this.tag
+  }
+
+  func self() -> Acc {
+    return this
+  }
+}
+
+interface Animal {
+  func legs(p0: i64) -> i64
+  func name() -> string
+}
+
+struct Dog(age: i64) : Animal {
+  func legs(n: i64) -> i64 {
+    return 4 * n + this.age
+  }
+
+  func name() -> string {
+    return "dog"
+  }
+}
+
+struct Bird(age: i64) : Animal {
+  func legs(n: i64) -> i64 {
+    return 2 * n
+  }
+
+  func name() -> string {
+    return "bird"
+  }
+}
+
+func risky(x: i64) -> i64 {
+  if (x < 0) {
+    throw 7
+  }
+  return x
+}
+
+func tryReturn(x: i64) -> i64 {
+  try {
+    return risky(x) + 1
+  } catch (code) {
+    return code * 100
+  }
+  return 0
+}
+
+func nested(x: i64) -> i64 {
+  var r: i64 = 0
+  try {
+    try {
+      r = risky(x)
+    } catch (a) {
+      r = a + 1
+      throw r
+    }
+  } catch (b) {
+    r = b * 10
+  }
+  return r
+}
+
+func makeAdder(n: i64) -> closure(i64) -> i64 {
+  return closure(x: i64) -> i64 {
+    return x + n
+  }
+}
+
+func twice(f: closure(i64) -> i64, x: i64) -> i64 {
+  return f(f(x))
+}
+
+func counterPair() -> i64 {
+  var c: i64 = 0
+  let inc: closure() -> i64 = closure() -> i64 {
+    c = c + 1
+    return c
+  }
+  let get: closure() -> i64 = closure() -> i64 {
+    return c
+  }
+  inc()
+  inc()
+  return get() * 10 + c
+}
+
+func main() -> i64 {
+  var score: i64 = 0
+  let a: Acc = Acc(total: 1, tag: "ab", items: mutarray<i64>())
+  score = score + Acc_add(a, 5) + Acc_add(a, 6)
+  let f: closure() -> i64 = a.later()
+  score = score + f()
+  score = score + a.items.len()
+  if (a.describe() == "ab:ab") {
+    score = score + 1000
+  }
+  let s: Acc = a.self()
+  if (s === a) {
+    score = score + 2000
+  }
+  a.tag = "zz"
+  if (s.tag == "zz") {
+    score = score + 3000
+  }
+  let zoo: mutarray<Animal> = mutarray<Animal>()
+  zoo.push(Dog(age: 3))
+  zoo.push(Bird(age: 1))
+  for (i = 0; i < zoo.len(); i = i + 1) {
+    score = score + zoo[i].legs(2)
+    if (zoo[i].name() == "bird") {
+      score = score + 7
+    }
+  }
+  score = score + tryReturn(3) + tryReturn(0 - 1)
+  score = score + nested(4) + nested(0 - 2)
+  let add3: closure(i64) -> i64 = makeAdder(3)
+  score = score + twice(add3, 10)
+  score = score + counterPair()
+  return score % 251
+}

@@ -1,0 +1,5 @@
+func nothing() -> i64 { return 0 }
+func main() -> i64 {
+  let v: string = nothing()
+  return v
+}

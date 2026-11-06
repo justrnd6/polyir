@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  err_global.poly:4:14: unknown name h
+$ --analyze --strict
+exit 1
+check failed:
+  err_global.poly:4:14: unknown name h
+$ --emit-hir-json
+exit 1
+check failed:
+  err_global.poly:4:14: unknown name h
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_global.poly:4:14: unknown name h

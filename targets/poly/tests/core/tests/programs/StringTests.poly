@@ -1,0 +1,306 @@
+func contains(s: string, part: string) -> bool {
+  return s.find(part, 0) >= 0
+}
+
+func startsWith(s: string, prefix: string) -> bool {
+  if (prefix.len() > s.len()) {
+    return false
+  }
+  return s.slice(0, prefix.len()) == prefix
+}
+
+func endsWith(s: string, suffix: string) -> bool {
+  if (suffix.len() > s.len()) {
+    return false
+  }
+  return s.slice(s.len() - suffix.len(), s.len()) == suffix
+}
+
+func split(s: string, sep: string) -> mutarray<string> {
+  let parts: mutarray<string> = mutarray<string>()
+  if (sep.len() == 0) {
+    parts.push(s)
+    return parts
+  }
+  var from: i64 = 0
+  for (at = s.find(sep, 0); at >= 0; at = s.find(sep, from)) {
+    parts.push(s.slice(from, at))
+    from = at + sep.len()
+  }
+  parts.push(s.slice(from, s.len()))
+  return parts
+}
+
+func lines(s: string) -> mutarray<string> {
+  return split(s, "\n")
+}
+
+func join(parts: mutarray<string>, sep: string) -> string {
+  var out: string = ""
+  for (i = 0; i < parts.len(); i = i + 1) {
+    if (i > 0) {
+      out = out + sep
+    }
+    out = out + parts[i]
+  }
+  return out
+}
+
+func isSpaceChar(c: i8) -> bool {
+  return c == 32 || c == 9 || c == 10 || c == 13
+}
+
+func trim(s: string) -> string {
+  var from: i64 = 0
+  for (; from < s.len() && isSpaceChar(s[from]); ) {
+    from = from + 1
+  }
+  var to: i64 = s.len()
+  for (; to > from && isSpaceChar(s[to - 1]); ) {
+    to = to - 1
+  }
+  return s.slice(from, to)
+}
+
+func replace(s: string, old: string, by: string) -> string {
+  return join(split(s, old), by)
+}
+
+func repeat(s: string, n: i64) -> string {
+  var out: string = ""
+  for (i = 0; i < n; i = i + 1) {
+    out = out + s
+  }
+  return out
+}
+
+func indent(s: string, n: i64) -> string {
+  let all: mutarray<string> = lines(s)
+  let pad: string = repeat(" ", n)
+  for (i = 0; i < all.len(); i = i + 1) {
+    if (all[i].len() > 0) {
+      all[i] = pad + all[i]
+    }
+  }
+  return join(all, "\n")
+}
+
+func indentRest(s: string, n: i64) -> string {
+  let first: i64 = s.find("\n", 0)
+  if (first < 0) {
+    return s
+  }
+  return s.slice(0, first + 1) + indent(s.slice(first + 1, s.len()), n)
+}
+
+func fill(template: string, values: mutmap<string, string>) -> string {
+  var out: string = ""
+  var from: i64 = 0
+  for (at = template.find("\${", 0); at >= 0; at = template.find("\${", from)) {
+    let close: i64 = template.find("}", at)
+    if (close < 0) {
+      return out + template.slice(from, template.len())
+    }
+    out = out + template.slice(from, at) + filledName(template.slice(at, close + 1), values)
+    from = close + 1
+  }
+  return out + template.slice(from, template.len())
+}
+
+func filledName(placeholder: string, values: mutmap<string, string>) -> string {
+  let name: string = trim(placeholder.slice(2, placeholder.len() - 1))
+  if (values.has(name)) {
+    return values[name]
+  }
+  return placeholder
+}
+
+struct StringBuilder(pieces: mutarray<string>, indents: mutarray<i64>) {
+  func add(s: string) -> StringBuilder {
+    this.pieces.push(s)
+    return this
+  }
+
+  func line(s: string) -> StringBuilder {
+    if (s.len() > 0) {
+      this.pieces.push(repeat(" ", this.indentNow()))
+    }
+    this.pieces.push(s)
+    this.pieces.push("\n")
+    return this
+  }
+
+  func blank() -> StringBuilder {
+    this.pieces.push("\n")
+    return this
+  }
+
+  func lines(all: mutarray<string>) -> StringBuilder {
+    for (i = 0; i < all.len(); i = i + 1) {
+      this.line(all[i])
+    }
+    return this
+  }
+
+  func indent(n: i64) -> StringBuilder {
+    this.indents.push(this.indentNow() + n)
+    return this
+  }
+
+  func dedent() -> StringBuilder {
+    if (this.indents.len() > 0) {
+      this.indents.truncate(this.indents.len() - 1)
+    }
+    return this
+  }
+
+  func indentNow() -> i64 {
+    if (this.indents.len() == 0) {
+      return 0
+    }
+    return this.indents[this.indents.len() - 1]
+  }
+
+  func length() -> i64 {
+    return this.text().len()
+  }
+
+  func isEmpty() -> bool {
+    return this.length() == 0
+  }
+
+  func text() -> string {
+    return join(this.pieces, "")
+  }
+}
+
+func offText(got: string, want: string) -> double {
+  if (got == want) {
+    return 0.0
+  }
+  return 1.0
+}
+
+func offInt(got: i64, want: i64) -> double {
+  return (got - want).toDouble()
+}
+
+func checkEscapes() -> double {
+  let s: string = "a\tb\n\"c\" \\ \$"
+  return offInt(s.len(), 11)
+}
+
+func checkCharEscapes() -> double {
+  return offInt(10.toI64() + 39.toI64() + 92.toI64(), 10 + 39 + 92)
+}
+
+func checkInterpolation() -> double {
+  let name: string = "zlib"
+  let n: i64 = 42
+  return offText("lib ${name} v${n + 1} ok=${n > 1}", "lib zlib v43 ok=true")
+}
+
+func checkInterpolatedMethodCalls() -> double {
+  let words: mutarray<string> = ["a", "b", "c"]
+  return offText("[${join(words, ", ")}]", "[a, b, c]")
+}
+
+func checkTextBlock() -> double {
+  let name: string = "demo"
+  let text: string = "project(${name})" + "\n" + "  add(\"x\")" + "\n" + "\n" + "done" + "\n"
+  return offText(text, "project(demo)\n  add(\"x\")\n\ndone\n")
+}
+
+func checkTextBlockWithoutFinalNewline() -> double {
+  let text: string = "one" + "\n" + "two"
+  return offText(text, "one\ntwo")
+}
+
+func checkTextBlockKeepsIndentOfMultiLineValue() -> double {
+  let inner: string = "a\nb"
+  let text: string = "list:" + "\n" + "  " + str(indentRest(str(inner), 2)) + "\n" + "end" + "\n"
+  return offText(text, "list:\n  a\n  b\nend\n")
+}
+
+func checkStrOfValues() -> double {
+  let c: i8 = 120
+  return offText("${0 - 7}${true}${false}${c}${"s"}${12}", "-7truefalsexs12")
+}
+
+func checkCharAt() -> double {
+  let s: string = "hello"
+  return offInt(s[1].toI64(), 101)
+}
+
+func checkSliceAndFind() -> double {
+  let s: string = "key=value"
+  let at: i64 = s.find("=", 0)
+  return offText(s.slice(0, at) + "|" + s.slice(at + 1, s.len()), "key|value") + offInt(s.find("z", 0), 0 - 1)
+}
+
+func checkSliceClamps() -> double {
+  let s: string = "abc"
+  return offText(s.slice(0 - 5, 99) + s.slice(2, 1), "abc")
+}
+
+func checkFindFrom() -> double {
+  let s: string = "a.b.c"
+  return offInt(s.find(".", 2), 3)
+}
+
+func checkListLiteralAndForIn() -> double {
+  var total: i64 = 0
+  for (w in ["cmake", "-S", "src"]) {
+    total = total + w.len()
+  }
+  return offInt(total, 10)
+}
+
+func checkSplitAndJoin() -> double {
+  let parts: mutarray<string> = split("a,b,,c", ",")
+  return offInt(parts.len(), 4) + offText(join(parts, "+"), "a+b++c")
+}
+
+func checkTrimAndContains() -> double {
+  let s: string = "  \tpadded \n"
+  return offText(trim(s), "padded") + offInt(contains(s, "dd").toI64(), 1) + offInt(contains(s, "x").toI64(), 0)
+}
+
+func checkStartsAndEnds() -> double {
+  let s: string = "CMakeLists.txt"
+  let both: bool = startsWith(s, "CMake") && endsWith(s, ".txt") && !endsWith(s, "CMake")
+  return offInt(both.toI64(), 1)
+}
+
+func checkReplaceRepeatIndent() -> double {
+  let s: string = replace("a-b-c", "-", "::")
+  return offText(s + "|" + repeat("ab", 3) + "|" + indent("x\n\ny", 2), "a::b::c|ababab|  x\n\n  y")
+}
+
+func checkLines() -> double {
+  return offInt(lines("one\ntwo\nthree").len(), 3)
+}
+
+func checkFill() -> double {
+  let values: mutmap<string, string> = mutmap<string, string>()
+  values["name"] = "gcd"
+  values["lang"] = "C"
+  return offText(fill("project(\${name} LANGUAGES \${lang}) \${missing}", values), "project(gcd LANGUAGES C) \${missing}")
+}
+
+func writeDeps(out: StringBuilder, deps: mutarray<string>) -> void {
+  out.indent(4)
+  for (d in deps) {
+    out.line("implementation(\"${d}\")")
+  }
+  out.dedent()
+}
+
+func checkStringBuilder() -> double {
+  let out: StringBuilder = StringBuilder(pieces: mutarray<string>(), indents: mutarray<i64>())
+  out.line("dependencies {")
+  writeDeps(out, ["a:b:1", "c:d:2"])
+  out.line("}")
+  let want: string = "dependencies {" + "\n" + "    implementation(\"a:b:1\")" + "\n" + "    implementation(\"c:d:2\")" + "\n" + "}" + "\n"
+  return offText(out.text(), want) + offInt(out.isEmpty().toI64(), 0)
+}

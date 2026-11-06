@@ -1,0 +1,602 @@
+# Js
+source: polyir
+target: js
+style: indent 2, braces same-line, names keep, paths ., qualify full, generics kept, extension js
+
+// A checked program as one JavaScript file for Node or a browser. A struct is a class, a module a class of static members
+// (so every declaration is named by its whole path: `Geometry.Point`), a 64-bit integer a BigInt, a narrower one a Number
+// kept in range with the usual bit tricks, an absent optional `null`. The few helpers a program needs are written at the top.
+
+## declarations
+program(support, items) :=
+  "use strict";
+
+  {items.include}
+
+  {support}
+
+  {items}
+// A library (a file with no `main` of its own) shows the names it exports.
+program(support, items, exports) :=
+  "use strict";
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  export { {exports} };
+program(support, items, main) :=
+  "use strict";
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  main();
+program(support, items, main: int) :=
+  "use strict";
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  const status = main();
+  if (typeof process !== "undefined") {
+    process.exitCode = Number(status);
+  }
+
+// A module is a class holding its declarations as static members, so a nested one is `Geometry.Shapes`.
+module(name, items) :=
+  class {name} {
+    {items.member}
+  }
+module.member(name, items) :=
+  static {name} = class {
+    {items.member}
+  };
+
+struct(name, fields, methods, nested, statics) :=
+  class {name} {
+    constructor({fields.param}) {
+      {fields.init}
+    }
+
+    {methods}
+
+    {statics}
+
+    {nested.member}
+  }
+struct(name, fields: empty, methods, nested, statics) :=
+  class {name} {
+    {methods}
+
+    {statics}
+
+    {nested.member}
+  }
+struct.member(name, fields, methods, nested, statics) :=
+  static {name} = class {
+    constructor({fields.param}) {
+      {fields.init}
+    }
+
+    {methods}
+
+    {statics}
+
+    {nested.member}
+  };
+struct.member(name, fields: empty, methods, nested, statics) :=
+  static {name} = class {
+    {methods}
+
+    {statics}
+
+    {nested.member}
+  };
+
+// A field is a constructor parameter and the line that keeps it.
+field(name, type)                   := {name};
+field(name, type, value)            := {name} = {value};
+field.param(name, type)             := {name}
+field.param(name, type, value)      := {name} = {value}
+field.init(name, type)              := this.{name} = {name};
+field.init(name, type, value)       := this.{name} = {name};
+
+method(name, params, result, body)  := {name}({params}) {body}
+static(name, params, result, body)  := static {name}({params}) {body}
+func(name, params, result, body)    := function {name}({params}) {body}
+func.member(name, params, result, body) := static {name}({params}) {body}
+
+// A coroutine gives a Coroutine over a `function*`, which it runs with the coroutine itself.
+coro(name, params, yields, body) :=
+  function {name}({params}) {
+    return new Coroutine(function* (coroutine) {
+      {body}
+    });
+  }
+  uses: variant, coroutine
+coro.member(name, params, yields, body) :=
+  static {name}({params}) {
+    return new Coroutine(function* (coroutine) {
+      {body}
+    });
+  }
+  uses: variant, coroutine
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) := function {name}({params}) {body}
+param(name, type)                   := {name}
+
+// JavaScript has no interfaces: a method is called on whatever value has it.
+interface(name, methods)            :=
+signature(name, params, result)     := {name}({params})
+
+// The C functions JavaScript has, through Math; any other one it cannot call.
+extern(name, params, result)        := unsupported "JavaScript cannot call a C function"
+extern(name: sin cos tan sqrt floor ceil log exp pow, params, result) := const {name} = Math.{name};
+extern(name: fabs abs labs llabs, params, result) := const {name} = Math.abs;
+extern(name: fmax, params, result)  := const fmax = Math.max;
+extern(name: fmin, params, result)  := const fmin = Math.min;
+extern(name: sinf, params, result)  := const sinf = (x) => Math.fround(Math.sin(x));
+extern(name: cosf, params, result)  := const cosf = (x) => Math.fround(Math.cos(x));
+extern(name: tanf, params, result)  := const tanf = (x) => Math.fround(Math.tan(x));
+extern(name: sqrtf, params, result) := const sqrtf = (x) => Math.fround(Math.sqrt(x));
+extern(name: floorf, params, result) := const floorf = (x) => Math.fround(Math.floor(x));
+extern(name: ceilf, params, result) := const ceilf = (x) => Math.fround(Math.ceil(x));
+extern(name: logf, params, result)  := const logf = (x) => Math.fround(Math.log(x));
+extern(name: expf, params, result)  := const expf = (x) => Math.fround(Math.exp(x));
+extern(name: fabsf, params, result) := const fabsf = (x) => Math.fround(Math.abs(x));
+extern(name: powf, params, result)  := const powf = (x, y) => Math.fround(Math.pow(x, y));
+extern(name: fmaxf, params, result) := const fmaxf = (x, y) => Math.fround(Math.max(x, y));
+extern(name: fminf, params, result) := const fminf = (x, y) => Math.fround(Math.min(x, y));
+extern(name: getchar, params, result) :=
+  function getchar() {
+    const byte = Buffer.alloc(1);
+    return require("fs").readSync(0, byte, 0, 1, null) === 1 ? byte[0] : -1;
+  }
+extern(name: putchar, params, result) :=
+  function putchar(c) {
+    process.stdout.write(String.fromCharCode(Number(c) & 255));
+    return c;
+  }
+
+global(name, type, value)           := let {name} = {value};
+import(module)                      := import "{module}";
+import(module, alias)               := import * as {alias} from "{module}";
+// An imported .poly file is its own module: the `include` pass, at the top, takes the names this file's code uses from it.
+use(name, path, names)              :=
+use.include(name, path, names)      := import { {names} } from "./{path}.js";
+any.include(value)                  :=
+
+## statements
+let(name, type, value)              := const {name} = {value};
+var(name, type)                     := let {name} = {type.zero};
+var(name, type, value)              := let {name} = {value};
+assign(target, value)               := {target} = {value};
+store(object, index, value)         := {object}[{index.number}] = {value};
+store(object: map mutmap, index, value) := {object}.set({index}, {value});
+store(object: sparse, index, value) := {object}.set({index}, 0n, {value});
+store(object, indices, value)       := {object}.set({indices}, {value});
+expr(value)                         := {value.statement};
+if(cond, then)                      := if ({cond}) {then}
+if(cond, then, else)                := if ({cond}) {then} else {else}
+if(cond, then, elseIf)              := if ({cond}) {then} else {elseIf}
+while(cond, body)                   := while ({cond}) {body}
+for(counters, cond, steps, body)    := for (let {counters}; {cond}; {steps}) {body}
+// A counter used after its loop is declared before the loop, as .poly keeps it.
+for(counters, cond, steps, body, usedAfter) :=
+  let {counters};
+  for (; {cond}; {steps}) {body}
+counter(name, type, value)          := {name} = {value}
+step(name, value)                   := {name} = {value}
+foreach(name, source, body)         := for (const {name} of {source}) {body}
+foreach(name, source: map mutmap, body) := for (const {name} of {source}.keys()) {body}
+return                              := return;
+return(value)                       := return {value};
+try(body, name, handler)            := try {body} catch ({name}) {handler}
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  try {body} catch (thrown) {
+    {cleanup}
+    throw thrown;
+  }
+throw(value)                        := throw {value};
+yield(value)                        := yield {value};
+// A switch of blocks, which `match` and `switch` lower to: JavaScript's `switch` (it compares with `===`, as polyir's keys
+// do), an arm per `case`; a sum is written as its `if` chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool string, arms) :=
+  switch ({value}) {
+    {arms}
+  }
+select(value: int bool string, arms, else) :=
+  switch ({value}) {
+    {arms}
+    default: {
+      {else}
+    }
+  }
+arm(keys, body) :=
+  case {keys|: case }: {
+    {body}
+    break;
+  }
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the cases of a loop around a switch on `label`; each case ends with a jump or a
+// return.
+machine(state, cases) :=
+  machine: for (;;) {
+    switch ({state}) {
+      {cases}
+    }
+  }
+case(state, number, body)           := case {number}n: {body}
+jump(state, number) :=
+  {state} = {number}n;
+  continue machine;
+
+## expressions
+// closure may also name the facts name
+int(value)                          := {value}
+int(value: i64 u64)                 := {value}n
+float(value)                        := {value}
+bool(value)                         := {value}
+string(value)                       := "{value}"
+unit                                := undefined
+name(name)                          := {name}
+this                                := this
+funcref(name)                       := {name}
+
+// The operators keep each integer in its range: i64 and u64 through the `i64` and `u64` helpers, i32 with `| 0`, u32
+// with `>>> 0`, the narrower ones by their bits. A float (32 bits) is rounded with Math.fround.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: i64, op: + - * <<, right) := i64({left} {op} {right})
+  uses: i64
+binary(left: u64, op: + - * <<, right) := u64({left} {op} {right})
+  uses: u64
+binary(left: i32, op: + - /, right) := ({left} {op} {right}) | 0
+binary(left: i32, op: *, right)     := Math.imul({left}, {right})
+binary(left: u32, op: + - * / << & | ^, right) := ({left} {op} {right}) >>> 0
+binary(left: u32, op: >>, right)    := {left} >>> {right}
+binary(left: i16, op: + - * / <<, right) := ({left} {op} {right}) << 16 >> 16
+binary(left: i8, op: + - * / <<, right) := ({left} {op} {right}) << 24 >> 24
+binary(left: u16, op: + - * / <<, right) := ({left} {op} {right}) & 65535
+binary(left: u8, op: + - * / <<, right) := ({left} {op} {right}) & 255
+binary(left: float, op: + - * /, right) := Math.fround({left} {op} {right})
+binary(left: bool, op: &, right)    := {left} && {right}
+binary(left: bool, op: |, right)    := {left} || {right}
+binary(left: bool, op: ^, right)    := {left} !== {right}
+binary(left: array mutarray, op: +, right) := [...{left}, ...{right}]
+// A vector's operators work lane by lane (its lanes are not kept in an integer's range or rounded to a float).
+binary(left: vec, op: + - * / %, right) := lanes({left}, {right}, (x, y) => x {op} y)
+  uses: lanes
+
+// `==` compares what two values hold: numbers, flags and strings with `===`, anything else with `same`.
+binary(left, op: ==, right)         := same({left}, {right})
+  uses: same
+binary(left, op: !=, right)         := !same({left}, {right})
+  uses: same
+binary(left: number bool string, op: == !=, right) := {left} {op} {right}
+
+unary(op, operand)                  := {op}{operand}
+unary(op: -, operand: i64)          := {operand.negated}
+int.negated(value)                  := -{value}n
+any.negated(value)                  := i64(-{value})
+  uses: i64
+unary(op: -, operand: u64)          := u64(-{operand})
+  uses: u64
+unary(op: ~, operand: u64)          := u64(~{operand})
+  uses: u64
+unary(op: -, operand: i32)          := -{operand} | 0
+unary(op: - ~, operand: u32)        := {op}{operand} >>> 0
+unary(op: -, operand: i16)          := -{operand} << 16 >> 16
+unary(op: -, operand: i8)           := -{operand} << 24 >> 24
+unary(op: - ~, operand: u16)        := {op}{operand} & 65535
+unary(op: - ~, operand: u8)         := {op}{operand} & 255
+
+// A number of one type as another: between BigInts and Numbers, kept in the new type's range.
+cast(value, type)                   := {value}
+// A pointer is a list here, so it has no address to turn into a number, or back.
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+cast(value: i8 i16 i32 u8 u16 u32, type: i64) := BigInt({value})
+cast(value: float double, type: i64) := BigInt(Math.trunc({value}))
+cast(value: u64, type: i64)         := i64({value})
+  uses: i64
+cast(value: i64, type: u64)         := u64({value})
+  uses: u64
+cast(value: i8 i16 i32, type: u64)  := u64(BigInt({value}))
+  uses: u64
+cast(value: u8 u16 u32, type: u64)  := BigInt({value})
+cast(value: float double, type: u64) := u64(BigInt(Math.trunc({value})))
+  uses: u64
+cast(value: i64 u64, type: i32)     := Number(BigInt.asIntN(32, {value}))
+cast(value: i64 u64, type: i16)     := Number(BigInt.asIntN(16, {value}))
+cast(value: i64 u64, type: i8)      := Number(BigInt.asIntN(8, {value}))
+cast(value: i64 u64, type: u32)     := Number(BigInt.asUintN(32, {value}))
+cast(value: i64 u64, type: u16)     := Number(BigInt.asUintN(16, {value}))
+cast(value: i64 u64, type: u8)      := Number(BigInt.asUintN(8, {value}))
+cast(value: i64 u64, type: double)  := Number({value})
+cast(value: i64 u64, type: float)   := Math.fround(Number({value}))
+cast(value, type: i32)              := {value} | 0
+cast(value, type: u32)              := {value} >>> 0
+cast(value, type: i16)              := {value} << 16 >> 16
+cast(value, type: i8)               := {value} << 24 >> 24
+cast(value, type: u16)              := {value} & 65535
+cast(value, type: u8)               := {value} & 255
+cast(value, type: float)            := Math.fround({value})
+cast(value: bool, type: i64 u64)    := ({value} ? 1n : 0n)
+cast(value: bool, type: i8 i16 i32 u8 u16 u32 float double) := ({value} ? 1 : 0)
+cast(value: i64 u64, type: bool)    := {value} !== 0n
+cast(value: i8 i16 i32 u8 u16 u32 float double, type: bool) := {value} !== 0
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := {cond} ? {then} : {else}
+call(callee, args)                  := {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+methodcall(object, name, args)      := {object}.{name}({args})
+invoke(callee, args)                := {callee}({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object}.{name}
+
+// A list is indexed by a Number. A map gives the value type's zero for a key it does not hold.
+index(object, index, type)          := {object}[{index.number}]
+index(object: map mutmap, index, type) := {object}.get({index}) ?? {type.zero}
+index(object: map mutmap, index, type: struct instance) := {object}.get({index})
+index(object: sparse, index, type)  := {object}.get({index}, 0n)
+index(object, indices, type)        := {object}.get({indices})
+any.number(value)                   := Number({value})
+any.number(value: i8 i16 i32 u8 u16 u32) := {value}
+int.number(value)                   := {value}
+
+new(name, values)                   := new {name}({values})
+new(name, typeArgs, values)         := new {name}({values})
+init(name, value)                   := {value}
+list(values)                        := [{values}]
+vec(values)                         := [{values}]
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+closure(params, result, body)       := ({params}) => {body}
+lambda(params, value)               := ({params}) => {value}
+some(type, value)                   := {value}
+none(type)                          := null
+ok(type, value)                     := new Ok({value})
+  uses: either
+err(type, value)                    := new Err({value})
+  uses: either
+variant(type, case, value)          := new Variant({case}n, {value})
+  uses: variant
+
+// Text with holes is a template literal; a char (`i8`) is the character of its byte.
+interp(pieces)                      := `{pieces}`
+text(value)                         := {value}
+  escape: ` as \`
+  escape: ${ as \${
+hole(value)                         := ${{value}}
+hole(value: i8 u8)                  := ${String.fromCharCode({value} & 255)}
+
+## builtins
+// Sizes are BigInts (i64) in the program. A string counts its UTF-8 bytes, as on every target.
+len(object)                         := BigInt({object}.length)
+len(object: map mutmap set mutset)  := BigInt({object}.size)
+len(object: string)                 := textLength({object})
+  uses: utf8, textLength
+capacity(object)                    := BigInt({object}.length)
+rows(object)                        := BigInt({object}.dims[0])
+cols(object)                        := BigInt({object}.dims[1])
+dim(object, axis)                   := BigInt({object}.dims[{axis.number}])
+
+// A push whose list is not used is JavaScript's push; one used as a value gives the list (`pushed`).
+push(object, value)                 := pushed({object}, {value})
+  uses: pushed
+push.statement(object, value)       := {object}.push({value})
+
+// An integer is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := {value}
+hash(value: i8 i16 i32 u8 u16 u32)  := BigInt({value})
+hash(value: bool)                   := ({value} ? 1n : 0n)
+hash(value: string)                 := hashText({value})
+  uses: utf8, hashText
+
+shuffle(object, lanes)              := [{lanes.number}].map((lane) => {object}[lane])
+atomicLoad(object, order)           := unsupported "JavaScript has no memory to share between threads"
+atomicStore(object, value, order)   := unsupported "JavaScript has no memory to share between threads"
+atomicRmw(object, op, value, order) := unsupported "JavaScript has no memory to share between threads"
+cmpxchg(object, expected, value, success, failure) := unsupported "JavaScript has no memory to share between threads"
+fence(order)                        := unsupported "JavaScript has no memory to share between threads"
+
+// A variant is a Variant (the number of its case and its value), an `either` an Ok or an Err.
+tag(object)                         := {object}.tag
+isCase(object, case)                := {object}.tag === {case}n
+unwrapAt(object, case)              := {object}.value
+isOk(object)                        := {object} instanceof Ok
+isErr(object)                       := {object} instanceof Err
+unwrapOk(object)                    := {object}.value
+unwrapErr(object)                   := {object}.value
+isSome(object)                      := {object} !== null
+isNone(object)                      := {object} === null
+unwrap(object)                      := present({object})
+  uses: fail, present
+
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+yielded(value)                      := yield* coroutine.give({value})
+
+// `copy`, `freeze` and `thaw` make a new collection holding the same items.
+copy(object)                        := copyOf({object})
+  uses: copyOf
+copy(object: array mutarray)        := [...{object}]
+copy(object: grid matrix tensor sparse) := {object}.copy()
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := [...{object}, {value}]
+with(object: set mutset, value)     := copyOf({object}).add({value})
+  uses: copyOf
+with(object, key, value)            := copyOf({object}).set({key}, {value})
+  uses: copyOf
+has(object, key)                    := {object}.some((item) => same(item, {key}))
+  uses: same
+has(object: array mutarray, key: number bool string) := {object}.includes({key})
+has(object: map mutmap set mutset, key) := {object}.has({key})
+add(object, value)                  := {object}.add({value})
+remove(object, key)                 := {object}.delete({key})
+truncate(object, size)              := truncate({object}, {size})
+  uses: truncate
+
+str(value)                          := String({value})
+str(value: i8 u8)                   := String.fromCharCode({value} & 255)
+str(value: string)                  := {value}
+charAt(object, index)               := textByte({object}, {index})
+  uses: utf8, textByte
+slice(object, from, to)             := textSlice({object}, {from}, {to})
+  uses: utf8, textSlice
+find(object, part, from)            := textFind({object}, {part}, {from})
+  uses: utf8, textFind
+print(value)                        := console.log({value})
+fail(value)                         := fail({value})
+  uses: fail
+
+## types
+// JavaScript writes no types. A type's `zero` is its empty or zero value, for a variable declared without one, a map's
+// missing key and a new collection.
+i8                                  := number
+i16                                 := number
+i32                                 := number
+i64                                 := bigint
+u8                                  := number
+u16                                 := number
+u32                                 := number
+u64                                 := bigint
+bool                                := boolean
+float                               := number
+double                              := number
+string                              := string
+void                                := undefined
+struct(name)                        := {name}
+instance(name, args)                := {name}
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}
+array(elem)                         := Array
+mutarray(elem)                      := Array
+map(key, value)                     := Map
+mutmap(key, value)                  := Map
+set(elem)                           := Set
+mutset(elem)                        := Set
+optional(elem)                      := {elem}
+either(ok, err)                     := Ok
+variant(cases)                      := Variant
+closure(params, result)             := Function
+func(params, result)                := Function
+// A pointer is a kernel's buffer, indexed as a list.
+ptr(elem)                           := Array
+coro(elem)                          := Coroutine
+vec(elem, size)                     := Array
+matrix(elem, size)                  := Array
+fixed(elem, size)                   := Array
+buffer(elem, size)                  := Array
+grid(elem, rows, cols)              := Array
+tensor(elem, dims)                  := Array
+sparse(elem)                        := Sparse
+
+any.zero(value)                     := null
+i8.zero                             := 0
+i16.zero                            := 0
+i32.zero                            := 0
+i64.zero                            := 0n
+u8.zero                             := 0
+u16.zero                            := 0
+u32.zero                            := 0
+u64.zero                            := 0n
+bool.zero                           := false
+float.zero                          := 0
+double.zero                         := 0
+string.zero                         := ""
+array.zero(elem)                    := []
+mutarray.zero(elem)                 := []
+map.zero(key, value)                := new ValueMap()
+  uses: valueKey, valueMap
+map.zero(key: number bool string, value) := new Map()
+mutmap.zero(key, value)             := new ValueMap()
+  uses: valueKey, valueMap
+mutmap.zero(key: number bool string, value) := new Map()
+set.zero(elem)                      := new ValueSet()
+  uses: valueKey, valueSet
+set.zero(elem: number bool string)  := new Set()
+mutset.zero(elem)                   := new ValueSet()
+  uses: valueKey, valueSet
+mutset.zero(elem: number bool string) := new Set()
+fixed.zero(elem, size)              := Array.from({ length: {size} }, () => {elem.zero})
+buffer.zero(elem, size)             := Array.from({ length: {size} }, () => {elem.zero})
+vec.zero(elem, size)                := Array.from({ length: {size} }, () => {elem.zero})
+grid.zero(elem, rows, cols)         := new Grid([{rows}, {cols}], {elem.zero})
+  uses: grid
+matrix.zero(elem, size)             := new Grid([{size}, {size}], {elem.zero})
+  uses: grid
+tensor.zero(elem, dims)             := new Grid([{dims}], {elem.zero})
+  uses: grid
+sparse.zero(elem)                   := new Sparse({elem.zero})
+  uses: sparse
+
+## operators
+== := ===
+!= := !==
+levels: =>, yield, ?, ??, ||, &&, |, ^, &, === !==, < <= > >= instanceof, << >> >>>, + -, * / %
+
+## reserved
+// JavaScript's own words, and the names its helpers and built-ins use: a name that is one of them gets a _ after it.
+break case catch class const continue debugger default delete do else enum export extends false finally for function
+if import in instanceof let new null return static super switch this throw true try typeof var void while with yield
+await arguments eval undefined NaN Infinity constructor prototype
+Array BigInt Boolean Error Map Math Number Object Set String console process
+Coroutine Variant Ok Err ValueMap ValueSet Grid Sparse same present fail pushed truncate copyOf textLength textByte textSlice textFind
+hashText utf8Bytes utf8Text valueKey i64 u64 lanes
+
+## support
+i64 := runtime/I64.js
+u64 := runtime/U64.js
+same := runtime/Same.js
+fail := runtime/Fail.js
+present := runtime/Present.js
+either := runtime/Either.js
+variant := runtime/Variant.js
+coroutine := runtime/Coroutine.js
+pushed := runtime/Pushed.js
+truncate := runtime/Truncate.js
+copyOf := runtime/CopyOf.js
+utf8 := runtime/Utf8.js
+textLength := runtime/TextLength.js
+textByte := runtime/TextByte.js
+textSlice := runtime/TextSlice.js
+textFind := runtime/TextFind.js
+hashText := runtime/HashText.js
+valueKey := runtime/ValueKey.js
+valueMap := runtime/ValueMap.js
+valueSet := runtime/ValueSet.js
+grid := runtime/Grid.js
+sparse := runtime/Sparse.js
+lanes := runtime/Lanes.js
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code.
+// With a source map asked for (--source-map): the line that names the map, so a browser or Node shows the source's lines.
+line := //# from {file}:{line}:{column} {code}
+map := //# sourceMappingURL={map}

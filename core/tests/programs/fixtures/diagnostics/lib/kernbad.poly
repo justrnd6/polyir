@@ -1,0 +1,3 @@
+kernel func bad(x: double) -> double {
+    return x
+}

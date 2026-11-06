@@ -1,0 +1,29 @@
+# Build output: the CMake tree (build/ at the root, or build-<name>/) and what `poly up` writes under each
+# project's own build/ (tools/metabuild/examples/*/build).
+build/
+build-*/
+dist/
+target/
+*.vsix
+
+# A CMake tree configured into style/ at the root. It holds no source: the style rules are style.nina.properties
+# and the checker is built in the nina checkout.
+/style/
+
+# The guide, built by core/docs/language/build.py from guide.html.in. The pictures and text under snippets/ stay:
+# they are inputs to that build, and the pictures need a GPU to draw again.
+core/docs/language/polyir-guide.html
+core/docs/language/polyir-guide.pdf
+
+# Editor / tooling
+.cache/
+compile_commands.json
+*.o
+*.a
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

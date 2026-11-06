@@ -1,0 +1,199 @@
+// OLD NTSC TELEVISION on the GPU (Metal). A colour picture is squeezed into ONE composite signal
+// per scan line, the way a broadcast was, and then pulled apart again the way a TV set did it.
+//
+//   encode  RGB -> YIQ, then  composite = Y + I cos(phase) + Q sin(phase)
+//           (the colour rides on a subcarrier: its phase is the HUE, its size the SATURATION).
+//           The phase moves a quarter turn per pixel and a half turn per line.
+//   decode  Average four neighbouring samples (exactly one subcarrier period) and the carrier
+//           cancels, leaving the brightness Y. Multiply by cos and sin first and average, and the
+//           carrier's size and angle come back as I and Q. Then the TV's two knobs:
+//           TINT turns (I, Q) around the colour wheel, COLOR scales them. Then YIQ -> RGB.
+//
+// Sharp edges smear sideways and fine black-and-white stripes turn into rainbows: that is real
+// NTSC "dot crawl" and "cross colour", because brightness and colour share one signal.
+//
+//   polyir --emit-msl ntsc.poly > ntsc.metal
+//   polyir ntsc.poly --out ntsc && ./ntsc        (Apple Silicon; run in this folder)
+//
+// Saves ntsc-1-source.ppm, ntsc-2-composite.pgm (what a black-and-white set would show),
+// ntsc-3-decoded.ppm, ntsc-4-tint.ppm (tint +40 degrees) and ntsc-5-color-off.ppm.
+// Exit 0 means the GPU equals the CPU and a flat colour survived the round trip. 10 no GPU,
+// 11 the Metal source is missing, 12 a dispatch failed, 13 the GPU and CPU disagree,
+// 14 a colour did not survive the round trip.
+import "../Metal.poly"
+import "shared/picture.poly"
+
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+
+// The subcarrier's angle at a pixel: a quarter turn per pixel, a half turn per line.
+kernel func phase(x: i32, y: i32) -> float {
+    return 1.5707963 * x.toFloat() + 3.1415927 * (y % 2).toFloat()
+}
+
+// One pixel's composite signal. `src` holds four floats (red, green, blue, alpha) per pixel.
+kernel func encode(index i: i32, uniform src: ptr<float>, uniform w: i32) -> float {
+    let r: float = src[i * 4]
+    let g: float = src[i * 4 + 1]
+    let b: float = src[i * 4 + 2]
+    let y: float = 0.299 * r + 0.587 * g + 0.114 * b
+    let ci: float = 0.596 * r - 0.274 * g - 0.322 * b
+    let cq: float = 0.211 * r - 0.523 * g + 0.312 * b
+    let p: float = phase(i % w, i / w)
+    return y + ci * cosf(p) + cq * sinf(p)
+}
+
+// The column of the sample `k` places left of this pixel's, kept inside the line.
+kernel func nearColumn(x: i32, k: i32, w: i32) -> i32 {
+    var c: i32 = x + k - 2
+    if (c < 0) { c = 0 }
+    if (c > w - 1) { c = w - 1 }
+    return c
+}
+
+// One pixel of the picture a TV would show. `opts` is: 0 tint (radians), 1 colour (1 = normal).
+kernel func decode(index i: i32, uniform comp: ptr<float>, uniform w: i32, uniform opts: ptr<float>) -> vec<float, 4> {
+    let x: i32 = i % w
+    let y: i32 = i / w
+    var luma: float = 0.0
+    var ci: float = 0.0
+    var cq: float = 0.0
+    for (k = 0; k < 4; k = k + 1) {
+        let c: i32 = nearColumn(x, k, w)
+        let sample: float = comp[y * w + c]
+        let p: float = phase(c, y)
+        luma = luma + sample * 0.25
+        ci = ci + sample * cosf(p) * 0.5
+        cq = cq + sample * sinf(p) * 0.5
+    }
+    let turn: float = opts[0]
+    let ti: float = (ci * cosf(turn) - cq * sinf(turn)) * opts[1]
+    let tq: float = (ci * sinf(turn) + cq * cosf(turn)) * opts[1]
+    let r: float = luma + 0.956 * ti + 0.621 * tq
+    let g: float = luma - 0.272 * ti - 0.647 * tq
+    let b: float = luma - 1.106 * ti + 1.703 * tq
+    return vec[r, g, b, 1.0]
+}
+
+// Eight vertical colour bars (white, yellow, cyan, green, magenta, red, blue, black) in the top
+// two thirds; below them a patch of fine black-and-white stripes, the worst case for NTSC.
+func testPicture(w: i64, h: i64) -> ptr<float> {
+    let img: ptr<float> = calloc(w * h * 4, 4).toPtr()
+    for (y = 0; y < h; y = y + 1) {
+        for (x = 0; x < w; x = x + 1) {
+            let bar: i64 = x * 8 / w
+            var r: float = 0.0
+            var g: float = 0.0
+            var b: float = 0.0
+            if (bar == 0 || bar == 1 || bar == 4 || bar == 5) { r = 0.9 }
+            if (bar == 0 || bar == 1 || bar == 2 || bar == 3) { g = 0.9 }
+            if (bar == 0 || bar == 2 || bar == 4 || bar == 6) { b = 0.9 }
+            if (y >= h * 2 / 3) {
+                r = 0.0
+                g = 0.0
+                b = 0.0
+                if (x % 3 == 0 && x > w / 4 && x < w * 3 / 4) {
+                    r = 0.9
+                    g = 0.9
+                    b = 0.9
+                }
+            }
+            let at: i64 = (y * w + x) * 4
+            img[at] = r
+            img[at + 1] = g
+            img[at + 2] = b
+            img[at + 3] = 1.0
+        }
+    }
+    return img
+}
+
+func near(a: float, b: float, tolerance: float) -> i64 {
+    var gap: float = a - b
+    if (gap < 0.0) { gap = 0.0 - gap }
+    if (gap <= tolerance) { return 1 }
+    return 0
+}
+
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let source: string = metalReadFile("ntsc.metal")
+    let encoder: i64 = metalPipeline(device, source, "encode")
+    let decoder: i64 = metalPipeline(device, source, "decode")
+    if (encoder == 0 || decoder == 0) { return 11 }
+    let w: i64 = 160
+    let h: i64 = 120
+    let img: ptr<float> = testPicture(w, h)
+    let composite: ptr<float> = runEncode(device, encoder, img, w, h)
+    if (composite.toI64() == 0) { return 12 }
+    let code: i64 = checkEncode(composite, img, w, h)
+    if (code != 0) { return code }
+    return decodeAll(device, decoder, img, composite, w, h)
+}
+
+// The composite signal from the GPU: one float per pixel.
+func runEncode(device: i64, pipeline: i64, img: ptr<float>, w: i64, h: i64) -> ptr<float> {
+    let width: i32[1]
+    width[0] = w.toI32()
+    let out: i64 = metalEmptyBuffer(device, w * h * 4)
+    if (metalDispatch(device, pipeline, w * h, metalBuffer(device, img.toI64(), w * h * 16), metalBuffer(device, width.toI64(), 4), out, 0) == 0) { return 0.toPtr() }
+    return metalContents(out).toPtr()
+}
+
+func checkEncode(composite: ptr<float>, img: ptr<float>, w: i64, h: i64) -> i64 {
+    for (i = 0; i < w * h; i = i + 1) {
+        if (near(composite[i], encode(i.toI32(), img, w.toI32()), 0.001) == 0) { return 13 }
+    }
+    return 0
+}
+
+// One decode on the GPU with the given tint (radians) and colour amount; the RGBA picture.
+func runDecode(device: i64, pipeline: i64, composite: ptr<float>, w: i64, h: i64, tint: float, color: float) -> ptr<float> {
+    let width: i32[1]
+    width[0] = w.toI32()
+    let opts: float[2]
+    opts[0] = tint
+    opts[1] = color
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    buffers[0] = metalBuffer(device, composite.toI64(), w * h * 4)
+    buffers[1] = metalBuffer(device, width.toI64(), 4)
+    buffers[2] = metalBuffer(device, opts.toI64(), 8)
+    buffers[3] = metalEmptyBuffer(device, w * h * 16)
+    if (metalDispatchBuffers(device, pipeline, w * h, buffers, 4) == 0) { return 0.toPtr() }
+    return metalContents(buffers[3]).toPtr()
+}
+
+func decodeAll(device: i64, pipeline: i64, img: ptr<float>, composite: ptr<float>, w: i64, h: i64) -> i64 {
+    let plain: ptr<float> = runDecode(device, pipeline, composite, w, h, 0.0, 1.0)
+    let turned: ptr<float> = runDecode(device, pipeline, composite, w, h, 0.6981317, 1.0)
+    let grey: ptr<float> = runDecode(device, pipeline, composite, w, h, 0.0, 0.0)
+    if (plain.toI64() == 0 || turned.toI64() == 0 || grey.toI64() == 0) { return 12 }
+    let opts: float[2]
+    opts[0] = 0.0
+    opts[1] = 1.0
+    for (i = 0; i < w * h; i = i + 3) {
+        let cpu: vec<float, 4> = decode(i.toI32(), composite, w.toI32(), opts.toI64().toPtr())
+        for (c = 0; c < 3; c = c + 1) {
+            if (near(plain[i * 4 + c], cpu[c], 0.01) == 0) { return 13 }
+        }
+    }
+    if (barsSurvive(plain, img, w) == 0) { return 14 }
+    saveColorPicture("ntsc-1-source.ppm", img, w, h)
+    savePicture("ntsc-2-composite.pgm", composite, w, h)
+    saveColorPicture("ntsc-3-decoded.ppm", plain, w, h)
+    saveColorPicture("ntsc-4-tint.ppm", turned, w, h)
+    saveColorPicture("ntsc-5-color-off.ppm", grey, w, h)
+    return 0
+}
+
+// In the middle of each bar, away from its edges, the decoded colour equals the source colour.
+func barsSurvive(decoded: ptr<float>, img: ptr<float>, w: i64) -> i64 {
+    for (bar = 0; bar < 8; bar = bar + 1) {
+        let at: i64 = (20 * w + bar * w / 8 + w / 16) * 4
+        for (c = 0; c < 3; c = c + 1) {
+            if (near(decoded[at + c], img[at + c], 0.02) == 0) { return 0 }
+        }
+    }
+    return 1
+}

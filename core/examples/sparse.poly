@@ -1,0 +1,57 @@
+// `sparse<T>` — a dynamically-sized sparse 2D structure: three parallel
+// `mutarray`s (row keys, col keys, values), no fixed dimensions, no
+// aliasing risk (unlike a packed `row*K+col` key). Write is an
+// UNCONDITIONAL append; read is a full scan that keeps overwriting its
+// running result on every match — so the LAST appended entry for a
+// given `(row,col)` wins. A sparse is a reference (like a `mutarray`): any name for it can be written, and a function that is
+// handed one writes the caller's.
+
+func writeAndReadBack() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0, 0] = 10
+  sp[2, 3] = 20
+  sp[5, 1] = 30
+  return sp[2, 3] * 100 + sp[5, 1] * 10 + sp[0, 0]
+}
+
+// An UNSET cell reads back as the zero-equivalent, not garbage.
+func unsetCellIsZero() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[1, 1] = 99
+  return sp[9, 9]
+}
+
+// The SAME `(row,col)` written twice with different values — confirms
+// "last appended entry wins" is the REAL behavior this append-only
+// write / scan-keeps-overwriting-on-match read design actually
+// produces, not merely a clean compile.
+func lastWriteWins() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[3, 3] = 1
+  sp[3, 3] = 2
+  sp[3, 3] = 3
+  return sp[3, 3]
+}
+
+// `sp[idx]` — single-dimension indexing, desugared internally to
+// `sp[idx, 0]`: both spellings address the literal same entry, so this
+// is well-defined, not a new footgun.
+func oneDimensionalRoundTrip() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0] = 100
+  sp[7] = 200
+  sp[3] = 300
+  return sp[7] * 100 + sp[3] * 10 + sp[0]
+}
+
+// `.len()`/`.count()` — the RAW entry count (including stale
+// overwritten duplicates from `lastWriteWins`-style writes), not the
+// number of distinct cells; honest about the same append-only ceiling
+// `sparse<T>`'s own write design already documents.
+func lenAfterWrites() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0, 0] = 1
+  sp[1, 1] = 2
+  sp[1, 1] = 3
+  return sp.len()
+}

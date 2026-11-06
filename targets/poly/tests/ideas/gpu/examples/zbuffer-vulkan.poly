@@ -1,0 +1,90 @@
+import "../Vulkan.poly"
+import "shared/print.poly"
+import "shared/zbuffer.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  let rasterizePipe: i64 = vulkanPipeline(gpu, "rasterize.spv", 3, 12)
+  let shadePipe: i64 = vulkanPipeline(gpu, "shade.spv", 3, 4)
+  if (rasterizePipe == 0 || shadePipe == 0) {
+    return 11
+  }
+  let width: i64 = 640
+  let height: i64 = 480
+  let count: i64 = 48
+  let tris: ptr<float> = calloc(count * 10, 4).toPtr()
+  makeScene(tris, count, width, height)
+  let picture: ptr<float> = draw(gpu, rasterizePipe, shadePipe, tris, count, width, height)
+  if (picture.toI64() == 0) {
+    return 12
+  }
+  let different: i64 = differences(picture, tris, count, width, height)
+  say("pixels that differ from the CPU's picture: ")
+  sayNumber(different)
+  newline()
+  if (different * 500 > width * height) {
+    return 13
+  }
+  return 0
+}
+
+func differences(picture: ptr<float>, tris: ptr<float>, count: i64, width: i64, height: i64) -> i64 {
+  let pixels: i64 = width * height
+  let keys: ptr<i32> = calloc(pixels, 4).toPtr()
+  for (p = 0; p < pixels; p = p + 1) {
+    keys[p] = emptyKey()
+  }
+  for (t = 0; t < count; t = t + 1) {
+    rasterize(t.toI32(), tris, width.toI32(), height.toI32(), keys)
+  }
+  var different: i64 = 0
+  for (p = 0; p < pixels; p = p + 1) {
+    var gap: float = picture[p] - shade(p.toI32(), keys, tris)
+    if (gap < 0.0) {
+      gap = (0.0 - gap)
+    }
+    if (gap > 0.01) {
+      different = different + 1
+    }
+  }
+  return different
+}
+
+func draw(gpu: i64, rasterizePipe: i64, shadePipe: i64, tris: ptr<float>, count: i64, width: i64, height: i64) -> ptr<float> {
+  let pixels: i64 = width * height
+  let empty: ptr<i32> = calloc(pixels, 4).toPtr()
+  for (p = 0; p < pixels; p = p + 1) {
+    empty[p] = emptyKey()
+  }
+  let keys: i64 = vulkanBuffer(gpu, empty.toI64(), pixels * 4)
+  let trianglesBuffer: i64 = vulkanBuffer(gpu, tris.toI64(), count * 40)
+  let push: i32[3]
+  push[0] = count.toI32()
+  push[1] = width.toI32()
+  push[2] = height.toI32()
+  let first: ptr<i64> = calloc(3, 8).toPtr()
+  first[0] = trianglesBuffer
+  first[1] = keys
+  first[2] = vulkanEmptyBuffer(gpu, count * 4)
+  if (vulkanDispatchBuffers(gpu, rasterizePipe, count, push.toI64(), first, 3) == 0) {
+    return 0.toPtr()
+  }
+  return shadePass(gpu, shadePipe, keys, trianglesBuffer, pixels)
+}
+
+func shadePass(gpu: i64, shadePipe: i64, keys: i64, trianglesBuffer: i64, pixels: i64) -> ptr<float> {
+  let push: i32[1]
+  push[0] = pixels.toI32()
+  let second: ptr<i64> = calloc(3, 8).toPtr()
+  second[0] = keys
+  second[1] = trianglesBuffer
+  second[2] = vulkanEmptyBuffer(gpu, pixels * 4)
+  if (vulkanDispatchBuffers(gpu, shadePipe, pixels, push.toI64(), second, 3) == 0) {
+    return 0.toPtr()
+  }
+  return vulkanContents(second[2]).toPtr()
+}

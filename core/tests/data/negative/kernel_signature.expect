@@ -1,0 +1,22 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"a","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":64}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HReturn","value":{"k":"HConstFloat","value":"0x1p0","ty":{"k":"HFloat","bits":64},"at":[1,44]},"at":[1,44]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[1,13]},
+{"k":"HFuncDef","name":"b","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":64},"body":[{"k":"HReturn","value":{"k":"HConstFloat","value":"0x1p0","ty":{"k":"HFloat","bits":64},"at":[2,44]},"at":[2,44]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[2,13]},
+{"k":"HFuncDef","name":"c","paramNames":["s"],"paramTypes":[{"k":"HString"}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HReturn","value":{"k":"HConstFloat","value":"0x1p0","ty":{"k":"HFloat","bits":64},"at":[3,44]},"at":[3,44]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[3,13]},
+{"k":"HFuncDef","name":"d","paramNames":["x"],"paramTypes":[{"k":"HUInt","bits":8}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HReturn","value":{"k":"HConstFloat","value":"0x1p0","ty":{"k":"HFloat","bits":64},"at":[4,40]},"at":[4,40]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[4,13]},
+{"k":"HFuncDef","name":"e","paramNames":["p"],"paramTypes":[{"k":"HPtr","elem":{"k":"HFloat","bits":64}}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HReturn","value":{"k":"HConstFloat","value":"0x1p0","ty":{"k":"HFloat","bits":64},"at":[5,57]},"at":[5,57]}],"isCoroutine":false,"stage":"compute","roles":[2],"at":[5,13]},
+{"k":"HFuncDef","name":"f","paramNames":["x"],"paramTypes":[{"k":"HFloat","bits":32}],"ret":{"k":"HInt","bits":1},"body":[{"k":"HReturn","value":{"k":"HConstBool","value":true,"ty":{"k":"HInt","bits":1},"at":[0,0]},"at":[0,0]}],"isCoroutine":false,"stage":"compute","roles":[0],"at":[6,13]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  kernel_signature.poly:1:13: double is not available on GPUs; use float
+  kernel_signature.poly:2:13: double is not available on GPUs; use float
+  kernel_signature.poly:3:13: the type string cannot be used in a kernel
+  kernel_signature.poly:4:13: the type u8 cannot be used in a kernel
+  kernel_signature.poly:5:13: double is not available on GPUs; use float

@@ -1,0 +1,8 @@
+// A plain declarations file — no `main`, nothing to run on its own.
+// Imported by geometry.poly; see that file for `import`'s own notes.
+
+struct Rect(width: i64, height: i64);
+
+func area(r: Rect) -> i64 {
+  return r.width * r.height
+}

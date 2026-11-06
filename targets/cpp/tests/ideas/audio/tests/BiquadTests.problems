@@ -1,0 +1,2 @@
+targets/cpp/Cpp.translate:258: `extern(name, params, result)` is unsupported: this C++ keeps polyir's memory in its containers, not in C's
+targets/cpp/Cpp.translate:413: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

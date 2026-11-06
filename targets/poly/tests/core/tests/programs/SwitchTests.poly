@@ -1,0 +1,164 @@
+func endsWith(s: string, suffix: string) -> bool {
+  if (suffix.len() > s.len()) {
+    return false
+  }
+  return s.slice(s.len() - suffix.len(), s.len()) == suffix
+}
+
+func offText(got: string, want: string) -> double {
+  if (got == want) {
+    return 0.0
+  }
+  return 1.0
+}
+
+func dayName(day: i64) -> string {
+  var name: string = "?"
+  switch (day) {
+    0 | 6 => {
+      name = "weekend"
+    }
+    1 => {
+      name = "monday"
+    }
+    else => {
+      name = "weekday"
+    }
+  }
+  return name
+}
+
+func checkNumbers() -> double {
+  return offText(dayName(0) + dayName(6) + dayName(1) + dayName(3), "weekendweekendmondayweekday")
+}
+
+func classOf(c: i8) -> string {
+  var kind: string = "other"
+  switch (c) {
+    97 | 101 | 105 | 111 | 117 => {
+      kind = "vowel"
+    }
+    32 => {
+      kind = "space"
+    }
+  }
+  return kind
+}
+
+func checkChars() -> double {
+  return offText(classOf(101) + classOf(32) + classOf(122), "vowelspaceother")
+}
+
+func verb(command: string) -> string {
+  var done: string = ""
+  switch (command) {
+    "start" | "go" => {
+      done = "began"
+    }
+    "stop" => {
+      done = "halted"
+    }
+    else => {
+      done = "?"
+    }
+  }
+  return done
+}
+
+func checkStrings() -> double {
+  return offText(verb("go") + verb("start") + verb("stop") + verb("x"), "beganbeganhalted?")
+}
+
+func checkBooleans() -> double {
+  var said: string = ""
+  for (i = 0; i < 2; i = i + 1) {
+    let match_57_9: bool = i == 0
+    switch (match_57_9) {
+      true => {
+        said = said + "yes"
+      }
+      false => {
+        said = said + "no"
+      }
+    }
+  }
+  return offText(said, "yesno")
+}
+
+func outcome(r: either<i64, string>) -> string {
+  var said: string = ""
+  switch (r) {
+    Ok(v) => {
+      said = "ok ${v}"
+    }
+    Err(e) => {
+      said = "err ${e}"
+    }
+  }
+  return said
+}
+
+func checkSums() -> double {
+  var count: i64 = 0
+  let found: optional<i64> = Some<i64>(4)
+  switch (found) {
+    Some(n) => {
+      count = n
+    }
+    None => {
+      count = -1
+    }
+  }
+  return offText("${outcome(eitherOk<i64, string>(3))}, ${outcome(eitherErr<i64, string>("no"))}, ${count}", "ok 3, err no, 4")
+}
+
+func status(code: i64) -> string {
+  var said: string = ""
+  if (code == 200 || code == 204) {
+    said = "done"
+  } else if (code >= 500) {
+    said = "retry ${code}"
+  } else if (code >= 400) {
+    let s: i64 = code
+    said = "fail ${s}"
+  } else {
+    said = "? ${code}"
+  }
+  return said
+}
+
+func checkConditionsAmongKeys() -> double {
+  return offText(status(204) + "; " + status(503) + "; " + status(404) + "; " + status(301), "done; retry 503; fail 404; ? 301")
+}
+
+func counter() -> i64 {
+  return 500
+}
+
+func checkCallSubject() -> double {
+  var said: string = ""
+  let match_107_5: i64 = counter()
+  if (match_107_5 == 200) {
+    said = "ok"
+  } else if (match_107_5 >= 500) {
+    let s: i64 = match_107_5
+    said = "server ${s}"
+  } else {
+    said = "other"
+  }
+  return offText(said, "server 500")
+}
+
+func step(name: string) -> string {
+  var said: string = ""
+  if (endsWith(name, ".poly")) {
+    said = "compile " + name + ";"
+  } else {
+    said = "skip " + name + ";"
+  }
+  return said
+}
+
+func checkConditions() -> double {
+  return offText(step("a.poly") + step("b.md"), "compile a.poly;skip b.md;")
+}

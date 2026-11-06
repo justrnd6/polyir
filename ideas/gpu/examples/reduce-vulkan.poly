@@ -1,0 +1,44 @@
+// REDUCTION through Vulkan: the same pair-adding passes as reduce.poly, with the
+// work done by a Vulkan shader. Each pass reads one buffer and writes the next
+// (half the length), so two buffers are swapped back and forth ("ping-pong").
+//
+//   polyir --emit-glsl reduce-vulkan.poly       (tests/gpu.sh splits and compiles the shaders)
+//   polyir reduce-vulkan.poly --out reduce-vulkan && ./reduce-vulkan    (run in this folder)
+//
+// Exit 0 means the sum equals the CPU's. 10 no Vulkan GPU, 11 shader missing, 12 dispatch
+// failed, 13 the sum differs.
+import "../Vulkan.poly"
+import "shared/reduce.poly"
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    // Two storage buffers (the list and the result); push constants: the element count, then n.
+    let pipeline: i64 = vulkanPipeline(gpu, "pairSum.spv", 2, 8)
+    if (pipeline == 0) { return 11 }
+    let n: i64 = 1048579
+    let values: ptr<float> = calloc(n, 4).toPtr()
+    fillTestData(values, n)
+    let sum: float = reducePasses(gpu, pipeline, values, n)
+    if (sum != cpuSum(values, n)) { return 13 }
+    return 0
+}
+
+func reducePasses(gpu: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+    var current: i64 = vulkanBuffer(gpu, values.toI64(), n * 4)
+    var length: i64 = n
+    let push: i32[2]
+    for (pass = 0; pass < 40; pass = pass + 1) {
+        if (length > 1) {
+            let next: i64 = (length + 1) / 2
+            push[0] = next.toI32()
+            push[1] = length.toI32()
+            let out: i64 = vulkanEmptyBuffer(gpu, next * 4)
+            vulkanDispatch(gpu, pipeline, next, push.toI64(), current, out, 0, 0)
+            current = out
+            length = next
+        }
+    }
+    let answer: ptr<float> = vulkanContents(current).toPtr()
+    return answer[0]
+}

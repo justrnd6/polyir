@@ -1,0 +1,271 @@
+# Polyir
+// polyir's canon (core/docs/translate.md): every construct polyir's checked HIR is written as, in every form it comes in.
+// Each page in this folder writes them (`source: polyir`), with a rule for every form or a word for why it has none.
+//
+// A form is `construct(parts)`. A part's kind comes from its name (## kinds) or from `: kind` after it (`int(value: text)`).
+// An indented `facts:` line lists what a construct may also have, which a rule names only when it wants it. `lowered` marks a
+// construct the HIR also has as a lower form, which a rule may write with `:= lower`.
+source: polyir
+typed: expressions, builtins
+declarations: items, methods, nested, statics
+
+## kinds
+// The kind of a code construct's part, by its name: any other part is a value.
+name := name callee state bound
+text := op number case binding stage module alias of
+block := body then else items methods nested statics cases handler cleanup support statements arms
+statement := elseIf
+list := params args fields values counters steps pieces indices sizes lanes keys
+type := type typeParams typeArgs result implements yields
+
+## type kinds
+// The kind of a type's part, by its name: any other part is a type.
+name := name
+text := binding size rows cols dims
+
+## families
+// Words a rule's pattern may use for any of several types (`left: int`).
+int := i8 i16 i32 i64 i128 u8 u16 u32 u64 u128
+number := int float double
+list := array mutarray
+struct := struct instance host
+
+## declarations
+program(support, items)
+  facts: main, hoisted, imports, library, exports, name
+module(name, items)
+struct(name, typeParams, fields, methods, nested, statics)
+  facts: internal, traits, isKey, isMutable, annotations, sharesThis
+struct(name, typeParams, fields, methods, nested, statics, implements)
+field(name, type)
+  facts: isMutable
+field(name, type, value)
+method(name, params, result, body)
+  facts: internal, annotations, globals, overrides, owner, throws
+static(name, params, result, body)
+  facts: internal, annotations, globals, owner, throws
+func(name, typeParams, params, result, body)
+  facts: internal, annotations, globals, throws
+coro(name, params, yields, body)
+  facts: internal, globals, throws
+kernel(stage, name, params, result, body)
+  facts: internal
+param(name, type)
+interface(name, methods)
+  facts: internal
+signature(name, params, result)
+  facts: owner, throws, implementers
+extern(name, params, result)
+global(name, type, value)
+import(module)
+import(module, alias)
+use(name, path: text, names: list)
+  facts: program
+
+## statements
+let(name, type, value)
+  facts: guarded
+var(name, type)
+  facts: boxed, guarded
+var(name, type, value)
+assign(target, value)
+store(object, index, value)
+  lowered
+store(object, indices, value)
+expr(value)
+if(cond, then)
+  lowered
+if(cond, then, else)
+if(cond, then, elseIf)
+while(cond, body)
+for(counters, cond, steps, body)
+  facts: usedAfter
+  lowered
+counter(name, type, value)
+step(name, value)
+foreach(name, source, body)
+  lowered
+return
+  facts: inCoroutine
+  lowered
+return(value)
+try(body, name, handler)
+try(body, cleanup)
+throw(value)
+yield(value)
+// A switch of blocks (a `match` lowers to one where it can): one arm per case, the default as `else`. Its lower form is the
+// `if` chain. An `arm`'s keys are constants. A sum's arm is a `caseArm`: `case` is `Some`, `None`, `Ok`, `Err` or a variant's
+// number, and `bound` names the payload it binds.
+select(value, arms)
+  lowered
+select(value, arms, else)
+arm(keys, body)
+caseArm(case, body)
+caseArm(case, bound, body)
+
+## flow
+machine(state, cases)
+case(state, number, body)
+jump(state, number)
+
+## expressions
+int(value: text)
+float(value: text)
+bool(value: text)
+string(value: text)
+unit
+name(name)
+  facts: global, boxed, captured
+this
+  facts: captured
+funcref(name)
+  facts: own, holder, file
+binary(left, op, right)
+unary(op, operand)
+cast(value, type)
+coerce(value, type)
+  lowered
+choose(cond, then: value, else: value)
+  lowered
+call(callee, args)
+  facts: throws
+call(callee, typeArgs, args)
+methodcall(object, name, args)
+  facts: throws, owner
+invoke(callee: value, args)
+hostcall(binding, args)
+get(object, name)
+index(object, index, type)
+index(object, indices, type)
+new(name, values)
+new(name, typeArgs, values)
+init(name, value)
+list(values, type)
+vec(values, type)
+empty(type)
+sized(type, sizes)
+closure(params, result, body)
+  facts: name, globals, outer, captures
+lambda(params, value)
+  lowered
+some(type, value)
+none(type)
+ok(type, value)
+err(type, value)
+variant(type, case, value)
+interp(pieces)
+  lowered
+text(value: text)
+hole(value)
+
+## builtins
+len(object)
+capacity(object)
+rows(object)
+cols(object)
+dim(object, axis)
+push(object, value)
+hash(value)
+shuffle(object, lanes)
+atomicLoad(object, order)
+atomicStore(object, value, order)
+atomicRmw(object, op: value, value, order)
+cmpxchg(object, expected, value, success, failure)
+fence(order)
+tag(object)
+isCase(object, case)
+unwrapAt(object, case, type)
+isOk(object)
+isErr(object)
+unwrapOk(object)
+unwrapErr(object)
+isSome(object)
+isNone(object)
+unwrap(object)
+resume(object)
+done(object)
+close(object)
+yielded(value)
+copy(object)
+  facts: isMutable
+freeze(object)
+  lowered
+thaw(object)
+  lowered
+with(object, value)
+with(object, key, value)
+has(object, key)
+add(object, value)
+remove(object, key)
+truncate(object, size: value)
+str(value)
+charAt(object, index)
+slice(object, from, to)
+find(object, part, from)
+print(value)
+fail(value)
+
+
+## blocks
+// A block where a construct's rule puts one (`if ({cond}) {then}`, `function {name}() {body}`): its statements, and `of`, the
+// construct and its part (`if.then`, `func.body`). `:= style` lays every block out as the page's style line says; a rule for
+// some blocks (`block(statements, of: while.body)`) lays those out its own way.
+block(statements, of)
+// A function's (a method's, a closure's) body: its statements, and what its block holds besides them. The facts are what a
+// body may need written: the globals and the outer names it gives new values (`global x`), whether it can throw, and
+// `expression` when it is one `return` of a value (`fun f() = x`).
+body(statements, result)
+  facts: globals, outer, throws, expression
+
+## types
+i8
+i16
+i32
+i64
+u8
+u16
+u32
+u64
+bool
+float
+double
+string
+void
+struct(name)
+  facts: isInterface
+instance(name, args)
+param(name)
+host(name, binding)
+host(name, binding, args)
+array(elem)
+mutarray(elem)
+map(key, value)
+mutmap(key, value)
+set(elem)
+mutset(elem)
+optional(elem)
+either(ok, err)
+variant(cases)
+closure(params, result)
+  facts: arity
+func(params, result)
+  facts: arity
+ptr(elem)
+coro(elem)
+vec(elem, size)
+matrix(elem, size)
+fixed(elem, size)
+buffer(elem, size)
+grid(elem, rows, cols)
+tensor(elem, dims)
+sparse(elem)
+
+## fact nodes
+// The nodes a fact holds (`captures` holds `capture` nodes): a page may write them in a role (`capture.field`), and needs no
+// rule of each.
+capture(name, type, value)
+implementer(name, method: name, args)
+trait(name, methods)
+  facts: owner
+annotation(name, args)
+arg(name, value: text)

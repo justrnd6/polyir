@@ -1,0 +1,22 @@
+$ --analyze
+exit 1
+warning:
+  lint_only_warns_then_error.poly:2:7: 'a' is declared `var` but never reassigned in 'main' — use `let` instead
+check failed:
+  lint_only_warns_then_error.poly:3:10: unknown name nothere
+$ --analyze --strict
+exit 1
+lint failed:
+  lint_only_warns_then_error.poly:2:7: 'a' is declared `var` but never reassigned in 'main' — use `let` instead
+$ --emit-hir-json
+exit 1
+warning:
+  lint_only_warns_then_error.poly:2:7: 'a' is declared `var` but never reassigned in 'main' — use `let` instead
+check failed:
+  lint_only_warns_then_error.poly:3:10: unknown name nothere
+$ --emit-msl
+exit 1
+warning:
+  lint_only_warns_then_error.poly:2:7: 'a' is declared `var` but never reassigned in 'main' — use `let` instead
+kernel check failed:
+  lint_only_warns_then_error.poly:3:10: unknown name nothere

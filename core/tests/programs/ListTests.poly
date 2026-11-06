@@ -1,0 +1,22 @@
+// The Lists library (core/stdlib/Lists.poly), which is built in: nothing here imports it. Each check is 0 when it holds.
+
+// 0 when `got` is `want`, 1 when not.
+func offText(got: string, want: string) -> double {
+    if (got == want) {
+        return 0.0
+    }
+    return 1.0
+}
+
+func checkFirstAndLast() -> double {
+    let xs: mutarray<i64> = [3, 1, 4]
+    let words: array<string> = ["a", "b"]
+    return offText("${xs.first()} ${xs.last()} ${first(words)}${words.last()}", "3 4 ab")
+}
+
+func checkDrop() -> double {
+    let xs: mutarray<i64> = [1, 2, 3]
+    let rest = xs.drop(1)
+    let none = drop(xs, 5)
+    return offText("${len(rest)} ${rest[0]} ${rest[1]} ${len(none)}", "2 2 3 0")
+}

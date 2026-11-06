@@ -1,0 +1,143 @@
+// BIQUAD: the workhorse filter of audio (equalizers, tone controls, synthesizer filters, the
+// "bass" and "treble" knobs). Part of the Sound library (see Sound.poly, which uses it), but
+// it works on any array of floats.
+//
+//   import "../Biquad.poly"       (the path is relative to the importing file)
+//
+//   let filter: Biquad = biquadBandPass(44100, 1000.0, 4.0)     // pass only sound near 1,000 Hz
+//   filter.run(samples, count)                                   // filter the samples in place
+//   filter.gain(1000.0, 44100)                                   // how loud 1,000 Hz comes out: 1.0
+//
+// WHAT A BIQUAD IS. Each output sample is a weighted sum of the two previous inputs, the
+// current input, and the two previous OUTPUTS ("bi" = two, "quad" = the two quadratic
+// polynomials in the filter's transfer function):
+//
+//   y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
+//
+// Only the five numbers b0, b1, b2, a1, a2 decide what the filter does; the functions below
+// compute them from a musician's description (a centre frequency, a "Q", a gain in decibels).
+// The formulas are Robert Bristow-Johnson's "Audio EQ Cookbook". Q is the sharpness: a high Q is
+// a narrow filter, 0.707 is the gentlest that has no resonant bump.
+//
+//   biquadLowPass    keep frequencies below `hz` (12 decibels per octave, twice as steep as
+//                    Sound.lowPass); at `hz` itself the gain is exactly `q`
+//   biquadHighPass   keep frequencies above `hz`
+//   biquadBandPass   keep a band around `hz` (gain 1 at the centre); higher q = narrower
+//   biquadNotch      remove a band around `hz` (gain 0 at the centre): hum remover
+//   biquadBell       boost or cut a band around `hz` by `gainDb` decibels (+6 is twice the amplitude)
+//   biquadLowShelf   boost or cut everything below `hz` by `gainDb` (the "bass" knob)
+//   biquadHighShelf  boost or cut everything above `hz` by `gainDb` (the "treble" knob)
+//
+// The arithmetic is done with `double`s: a filter whose centre is very low compared with the
+// sample rate has coefficients that differ by tiny amounts, and `float` would lose them.
+extern func sin(x: double) -> double
+extern func cos(x: double) -> double
+extern func pow(x: double, y: double) -> double
+extern func sqrt(x: double) -> double
+
+struct Biquad(b0: double, b1: double, b2: double, a1: double, a2: double) {
+
+    // Filter `count` samples in place. The four `var`s are the filter's memory: the last two
+    // inputs and the last two outputs.
+    func run(data: ptr<float>, count: i64) -> i64 {
+        var x1: double = 0.0
+        var x2: double = 0.0
+        var y1: double = 0.0
+        var y2: double = 0.0
+        for (i = 0; i < count; i = i + 1) {
+            let x: double = data[i].toDouble()
+            let y: double = this.b0 * x + this.b1 * x1 + this.b2 * x2 - this.a1 * y1 - this.a2 * y2
+            x2 = x1
+            x1 = x
+            y2 = y1
+            y1 = y
+            data[i] = y.toFloat()
+        }
+        return 0
+    }
+
+    // The filter's gain at one frequency: the height of a pure tone of `hz` that comes out, for
+    // a tone of height 1 going in. 1 means "unchanged", 0.5 "half as loud", 0 "gone". Plotted
+    // against the frequency this is the filter's RESPONSE CURVE. It is exact (it evaluates the
+    // transfer function on the unit circle: the Fourier transform of the filter), not measured.
+    func gain(hz: float, rate: i64) -> float {
+        let w: double = 6.283185307179586 * hz.toDouble() / rate.toDouble()
+        let c1: double = cos(w)
+        let s1: double = sin(w)
+        let c2: double = cos(2.0 * w)
+        let s2: double = sin(2.0 * w)
+        let topReal: double = this.b0 + this.b1 * c1 + this.b2 * c2
+        let topImag: double = 0.0 - (this.b1 * s1 + this.b2 * s2)
+        let bottomReal: double = 1.0 + this.a1 * c1 + this.a2 * c2
+        let bottomImag: double = 0.0 - (this.a1 * s1 + this.a2 * s2)
+        let strength: double = (topReal * topReal + topImag * topImag) / (bottomReal * bottomReal + bottomImag * bottomImag)
+        return sqrt(strength).toFloat()
+    }
+}
+
+// The cookbook gives every filter as b0, b1, b2 over a0, a1, a2; dividing by a0 leaves the five
+// numbers the equation above needs.
+func biquadFrom(b0: double, b1: double, b2: double, a0: double, a1: double, a2: double) -> Biquad {
+    return Biquad(b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0)
+}
+
+// The centre frequency as an angle: one full turn is the sample rate.
+func biquadAngle(rate: i64, hz: float) -> double {
+    return 6.283185307179586 * hz.toDouble() / rate.toDouble()
+}
+
+func biquadLowPass(rate: i64, hz: float, q: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let alpha: double = sin(w) / (2.0 * q.toDouble())
+    return biquadFrom((1.0 - c) / 2.0, 1.0 - c, (1.0 - c) / 2.0, 1.0 + alpha, 0.0 - 2.0 * c, 1.0 - alpha)
+}
+
+func biquadHighPass(rate: i64, hz: float, q: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let alpha: double = sin(w) / (2.0 * q.toDouble())
+    return biquadFrom((1.0 + c) / 2.0, 0.0 - (1.0 + c), (1.0 + c) / 2.0, 1.0 + alpha, 0.0 - 2.0 * c, 1.0 - alpha)
+}
+
+func biquadBandPass(rate: i64, hz: float, q: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let alpha: double = sin(w) / (2.0 * q.toDouble())
+    return biquadFrom(alpha, 0.0, 0.0 - alpha, 1.0 + alpha, 0.0 - 2.0 * c, 1.0 - alpha)
+}
+
+func biquadNotch(rate: i64, hz: float, q: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let alpha: double = sin(w) / (2.0 * q.toDouble())
+    return biquadFrom(1.0, 0.0 - 2.0 * c, 1.0, 1.0 + alpha, 0.0 - 2.0 * c, 1.0 - alpha)
+}
+
+// A "bell": lifts or dips a band around `hz` and leaves everything else alone. `a` is the
+// square root of the amplitude change, which is how the cookbook writes it.
+func biquadBell(rate: i64, hz: float, q: float, gainDb: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let alpha: double = sin(w) / (2.0 * q.toDouble())
+    let a: double = pow(10.0, gainDb.toDouble() / 40.0)
+    return biquadFrom(1.0 + alpha * a, 0.0 - 2.0 * c, 1.0 - alpha * a, 1.0 + alpha / a, 0.0 - 2.0 * c, 1.0 - alpha / a)
+}
+
+// A shelf lifts or dips everything below (or above) a corner frequency by the same amount, with a
+// smooth step in between. `beta` is the cookbook's 2 * sqrt(a) * alpha for the standard slope.
+func biquadLowShelf(rate: i64, hz: float, gainDb: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let a: double = pow(10.0, gainDb.toDouble() / 40.0)
+    let beta: double = sqrt(2.0 * a) * sin(w)
+    return biquadFrom(a * ((a + 1.0) - (a - 1.0) * c + beta), 2.0 * a * ((a - 1.0) - (a + 1.0) * c), a * ((a + 1.0) - (a - 1.0) * c - beta), (a + 1.0) + (a - 1.0) * c + beta, 0.0 - 2.0 * ((a - 1.0) + (a + 1.0) * c), (a + 1.0) + (a - 1.0) * c - beta)
+}
+
+func biquadHighShelf(rate: i64, hz: float, gainDb: float) -> Biquad {
+    let w: double = biquadAngle(rate, hz)
+    let c: double = cos(w)
+    let a: double = pow(10.0, gainDb.toDouble() / 40.0)
+    let beta: double = sqrt(2.0 * a) * sin(w)
+    return biquadFrom(a * ((a + 1.0) + (a - 1.0) * c + beta), 0.0 - 2.0 * a * ((a - 1.0) + (a + 1.0) * c), a * ((a + 1.0) + (a - 1.0) * c - beta), (a + 1.0) - (a - 1.0) * c + beta, 2.0 * ((a - 1.0) - (a + 1.0) * c), (a + 1.0) - (a - 1.0) * c - beta)
+}

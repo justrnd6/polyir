@@ -1,0 +1,6 @@
+func main() -> i64 {
+  for (i = 0; i; i = i + 1) {
+    j = i
+  }
+  return 0
+}

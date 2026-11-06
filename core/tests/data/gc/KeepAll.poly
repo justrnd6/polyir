@@ -1,0 +1,16 @@
+// A program that keeps every struct it makes in a list: under a small ceiling (POLYIR_GC_CEILING) it stops with "out of memory: N bytes are
+// still reachable (limit L)" instead of growing; garbage never counts against the ceiling, only what is still reachable does.
+
+struct Pt {
+    var x: i64
+    y: i64
+}
+
+func main() -> i64 {
+    let all: mutarray<Pt> = mutarray<Pt>()
+    for (i = 0; i < 5000; i = i + 1) {
+        push(all, Pt { x: i, y: 0 })
+    }
+    print(str(len(all)))
+    return 0
+}

@@ -1,0 +1,13 @@
+// build.poly's hook. A project with a build.poly beside its Polyfile defines `extend` there, and `poly` checks it with
+// meta-build in place of this file; it adds to the plan before anything runs:
+//
+//   func extend(p: Project, out: Plan) -> void {
+//     out.steps.push(task("docs", ["polyir", p.main, "--emit-hir"]))          // `poly docs`
+//     out.steps.push(taskWriting("build", ["git", "rev-parse", "HEAD"], "build/version.txt"))   // with every build
+//   }
+//
+// build.poly has no imports: meta-build's model (Project.poly) and the Text library are all there.
+import "Project.poly"
+
+func extend(p: Project, out: Plan) -> void {
+}

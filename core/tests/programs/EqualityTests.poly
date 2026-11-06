@@ -1,0 +1,180 @@
+// `==` compares what two values hold; `===` asks whether they are the same object.
+import "Check.poly"
+
+struct Point(x: i64, y: i64);
+struct Line(a: Point, b: Point);
+struct Named(name: string, tags: mutarray<i64>);
+struct Counter(var n: i64, id: i64);
+
+struct Digit(v: i64) {
+    func equals(other: Digit) -> i1 { return this.v % 10 == other.v % 10 }
+}
+
+struct Wrapped(inner: either<i64, string>);
+
+func checkStructsAreEqualFieldByField() -> double {
+    let p: Point = Point(x: 1, y: 2)
+    let q: Point = Point(x: 1, y: 2)
+    let r: Point = Point(x: 1, y: 3)
+    var score: i64 = 0
+    if (p == q) { score = score + 1 }
+    if (p != r) { score = score + 2 }
+    if (p == r) { score = score + 100 }
+    return offInt(score, 3)
+}
+
+func checkNestedStructsAreEqualRecursively() -> double {
+    let p: Point = Point(x: 1, y: 2)
+    let z: Point = Point(x: 3, y: 4)
+    let a: Line = Line(a: p, b: z)
+    let b: Line = Line(a: Point(x: 1, y: 2), b: Point(x: 3, y: 4))
+    let c: Line = Line(a: z, b: p)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != c) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkAStringAndAListInsideAStructAreComparedByContent() -> double {
+    let t1: mutarray<i64> = mutarray<i64>()
+    push(t1, 1)
+    let t2: mutarray<i64> = mutarray<i64>()
+    push(t2, 1)
+    let a: Named = Named(name: "a" + "b", tags: t1)
+    let b: Named = Named(name: "ab", tags: t2)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    push(t2, 2)
+    if (a != b) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkStringsCompareByCharacters() -> double {
+    let x: string = "match"
+    let y: string = "ma" + "tch"
+    var score: i64 = 0
+    if (x == y) { score = score + 1 }
+    if (x != "other") { score = score + 2 }
+    if (x === y) { score = score + 100 }
+    return offInt(score, 3)
+}
+
+func checkAStructWithVarFieldsIsComparedByWhatItHoldsNow() -> double {
+    let a: Counter = Counter(n: 1, id: 2)
+    let b: Counter = Counter(n: 1, id: 2)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    b.n = 5
+    if (a != b) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkIdentityIsTheSameObject() -> double {
+    let a: Counter = Counter(n: 1, id: 2)
+    let b: Counter = Counter(n: 1, id: 2)
+    let alias: Counter = a
+    var score: i64 = 0
+    if (a === alias) { score = score + 1 }
+    if (a !== b) { score = score + 2 }
+    if (a === b) { score = score + 100 }
+    return offInt(score, 3)
+}
+
+// An immutable struct has no identity until the program asks for one; asking makes it an object like any other.
+func checkAnImmutableStructComparedByIdentityIsAnObject() -> double {
+    let p: Point = Point(x: 1, y: 2)
+    let q: Point = Point(x: 1, y: 2)
+    let same: Point = p
+    var score: i64 = 0
+    if (p === same) { score = score + 1 }
+    if (p !== q) { score = score + 2 }
+    if (p == q) { score = score + 4 }
+    return offInt(score, 7)
+}
+
+func checkAValStructIsADifferentObjectThatIsEqual() -> double {
+    let a: Counter = Counter(n: 1, id: 2)
+    val b: Counter = a
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a !== b) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkAnEqualsMethodDecidesWhatEqualMeans() -> double {
+    let a: Digit = Digit(v: 13)
+    let b: Digit = Digit(v: 23)
+    let c: Digit = Digit(v: 24)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != c) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkListsAreEqualElementByElement() -> double {
+    let a: mutarray<i64> = mutarray<i64>()
+    let b: mutarray<i64> = mutarray<i64>()
+    push(a, 1)
+    push(a, 2)
+    push(b, 1)
+    push(b, 2)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    push(b, 3)
+    if (a != b) { score = score + 2 }
+    if (a === b) { score = score + 100 }
+    return offInt(score, 3)
+}
+
+func checkListsOfStructsAreEqualDeeply() -> double {
+    let a: mutarray<Point> = mutarray<Point>()
+    let b: mutarray<Point> = mutarray<Point>()
+    push(a, Point(x: 1, y: 2))
+    push(b, Point(x: 1, y: 2))
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    push(a, Point(x: 5, y: 6))
+    push(b, Point(x: 5, y: 7))
+    if (a != b) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkEithersAreEqualWhenTheSameCaseWithAnEqualPayload() -> double {
+    let a: either<i64, i64> = eitherOk<i64, i64>(5)
+    let b: either<i64, i64> = eitherOk<i64, i64>(5)
+    let c: either<i64, i64> = eitherErr<i64, i64>(5)
+    let d: either<i64, i64> = eitherOk<i64, i64>(6)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != c) { score = score + 2 }
+    if (a != d) { score = score + 4 }
+    return offInt(score, 7)
+}
+
+func checkVariantsAreEqualWhenTheSameCaseWithAnEqualPayload() -> double {
+    let a: variant<i64, double> = variant<i64, double>(1, 2.5)
+    let b: variant<i64, double> = variant<i64, double>(1, 2.5)
+    let c: variant<i64, double> = variant<i64, double>(0, 2)
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != c) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkAStructHoldingAnEitherIsComparedThroughIt() -> double {
+    let a: Wrapped = Wrapped(inner: eitherOk<i64, string>(1))
+    let b: Wrapped = Wrapped(inner: eitherOk<i64, string>(1))
+    let c: Wrapped = Wrapped(inner: eitherErr<i64, string>("no"))
+    var score: i64 = 0
+    if (a == b) { score = score + 1 }
+    if (a != c) { score = score + 2 }
+    return offInt(score, 3)
+}
+
+func checkNanIsNotEqualToItself() -> double {
+    let nan: double = 0.0 / 0.0
+    var score: i64 = 0
+    if (nan == nan) { score = score + 100 }
+    if (nan != nan) { score = score + 1 }
+    return offInt(score, 1)
+}

@@ -1,0 +1,10 @@
+func helper(x: i64) -> i64 {
+    return x + missing
+}
+
+struct Counter {
+    n: i64
+    func bump() -> i64 {
+        return this.n + absent
+    }
+}

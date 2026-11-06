@@ -1,0 +1,24 @@
+$ --analyze
+exit 1
+check failed:
+  err_struct_fields.poly:4:30: P has no field z
+  err_struct_fields.poly:5:24: P has no field q
+  err_struct_fields.poly:6:18: unknown field nope
+$ --analyze --strict
+exit 1
+check failed:
+  err_struct_fields.poly:4:30: P has no field z
+  err_struct_fields.poly:5:24: P has no field q
+  err_struct_fields.poly:6:18: unknown field nope
+$ --emit-hir-json
+exit 1
+check failed:
+  err_struct_fields.poly:4:30: P has no field z
+  err_struct_fields.poly:5:24: P has no field q
+  err_struct_fields.poly:6:18: unknown field nope
+$ --emit-msl
+exit 1
+kernel check failed:
+  err_struct_fields.poly:4:30: P has no field z
+  err_struct_fields.poly:5:24: P has no field q
+  err_struct_fields.poly:6:18: unknown field nope

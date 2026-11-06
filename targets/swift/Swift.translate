@@ -1,0 +1,610 @@
+# Swift
+source: polyir
+target: swift
+style: indent 4, braces same-line, names keep, paths ., qualify relative, generics kept, extension swift
+
+// A checked program as one Swift file, `main.swift`, needing Foundation. A struct is a `final class` (polyir shares
+// structs, as Swift shares objects) that compares and hashes by its fields; an interface a protocol; a module an `enum`
+// holding its declarations. A list, map or set is a small class (`MutableList`), shared as polyir shares it. Whole numbers
+// keep their width and wrap (`&+`). A function that can throw says `throws`, and a call of one `try`.
+
+## declarations
+program(support, items) :=
+  {imports}
+
+  {support}
+
+  {items}
+program(support, items, main: void) :=
+  {imports}
+
+  {support}
+
+  {items}
+
+  main()
+program(support, items, main) :=
+  {imports}
+
+  {support}
+
+  {items}
+
+  exit(Int32(truncatingIfNeeded: main()))
+  uses: foundation
+
+// A module is an enum holding its declarations; its functions are static.
+module(name, items)                 := enum {name} {items.member}
+
+// A struct is a final class that compares and hashes by its fields; one with `var` fields can be copied.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  final class {name}<{typeParams.hashable}>: Hashable {
+      {fields}
+
+      init({fields.param}) {
+          {fields.init}
+      }
+
+      {methods}
+
+      {statics}
+
+      {nested}
+
+      static func == (a: {name}, b: {name}) -> Bool {
+          [true, {fields.equal}].allSatisfy { $0 }
+      }
+
+      func hash(into hasher: inout Hasher) {
+          {fields.combine}
+      }
+  }
+struct(name, typeParams, fields, methods, nested, statics, implements) :=
+  final class {name}<{typeParams.hashable}>: {implements.base}, Hashable {
+      {fields}
+
+      init({fields.param}) {
+          {fields.init}
+      }
+
+      {methods}
+
+      {statics}
+
+      {nested}
+
+      static func == (a: {name}, b: {name}) -> Bool {
+          [true, {fields.equal}].allSatisfy { $0 }
+      }
+
+      func hash(into hasher: inout Hasher) {
+          {fields.combine}
+      }
+  }
+struct(name, typeParams, fields, methods, nested, statics, isMutable) :=
+  final class {name}<{typeParams.hashable}>: Hashable {
+      {fields}
+
+      init({fields.param}) {
+          {fields.init}
+      }
+
+      {methods}
+
+      {statics}
+
+      {nested}
+
+      func copy() -> {name} {
+          {name}({fields.self})
+      }
+
+      static func == (a: {name}, b: {name}) -> Bool {
+          [true, {fields.equal}].allSatisfy { $0 }
+      }
+
+      func hash(into hasher: inout Hasher) {
+          {fields.combine}
+      }
+  }
+struct(name, typeParams, fields, methods, nested, statics, implements, isMutable) :=
+  final class {name}<{typeParams.hashable}>: {implements.base}, Hashable {
+      {fields}
+
+      init({fields.param}) {
+          {fields.init}
+      }
+
+      {methods}
+
+      {statics}
+
+      {nested}
+
+      func copy() -> {name} {
+          {name}({fields.self})
+      }
+
+      static func == (a: {name}, b: {name}) -> Bool {
+          [true, {fields.equal}].allSatisfy { $0 }
+      }
+
+      func hash(into hasher: inout Hasher) {
+          {fields.combine}
+      }
+  }
+field(name, type)                   := let {name}: {type}
+field(name, type, value)            := let {name}: {type}
+field(name, type, isMutable)        := var {name}: {type}
+field(name, type, value, isMutable) := var {name}: {type}
+field.param(name, type)             := _ {name}: {type}
+field.param(name, type, value)      := _ {name}: {type}
+field.init(name, type)              := self.{name} = {name}
+field.init(name, type, value)       := self.{name} = {name}
+field.equal(name, type)             := a.{name} == b.{name}
+field.equal(name, type: isInterface) := a.{name} === b.{name}
+field.equal(name, type, value)      := a.{name} == b.{name}
+field.combine(name, type)           := hasher.combine({name})
+field.combine(name, type: isInterface) := hasher.combine(ObjectIdentifier({name}))
+field.combine(name, type, value)    := hasher.combine({name})
+field.self(name, type)              := {name}
+field.self(name, type, value)       := {name}
+
+// A function that can throw says so.
+method(name, params, result, body)  := func {name}({params}) -> {result} {body}
+method(name, params, result, body, throws) := func {name}({params}) throws -> {result} {body}
+static(name, params, result, body)  := static func {name}({params}) -> {result} {body}
+static(name, params, result, body, throws) := static func {name}({params}) throws -> {result} {body}
+func(name, typeParams, params, result, body) := func {name}<{typeParams}>({params}) -> {result} {body}
+func(name, typeParams, params, result, body, throws) := func {name}<{typeParams}>({params}) throws -> {result} {body}
+func.member(name, typeParams, params, result, body) := static func {name}<{typeParams}>({params}) -> {result} {body}
+func.member(name, typeParams, params, result, body, throws) := static func {name}<{typeParams}>({params}) throws -> {result} {body}
+
+// A coroutine gives a Coroutine running its body, which hands each value over with `give`.
+coro(name, params, yields, body) :=
+  func {name}({params}) -> Coroutine<{yields}> {
+      Coroutine { coroutine in
+          {body}
+      }
+  }
+  uses: variant, coroutine
+coro.member(name, params, yields, body) :=
+  static func {name}({params}) -> Coroutine<{yields}> {
+      Coroutine { coroutine in
+          {body}
+      }
+  }
+  uses: variant, coroutine
+
+// A kernel runs here as a plain function.
+kernel(stage, name, params, result, body) := func {name}({params}) -> {result} {body}
+// Parameters have no labels, so a call is `f(1, 2)`; a function passed in may be kept.
+param(name, type)                   := _ {name}: {type}
+param(name, type: closure func)     := _ {name}: @escaping {type}
+param.inner(name, type)             := {name}: {type}
+param.bare(name, type)              := {name}
+
+interface(name, methods)            := protocol {name}: AnyObject {methods}
+signature(name, params, result)     := func {name}({params}) -> {result}
+signature(name, params, result, throws) := func {name}({params}) throws -> {result}
+
+// The C library's own functions come with Foundation; putchar and getchar take and give an Int64 here.
+extern(name, params, result)        := unsupported "this Swift keeps polyir's memory in its classes, not in C's"
+extern(name: sin cos tan sqrt floor ceil log exp fabs pow fmax fmin abs sinf cosf tanf sqrtf floorf ceilf logf expf fabsf powf fmaxf fminf, params, result) :=
+  uses: foundation
+extern(name: putchar getchar, params, result) :=
+  uses: foundation
+
+global(name, type, value)           := var {name}: {type} = {value}
+import(module)                      := unsupported "Swift has no modules of another language to import"
+import(module, alias)               := unsupported "Swift has no modules of another language to import"
+// An imported .poly file is another file of the same module: its declarations need no import.
+use(name, path, names)              :=
+
+## statements
+let(name, type, value)              := let {name}: {type} = {value}
+var(name, type)                     := var {name}: {type} = {type.zero}
+var(name, type, value)              := var {name}: {type} = {value}
+assign(target, value)               := {target} = {value}
+store(object, index, value)         := {object}[{index.wide}] = {value}
+store(object: map mutmap, index, value) := {object}[{index}] = {value}
+store(object: vec, index, value)    := {object}[Int({index})] = {value}
+store(object: sparse, index, value) := {object}.set({value}, {index}, 0)
+store(object: grid matrix tensor, index, value) := {object}.set({value}, {index})
+store(object, indices, value)       := {object}.set({value}, {indices})
+expr(value)                         := {value.statement}
+if(cond, then)                      := if {cond} {then}
+if(cond, then, else)                := if {cond} {then} else {else}
+if(cond, then, elseIf)              := if {cond} {then} else {elseIf}
+while(cond, body)                   := while {cond} {body}
+// Swift has no counted loop: a `for` is its counters and a `while`, in a block of their own; a counter used after the loop is
+// declared before it.
+for(counters, cond, steps, body) :=
+  do {
+      {counters}
+      while {cond} {
+          {body}
+          {steps}
+      }
+  }
+for(counters, cond, steps, body, usedAfter) := lower
+counter(name, type, value)          := var {name}: {type} = {value}
+step(name, value)                   := {name} = {value}
+foreach(name, source, body)         := for {name} in {source} {body}
+foreach(name, source: map mutmap, body) := for {name} in {source}.keys {body}
+return                              := return
+return(value)                       := return {value}
+try(body, name, handler) :=
+  do {body} catch {
+      let {name} = (error as! Thrown).value
+      {handler}
+  }
+  uses: thrown
+// A cleanup runs when anything is thrown out of the body, and the throw goes on.
+try(body, cleanup) :=
+  do {body} catch {
+      {cleanup}
+      throw error
+  }
+throw(value)                        := throw Thrown(value: {value})
+  uses: thrown
+// A `yield` of a coroutine that was closed ends its body.
+yield(value) :=
+  if coroutine.give({value}) {
+      return
+  }
+// A switch of blocks, which `match` and `switch` lower to: Swift's `switch`, an arm per `case` (its statements need no
+// braces) and a `default` for what no arm takes; a sum is written as its `if` chain.
+select(value, arms)                 := lower
+select(value, arms, else)           := lower
+select(value: int bool string, arms) :=
+  switch {value} {
+      {arms}
+      default:
+          break
+  }
+select(value: int bool string, arms, else) :=
+  switch {value} {
+      {arms}
+      default:
+          {else}
+  }
+arm(keys, body) :=
+  case {keys}:
+      {body}
+arm(keys, body: empty)              := case {keys}: break
+caseArm(case, body)                 := unimplemented "a sum's switch is written as its if chain"
+caseArm(case, bound, body)          := unimplemented "a sum's switch is written as its if chain"
+
+## flow
+// Labels and jumps: the function's blocks are the cases of a loop around a switch on `label`; each case ends with a jump or a
+// return.
+machine(state, cases) :=
+  machine: while true {
+      switch {state} {
+      {cases}
+      default:
+          fatalError("no block \({state})")
+      }
+  }
+case(state, number, body) :=
+  case {number}:
+      {body}
+jump(state, number) :=
+  {state} = {number}
+  continue machine
+
+## expressions
+int(value)                          := {value}
+float(value)                        := {value}
+bool(value)                         := {value}
+string(value)                       := "{value}"
+unit                                := ()
+name(name)                          := {name}
+this                                := self
+funcref(name)                       := {name}
+
+// Whole numbers wrap: `&+ &- &*`.
+binary(left, op, right)             := {left} {op} {right}
+binary(left: int, op: + - *, right) := {left} &{op} {right}
+binary(left: number bool string, op: ===, right) := {left} == {right}
+binary(left: number bool string, op: !==, right) := {left} != {right}
+binary(left: bool, op: &, right)    := {left} && {right}
+binary(left: bool, op: |, right)    := {left} || {right}
+binary(left: bool, op: ^, right)    := {left} != {right}
+binary(left: float double, op: %, right) := {left}.truncatingRemainder(dividingBy: {right})
+binary(left: array mutarray, op: +, right) := concat({left}, {right})
+  uses: collections, lists
+// A vector's operators work lane by lane.
+binary(left: vec, op: + - * / %, right) := lanes({left}, {right}) { $0 {op} $1 }
+  uses: lanes
+
+unary(op, operand)                  := {op}{operand}
+unary(op: -, operand: int)          := 0 &- {operand}
+
+// A number of one type as another: a whole number keeps the low bits that fit.
+cast(value, type)                   := {type}({value})
+// A pointer is a list here, so it has no address to turn into a number, or back.
+cast(value: ptr, type)              := unsupported "a pointer is a list here, not an address"
+cast(value, type: ptr)              := unsupported "a pointer is a list here, not an address"
+cast(value: int, type: int)         := {type}(truncatingIfNeeded: {value})
+cast(value: bool, type)             := {type}({value} ? 1 : 0)
+cast(value, type: bool)             := {value} != 0
+coerce(value, type)                 := lower
+
+choose(cond, then, else)            := {cond} ? {then} : {else}
+call(callee, args)                  := {callee}({args})
+// The C library's putchar takes and gives an Int32.
+call(callee: putchar, args)         := putchar(Int32(truncatingIfNeeded: {args}))
+call(callee, args, throws)          := try {callee}({args})
+call(callee, typeArgs, args)        := {callee}({args})
+call(callee, typeArgs, args, throws) := try {callee}({args})
+methodcall(object, name, args)      := {object}.{name}({args})
+methodcall(object, name, args, throws) := try {object}.{name}({args})
+invoke(callee, args)                := {callee}({args})
+hostcall(binding, args)             := {binding}
+get(object, name)                   := {object}.{name}
+
+// A map gives the value type's zero for a key it does not hold.
+// A list is indexed by an Int64; a map of structs reads a key it holds.
+index(object, index, type)          := {object}[{index.wide}]
+index(object: map mutmap, index, type: struct instance) := {object}[{index}]!
+any.wide(value)                     := Int64({value})
+any.wide(value: i64)                := {value}
+int.wide(value)                     := {value}
+index(object: vec, index, type)     := {object}[Int({index})]
+index(object: map mutmap, index, type) := {object}[{index}] ?? {type.zero}
+index(object: sparse, index, type)  := {object}.get({index}, 0)
+index(object: grid matrix tensor, index, type) := {object}.get({index})
+index(object, indices, type)        := {object}.get({indices})
+
+new(name, values)                   := {name}({values})
+new(name, typeArgs, values)         := {name}({values})
+init(name, value)                   := {value}
+list(values, type)                  := MutableList([{values}])
+  uses: collections
+vec(values, type)                   := [{values}]
+empty(type)                         := {type.zero}
+sized(type, sizes)                  := {type.zero}
+closure(params, result, body) :=
+  { ({params.inner}) -> {result} in
+      {body}
+  }
+lambda(params, value)               := { ({params.inner}) in {value} }
+some(type, value)                   := {value}
+none(type)                          := nil
+// An `either` is an Either: `Either<Int64, String>.ok(1)`, with `isOk`, `okValue` and `errValue`.
+ok(type, value)                     := {type.ok}({value})
+  uses: either
+err(type, value)                    := {type.err}({value})
+  uses: either
+variant(type, case, value)          := Variant(tag: {case}, value: {value})
+  uses: variant
+// A whole number goes in as 64 bits, as the case reads it back: a literal alone would be an `Int`.
+variant(type, case, value: i64)     := Variant(tag: {case}, value: Int64({value}))
+  uses: variant
+
+// Text with holes is an interpolated string; a char (`Int8`) is the character of its byte.
+interp(pieces)                      := "{pieces}"
+text(value)                         := {value}
+hole(value)                         := \({value})
+hole(value: i8)                     := \(charText({value}))
+  uses: text
+
+## builtins
+// Sizes are Int64 (i64) in the program. A string counts its UTF-8 bytes, as on every target.
+len(object)                         := {object}.count
+len(object: vec)                    := Int64({object}.count)
+len(object: string)                 := textLength({object})
+  uses: text
+capacity(object)                    := {object}.count
+rows(object)                        := Int64({object}.dims[0])
+cols(object)                        := Int64({object}.dims[1])
+dim(object, axis)                   := Int64({object}.dims[Int({axis})])
+
+// A push whose list is not used is an append; one used as a value gives the list (`pushed`).
+push(object, value)                 := pushed({object}, {value})
+  uses: lists
+push.statement(object, value)       := {object}.append({value})
+
+// A whole number is its own hash; a string's is djb2 over its bytes.
+hash(value)                         := Int64(truncatingIfNeeded: {value})
+hash(value: bool)                   := ({value} ? 1 : 0)
+hash(value: string)                 := hashText({value})
+  uses: hashText
+
+shuffle(object, lanes)              := shuffle({object}, {lanes})
+  uses: lanes
+atomicLoad(object, order)           := unsupported "this Swift keeps polyir's memory in its classes, not in C's"
+atomicStore(object, value, order)   := unsupported "this Swift keeps polyir's memory in its classes, not in C's"
+atomicRmw(object, op, value, order) := unsupported "this Swift keeps polyir's memory in its classes, not in C's"
+cmpxchg(object, expected, value, success, failure) := unsupported "this Swift keeps polyir's memory in its classes, not in C's"
+fence(order)                        := unsupported "this Swift keeps polyir's memory in its classes, not in C's"
+
+// A variant is a Variant (the number of its case and its value), an `either` an Either.
+tag(object)                         := {object}.tag
+isCase(object, case)                := {object}.tag == {case}
+unwrapAt(object, case, type)        := {object}.value as! {type}
+isOk(object)                        := {object}.isOk
+isErr(object)                       := !{object}.isOk
+unwrapOk(object)                    := {object}.okValue
+unwrapErr(object)                   := {object}.errValue
+isSome(object)                      := {object} != nil
+isNone(object)                      := {object} == nil
+unwrap(object)                      := {object}!
+
+resume(object)                      := {object}.resume()
+done(object)                        := {object}.done()
+close(object)                       := {object}.close()
+yielded(value)                      := coroutine.give({value})
+
+// `copy`, `freeze` and `thaw` make a new list, map or set holding the same; a struct that cannot change is its own copy.
+copy(object)                        := {object}
+copy(object, isMutable)             := {object}.copy()
+copy(object: array mutarray fixed buffer) := MutableList({object}.items)
+copy(object: map mutmap)            := MutableMap({object}.items)
+copy(object: set mutset)            := MutableSet({object}.items)
+copy(object: grid matrix tensor sparse) := {object}.copy()
+freeze(object)                      := lower
+thaw(object)                        := lower
+with(object, value)                 := withItem({object}, {value})
+  uses: lists
+with(object, key, value)            := withEntry({object}, {key}, {value})
+  uses: lists
+has(object, key)                    := {object}.items.contains({key})
+has(object: map mutmap, key)        := {object}[{key}] != nil
+add(object, value)                  := {object}.items.insert({value})
+remove(object, key)                 := {object}.items.remove({key}) != nil
+remove(object: map mutmap, key)     := {object}.items.removeValue(forKey: {key}) != nil
+truncate(object, size)              := truncate({object}, {size})
+  uses: lists
+
+str(value)                          := String({value})
+str(value: i8)                      := charText({value})
+  uses: text
+str(value: string)                  := {value}
+charAt(object, index)               := textByte({object}, {index})
+  uses: text
+slice(object, from, to)             := textSlice({object}, {from}, {to})
+  uses: text
+find(object, part, from)            := textFind({object}, {part}, {from})
+  uses: text
+print(value)                        := print({value})
+fail(value)                         := fail({value})
+  uses: fail
+
+## types
+i8                                  := Int8
+i16                                 := Int16
+i32                                 := Int32
+i64                                 := Int64
+u8                                  := UInt8
+u16                                 := UInt16
+u32                                 := UInt32
+u64                                 := UInt64
+bool                                := Bool
+float                               := Float
+double                              := Double
+string                              := String
+void                                := Void
+struct(name)                        := {name}
+struct(name, isInterface)           := any {name}
+instance(name, args)                := {name}<{args}>
+param(name)                         := {name}
+param.hashable(name)                := {name}: Hashable
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}<{args}>
+array(elem)                         := MutableList<{elem}>
+  uses: collections
+mutarray(elem)                      := MutableList<{elem}>
+  uses: collections
+map(key, value)                     := MutableMap<{key}, {value}>
+  uses: collections
+mutmap(key, value)                  := MutableMap<{key}, {value}>
+  uses: collections
+set(elem)                           := MutableSet<{elem}>
+  uses: collections
+mutset(elem)                        := MutableSet<{elem}>
+  uses: collections
+optional(elem)                      := {elem}?
+optional(elem: struct closure func) := ({elem})?
+either(ok, err)                     := Either<{ok}, {err}>
+  uses: either
+variant(cases)                      := Variant
+  uses: variant
+closure(params, result)             := ({params}) -> {result}
+func(params, result)                := ({params}) -> {result}
+// A pointer is a kernel's buffer, indexed as a list; a pointer to a function is the function.
+ptr(elem)                           := MutableList<{elem}>
+  uses: collections
+ptr(elem: func closure)             := {elem}
+coro(elem)                          := Coroutine<{elem}>
+  uses: variant, coroutine
+vec(elem, size)                     := [{elem}]
+matrix(elem, size)                  := Grid<{elem}>
+  uses: grid
+fixed(elem, size)                   := MutableList<{elem}>
+  uses: collections
+buffer(elem, size)                  := MutableList<{elem}>
+  uses: collections
+grid(elem, rows, cols)              := Grid<{elem}>
+  uses: grid
+tensor(elem, dims)                  := Grid<{elem}>
+  uses: grid
+sparse(elem)                        := Sparse<{elem}>
+  uses: sparse
+
+struct.base(name)                   := {name}
+either.ok(ok, err)                  := Either<{ok}, {err}>.ok
+either.err(ok, err)                 := Either<{ok}, {err}>.err
+
+// A type's `zero` is its empty or zero value, for a variable declared without one, a map's missing key and a new collection.
+any.zero(value)                     := nil
+i8.zero                             := 0
+i16.zero                            := 0
+i32.zero                            := 0
+i64.zero                            := 0
+u8.zero                             := 0
+u16.zero                            := 0
+u32.zero                            := 0
+u64.zero                            := 0
+bool.zero                           := false
+float.zero                          := 0.0
+double.zero                         := 0.0
+string.zero                         := ""
+array.zero(elem)                    := MutableList()
+mutarray.zero(elem)                 := MutableList()
+map.zero(key, value)                := MutableMap()
+mutmap.zero(key, value)             := MutableMap()
+set.zero(elem)                      := MutableSet()
+mutset.zero(elem)                   := MutableSet()
+fixed.zero(elem, size)              := MutableList(Array(repeating: {elem.zero}, count: {size}))
+buffer.zero(elem, size)             := MutableList(Array(repeating: {elem.zero}, count: {size}))
+vec.zero(elem, size)                := Array(repeating: {elem.zero}, count: {size})
+grid.zero(elem, rows, cols)         := Grid([{rows}, {cols}], {elem.zero})
+matrix.zero(elem, size)             := Grid([{size}, {size}], {elem.zero})
+tensor.zero(elem, dims)             := Grid([{dims}], {elem.zero})
+sparse.zero(elem)                   := Sparse({elem.zero})
+
+## operators
+// Swift's comparisons do not chain: `(a != b) == c`.
+apart: == != === !== < <= > >=
+levels: try, ?, ||, &&, == != === !== < <= > >=, ??, as! is, + - &+ &- | ^, * / % &* &, << >>
+
+## reserved
+// Swift's own words, and the names its helpers and built-ins use: a name that is one of them gets a _ after it.
+associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private
+protocol public rethrows static struct subscript typealias var break case continue default defer do else fallthrough for
+guard if in repeat return switch where while as Any catch false is nil super self Self throw throws true try
+String Int Int8 Int16 Int32 Int64 UInt8 UInt16 UInt32 UInt64 Bool Float Double Void Array Set Dictionary Thread
+MutableList MutableMap MutableSet Coroutine Variant Either Thrown Grid Sparse fail pushed truncate withItem withEntry
+concat lanes shuffle textLength textByte textSlice textFind charText hashText coroutine print exit machine hasher
+
+## imports
+// Written once at the top when a rule or a support file that uses it is written: the C library, exit, threads.
+foundation := import Foundation
+
+## support
+collections := runtime/Collections.swift
+lists := runtime/Lists.swift
+text := runtime/Text.swift
+hashText := runtime/HashText.swift
+fail := runtime/Fail.swift
+  uses: foundation
+thrown := runtime/Thrown.swift
+either := runtime/Either.swift
+variant := runtime/Variant.swift
+coroutine := runtime/Coroutine.swift
+  uses: foundation
+grid := runtime/Grid.swift
+sparse := runtime/Sparse.swift
+lanes := runtime/Lanes.swift
+
+## blocks
+// Every block is laid out as the style line says, and a body holds its statements.
+block(statements, of)               := style
+body(statements, result)            := {statements}
+
+## spans
+// With spans asked for (--spans): before each statement from another source line, where it came from and its code.
+line := //# from {file}:{line}:{column} {code}

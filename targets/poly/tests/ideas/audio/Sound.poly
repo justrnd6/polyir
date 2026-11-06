@@ -1,0 +1,584 @@
+import "../../core/stdlib/Math.poly"
+import "Biquad.poly"
+import "Resample.poly"
+import "Wave.poly"
+extern func sinf(x: float) -> float
+extern func sin(x: double) -> double
+extern func cos(x: double) -> double
+extern func sqrt(x: double) -> double
+extern func calloc(count: i64, size: i64) -> i64
+extern func fopen(path: string, mode: string) -> i64
+extern func fwrite(data: i64, size: i64, count: i64, file: i64) -> i64
+extern func fread(data: i64, size: i64, count: i64, file: i64) -> i64
+extern func fseek(file: i64, offset: i64, whence: i64) -> i64
+extern func ftell(file: i64) -> i64
+extern func fclose(file: i64) -> i64
+extern func cosf(x: float) -> float
+
+struct Sound(samples: ptr<float>, count: i64, rate: i64, channels: i64) {
+  func seconds() -> float {
+    return this.count.toFloat() / this.rate.toFloat()
+  }
+
+  func scale(gain: float) -> i64 {
+    let data: ptr<float> = this.samples
+    for (i = 0; i < this.count * this.channels; i = i + 1) {
+      data[i] = data[i] * gain
+    }
+    return 0
+  }
+
+  func add(other: Sound, start: float, gain: float) -> i64 {
+    let data: ptr<float> = this.samples
+    let source: ptr<float> = other.samples
+    let first: i64 = (start * this.rate.toFloat()).toI64()
+    for (i = 0; i < other.count; i = i + 1) {
+      let at: i64 = first + i
+      if (at >= 0 && at < this.count) {
+        for (c = 0; c < this.channels; c = c + 1) {
+          data[at * this.channels + c] = data[at * this.channels + c] + gain * source[i * other.channels + c % other.channels]
+        }
+      }
+    }
+    return 0
+  }
+
+  func tone(shape: i64, frequency: float, amplitude: float, start: float, length: float) -> i64 {
+    let data: ptr<float> = this.samples
+    let first: i64 = (start * this.rate.toFloat()).toI64()
+    let n: i64 = (length * this.rate.toFloat()).toI64()
+    for (i = 0; i < n; i = i + 1) {
+      let at: i64 = first + i
+      if (at >= 0 && at < this.count) {
+        let t: float = i.toFloat() / this.rate.toFloat()
+        let value: float = amplitude * fade(t, 0.02, 0.05, length) * oscillator(shape, frequency * t)
+        for (c = 0; c < this.channels; c = c + 1) {
+          data[at * this.channels + c] = data[at * this.channels + c] + value
+        }
+      }
+    }
+    return 0
+  }
+
+  func noise(amplitude: float, seed: i64) -> i64 {
+    let data: ptr<float> = this.samples
+    for (i = 0; i < this.count * this.channels; i = i + 1) {
+      data[i] = data[i] + amplitude * noise((seed + i).toI32())
+    }
+    return 0
+  }
+
+  func peak() -> float {
+    let data: ptr<float> = this.samples
+    var loudest: float = 0.0
+    for (i = 0; i < this.count * this.channels; i = i + 1) {
+      var level: float = data[i]
+      if (level < 0.0) {
+        level = (0.0 - level)
+      }
+      if (level > loudest) {
+        loudest = level
+      }
+    }
+    return loudest
+  }
+
+  func normalize(level: float) -> i64 {
+    let loudest: float = this.peak()
+    if (loudest > 0.0) {
+      this.scale(level / loudest)
+    }
+    return 0
+  }
+
+  func strength(hz: float, start: float, length: float) -> float {
+    let first: i64 = (start * this.rate.toFloat()).toI64()
+    let n: i64 = (length * this.rate.toFloat()).toI64()
+    return strengthOfArray(this.takeChannel(0), first, n, this.rate, hz)
+  }
+
+  func takeChannel(c: i64) -> ptr<float> {
+    let one: ptr<float> = calloc(this.count + 1, 4).toPtr()
+    let data: ptr<float> = this.samples
+    for (i = 0; i < this.count; i = i + 1) {
+      one[i] = data[i * this.channels + c]
+    }
+    return one
+  }
+
+  func putChannel(c: i64, one: ptr<float>) -> i64 {
+    let data: ptr<float> = this.samples
+    for (i = 0; i < this.count; i = i + 1) {
+      data[i * this.channels + c] = one[i]
+    }
+    return 0
+  }
+
+  func channel(c: i64) -> Sound {
+    return Sound(samples: this.takeChannel(c), count: this.count, rate: this.rate, channels: 1)
+  }
+
+  func toMono() -> Sound {
+    let result: Sound = soundNewFrames(this.count, this.rate, 1)
+    let out: ptr<float> = result.samples
+    let data: ptr<float> = this.samples
+    for (i = 0; i < this.count; i = i + 1) {
+      for (c = 0; c < this.channels; c = c + 1) {
+        out[i] = out[i] + data[i * this.channels + c] / this.channels.toFloat()
+      }
+    }
+    return result
+  }
+
+  func pan(position: float) -> Sound {
+    let mono: Sound = this.toMono()
+    let result: Sound = soundNewFrames(this.count, this.rate, 2)
+    let out: ptr<float> = result.samples
+    let angle: float = (position + 1.0) * 0.7853982
+    for (i = 0; i < this.count; i = i + 1) {
+      out[i * 2] = cosf(angle) * mono.samples[i]
+      out[i * 2 + 1] = sinf(angle) * mono.samples[i]
+    }
+    return result
+  }
+
+  func toStereo() -> Sound {
+    let result: Sound = soundNewFrames(this.count, this.rate, 2)
+    let out: ptr<float> = result.samples
+    let data: ptr<float> = this.samples
+    for (i = 0; i < this.count; i = i + 1) {
+      out[i * 2] = data[i * this.channels]
+      out[i * 2 + 1] = data[i * this.channels + this.channels - 1]
+    }
+    return result
+  }
+
+  func lowPass(cutoff: float) -> i64 {
+    for (c = 0; c < this.channels; c = c + 1) {
+      let one: ptr<float> = this.takeChannel(c)
+      lowPassArray(one, this.count, this.rate, cutoff)
+      this.putChannel(c, one)
+    }
+    return 0
+  }
+
+  func highPass(cutoff: float) -> i64 {
+    for (c = 0; c < this.channels; c = c + 1) {
+      let one: ptr<float> = this.takeChannel(c)
+      highPassArray(one, this.count, this.rate, cutoff)
+      this.putChannel(c, one)
+    }
+    return 0
+  }
+
+  func apply(filter: Biquad) -> i64 {
+    for (c = 0; c < this.channels; c = c + 1) {
+      let one: ptr<float> = this.takeChannel(c)
+      filter.run(one, this.count)
+      this.putChannel(c, one)
+    }
+    return 0
+  }
+
+  func lowPassSteep(cutoff: float, q: float) -> i64 {
+    return this.apply(biquadLowPass(this.rate, cutoff, q))
+  }
+
+  func highPassSteep(cutoff: float, q: float) -> i64 {
+    return this.apply(biquadHighPass(this.rate, cutoff, q))
+  }
+
+  func bandPass(center: float, q: float) -> i64 {
+    return this.apply(biquadBandPass(this.rate, center, q))
+  }
+
+  func notch(center: float, q: float) -> i64 {
+    return this.apply(biquadNotch(this.rate, center, q))
+  }
+
+  func bell(center: float, q: float, gainDb: float) -> i64 {
+    return this.apply(biquadBell(this.rate, center, q, gainDb))
+  }
+
+  func lowShelf(corner: float, gainDb: float) -> i64 {
+    return this.apply(biquadLowShelf(this.rate, corner, gainDb))
+  }
+
+  func highShelf(corner: float, gainDb: float) -> i64 {
+    return this.apply(biquadHighShelf(this.rate, corner, gainDb))
+  }
+
+  func echo(delay: float, gain: float) -> i64 {
+    let data: ptr<float> = this.samples
+    let gap: i64 = (delay * this.rate.toFloat()).toI64() * this.channels
+    for (i = gap; i < this.count * this.channels; i = i + 1) {
+      data[i] = data[i] + gain * data[i - gap]
+    }
+    return 0
+  }
+
+  func reverb(wet: float) -> i64 {
+    for (c = 0; c < this.channels; c = c + 1) {
+      let one: ptr<float> = this.takeChannel(c)
+      reverbArray(one, this.count, this.rate, wet)
+      this.putChannel(c, one)
+    }
+    return 0
+  }
+
+  func convolve(response: Sound) -> Sound {
+    let result: Sound = soundNewFrames(this.count + response.count - 1, this.rate, this.channels)
+    for (c = 0; c < this.channels; c = c + 1) {
+      let one: ptr<float> = this.takeChannel(c)
+      let weights: ptr<float> = response.takeChannel(c % response.channels)
+      result.putChannel(c, convolveArrays(one, this.count, weights, response.count))
+    }
+    return result
+  }
+
+  func resample(newRate: i64) -> Sound {
+    let result: Sound = soundNewFrames(resampledCount(this.count, this.rate, newRate), newRate, this.channels)
+    for (c = 0; c < this.channels; c = c + 1) {
+      let one: ptr<float> = this.takeChannel(c)
+      result.putChannel(c, resampleArray(one, this.count, this.rate, newRate))
+    }
+    return result
+  }
+
+  func saveWav(path: string) -> i64 {
+    let values: i64 = this.count * this.channels
+    let total: i64 = 44 + values * 2
+    let bytes: ptr<i8> = calloc(total, 1).toPtr()
+    var at: i64 = soundLetters(bytes, 0, 82, 73, 70, 70)
+    at = soundNumber32(bytes, at, total - 8)
+    at = soundLetters(bytes, at, 87, 65, 86, 69)
+    at = soundLetters(bytes, at, 102, 109, 116, 32)
+    at = soundNumber32(bytes, at, 16)
+    at = soundNumber16(bytes, at, 1)
+    at = soundNumber16(bytes, at, this.channels)
+    at = soundNumber32(bytes, at, this.rate)
+    at = soundNumber32(bytes, at, this.rate * 2 * this.channels)
+    at = soundNumber16(bytes, at, 2 * this.channels)
+    at = soundNumber16(bytes, at, 16)
+    at = soundLetters(bytes, at, 100, 97, 116, 97)
+    at = soundNumber32(bytes, at, values * 2)
+    let data: ptr<float> = this.samples
+    for (k = 0; k < values; k = k + 1) {
+      let level: float = clamp(data[k], (0.0 - 1.0), 1.0)
+      var whole: i64 = (level * 32767.0).toI64()
+      if (whole < 0) {
+        whole = whole + 65536
+      }
+      soundNumber16(bytes, 44 + 2 * k, whole)
+    }
+    let file: i64 = fopen(path, "wb")
+    if (file == 0) {
+      return 0
+    }
+    fwrite(bytes.toI64(), 1, total, file)
+    fclose(file)
+    return 1
+  }
+}
+
+func soundNew(seconds: float, rate: i64) -> Sound {
+  return soundNewFrames((seconds * rate.toFloat()).toI64(), rate, 1)
+}
+
+func soundNewChannels(seconds: float, rate: i64, channels: i64) -> Sound {
+  return soundNewFrames((seconds * rate.toFloat()).toI64(), rate, channels)
+}
+
+func soundNewFrames(frames: i64, rate: i64, channels: i64) -> Sound {
+  return Sound(samples: calloc(frames * channels + 1, 4).toPtr(), count: frames, rate: rate, channels: channels)
+}
+
+func soundStereo(left: Sound, right: Sound) -> Sound {
+  var frames: i64 = left.count
+  if (right.count > frames) {
+    frames = right.count
+  }
+  let result: Sound = soundNewFrames(frames, left.rate, 2)
+  let out: ptr<float> = result.samples
+  for (i = 0; i < left.count; i = i + 1) {
+    out[i * 2] = left.samples[i * left.channels]
+  }
+  for (i = 0; i < right.count; i = i + 1) {
+    out[i * 2 + 1] = right.samples[i * right.channels]
+  }
+  return result
+}
+
+func strengthOfArray(data: ptr<float>, start: i64, count: i64, rate: i64, hz: float) -> float {
+  var re: double = 0.0
+  var im: double = 0.0
+  for (k = 0; k < count; k = k + 1) {
+    let angle: double = 6.283185307179586 * hz.toDouble() * (start + k).toDouble() / rate.toDouble()
+    re = re + data[start + k].toDouble() * cos(angle)
+    im = im + data[start + k].toDouble() * sin(angle)
+  }
+  return (2.0 * sqrt(re * re + im * im) / count.toDouble()).toFloat()
+}
+
+func lowPassArray(data: ptr<float>, count: i64, rate: i64, cutoff: float) -> i64 {
+  let dt: float = (1.0 / rate.toFloat())
+  let rc: float = (1.0 / (6.2831853 * cutoff))
+  let alpha: float = dt / (rc + dt)
+  var previous: float = 0.0
+  for (i = 0; i < count; i = i + 1) {
+    previous = previous + alpha * (data[i] - previous)
+    data[i] = previous
+  }
+  return 0
+}
+
+func highPassArray(data: ptr<float>, count: i64, rate: i64, cutoff: float) -> i64 {
+  let dt: float = (1.0 / rate.toFloat())
+  let rc: float = (1.0 / (6.2831853 * cutoff))
+  let alpha: float = rc / (rc + dt)
+  var lastIn: float = 0.0
+  var lastOut: float = 0.0
+  for (i = 0; i < count; i = i + 1) {
+    let x: float = data[i]
+    lastOut = alpha * (lastOut + x - lastIn)
+    lastIn = x
+    data[i] = lastOut
+  }
+  return 0
+}
+
+func reverbArray(data: ptr<float>, count: i64, rate: i64, wet: float) -> i64 {
+  let sum: ptr<float> = calloc(count + 1, 4).toPtr()
+  for (c = 0; c < 4; c = c + 1) {
+    let gap: i64 = (combDelay(c) * rate.toFloat()).toI64()
+    let feedback: float = combFeedback(c)
+    let line: ptr<float> = calloc(count + 1, 4).toPtr()
+    for (i = 0; i < count; i = i + 1) {
+      var v: float = data[i]
+      if (i >= gap) {
+        v = v + feedback * line[i - gap]
+      }
+      line[i] = v
+      sum[i] = sum[i] + (0.25 * (1.0 - feedback) * v)
+    }
+  }
+  for (i = 0; i < count; i = i + 1) {
+    data[i] = ((1.0 - wet) * data[i] + (wet * sum[i]))
+  }
+  return 0
+}
+
+func convolveArrays(x: ptr<float>, nx: i64, h: ptr<float>, nh: i64) -> ptr<float> {
+  let out: ptr<float> = calloc(nx + nh, 4).toPtr()
+  for (i = 0; i < nx; i = i + 1) {
+    for (j = 0; j < nh; j = j + 1) {
+      out[i + j] = out[i + j] + x[i] * h[j]
+    }
+  }
+  return out
+}
+
+func combDelay(c: i64) -> float {
+  if (c == 0) {
+    return 0.0297
+  }
+  if (c == 1) {
+    return 0.0371
+  }
+  if (c == 2) {
+    return 0.0411
+  }
+  return 0.0437
+}
+
+func combFeedback(c: i64) -> float {
+  if (c == 0) {
+    return 0.805
+  }
+  if (c == 1) {
+    return 0.827
+  }
+  if (c == 2) {
+    return 0.783
+  }
+  return 0.764
+}
+
+func oscillator(shape: i64, phase: float) -> float {
+  if (shape == 1) {
+    return square(phase)
+  }
+  if (shape == 2) {
+    return sawtooth(phase)
+  }
+  if (shape == 3) {
+    return triangle(phase)
+  }
+  return sine(phase)
+}
+
+func soundLoadWav(path: string) -> Sound {
+  let slot: ptr<i64> = calloc(1, 8).toPtr()
+  let size: i64 = soundReadFile(path, slot)
+  let bytes: ptr<i8> = slot[0].toPtr()
+  let info: WavInfo = wavParse(bytes, size)
+  if (info.format == 0) {
+    return soundNewFrames(0, 0, 1)
+  }
+  return wavDecode(bytes, info)
+}
+
+struct WavInfo(format: i64, channels: i64, rate: i64, bits: i64, dataStart: i64, dataBytes: i64) {
+}
+
+func soundReadFile(path: string, out: ptr<i64>) -> i64 {
+  let file: i64 = fopen(path, "rb")
+  if (file == 0) {
+    return 0
+  }
+  fseek(file, 0, 2)
+  let size: i64 = ftell(file)
+  fseek(file, 0, 0)
+  let memory: i64 = calloc(size + 8, 1)
+  let got: i64 = fread(memory, 1, size, file)
+  fclose(file)
+  out[0] = memory
+  return got
+}
+
+func wavParse(bytes: ptr<i8>, size: i64) -> WavInfo {
+  let none: WavInfo = WavInfo(format: 0, channels: 0, rate: 0, bits: 0, dataStart: 0, dataBytes: 0)
+  if (size < 12 || soundWord(bytes, 0) != soundTag(82, 73, 70, 70) || soundWord(bytes, 8) != soundTag(87, 65, 86, 69)) {
+    return none
+  }
+  var found: WavInfo = none
+  var at: i64 = 12
+  for (step = 0; step < 64; step = step + 1) {
+    if (at + 8 <= size) {
+      let name: i64 = soundWord(bytes, at)
+      let length: i64 = soundWord(bytes, at + 4)
+      if (name == soundTag(102, 109, 116, 32) && at + 24 <= size) {
+        found = wavFormat(bytes, at + 8, length)
+      }
+      if (name == soundTag(100, 97, 116, 97) && found.format != 0) {
+        return WavInfo(format: found.format, channels: found.channels, rate: found.rate, bits: found.bits, dataStart: at + 8, dataBytes: wavDataBytes(length, size - at - 8))
+      }
+      at = at + 8 + length + length % 2
+    }
+  }
+  return none
+}
+
+func wavDataBytes(claimed: i64, available: i64) -> i64 {
+  if (claimed > available) {
+    return available
+  }
+  return claimed
+}
+
+func soundTag(a: i64, b: i64, c: i64, d: i64) -> i64 {
+  return a + 256 * b + 65536 * c + 16777216 * d
+}
+
+func wavFormat(bytes: ptr<i8>, at: i64, length: i64) -> WavInfo {
+  var tag: i64 = soundSigned(bytes, at, 2)
+  if (tag < 0) {
+    tag = tag + 65536
+  }
+  if (tag == 65534 && length >= 40) {
+    tag = soundByte(bytes, at + 24) + 256 * soundByte(bytes, at + 25)
+  }
+  let bits: i64 = soundByte(bytes, at + 14) + 256 * soundByte(bytes, at + 15)
+  var format: i64 = if (tag == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32)) 1 else 0
+  if (tag == 3 && (bits == 32 || bits == 64)) {
+    format = 3
+  }
+  return WavInfo(format: format, channels: soundByte(bytes, at + 2) + 256 * soundByte(bytes, at + 3), rate: soundWord(bytes, at + 4), bits: bits, dataStart: 0, dataBytes: 0)
+}
+
+func wavDecode(bytes: ptr<i8>, info: WavInfo) -> Sound {
+  let width: i64 = info.bits / 8
+  let frames: i64 = info.dataBytes / (width * info.channels)
+  let result: Sound = soundNewFrames(frames, info.rate, info.channels)
+  let out: ptr<float> = result.samples
+  let scratch: ptr<i8> = calloc(8, 1).toPtr()
+  for (k = 0; k < frames * info.channels; k = k + 1) {
+    out[k] = wavSample(bytes, info.dataStart + k * width, info.format, info.bits, scratch)
+  }
+  return result
+}
+
+func wavSample(bytes: ptr<i8>, at: i64, format: i64, bits: i64, scratch: ptr<i8>) -> float {
+  if (format == 3) {
+    return wavFloat(bytes, at, bits, scratch)
+  }
+  if (bits == 8) {
+    return (soundByte(bytes, at) - 128).toFloat() / 128.0
+  }
+  if (bits == 16) {
+    return soundSigned(bytes, at, 2).toFloat() / 32768.0
+  }
+  if (bits == 24) {
+    return soundSigned(bytes, at, 3).toFloat() / 8388608.0
+  }
+  return soundSigned(bytes, at, 4).toFloat() / 2147483648.0
+}
+
+func wavFloat(bytes: ptr<i8>, at: i64, bits: i64, scratch: ptr<i8>) -> float {
+  for (k = 0; k < bits / 8; k = k + 1) {
+    scratch[k] = bytes[at + k]
+  }
+  if (bits == 64) {
+    let wide: ptr<double> = scratch.toI64().toPtr()
+    return wide[0].toFloat()
+  }
+  let narrow: ptr<float> = scratch.toI64().toPtr()
+  return narrow[0]
+}
+
+func soundByte(bytes: ptr<i8>, at: i64) -> i64 {
+  var value: i64 = bytes[at].toI64()
+  if (value < 0) {
+    value = value + 256
+  }
+  return value
+}
+
+func soundSigned(bytes: ptr<i8>, at: i64, width: i64) -> i64 {
+  var value: i64 = 0
+  var weight: i64 = 1
+  for (k = 0; k < width; k = k + 1) {
+    value = value + soundByte(bytes, at + k) * weight
+    weight = weight * 256
+  }
+  if (value >= weight / 2) {
+    value = value - weight
+  }
+  return value
+}
+
+func soundWord(bytes: ptr<i8>, at: i64) -> i64 {
+  return soundByte(bytes, at) + 256 * soundByte(bytes, at + 1) + 65536 * soundByte(bytes, at + 2) + 16777216 * soundByte(bytes, at + 3)
+}
+
+func soundLetters(bytes: ptr<i8>, at: i64, a: i64, b: i64, c: i64, d: i64) -> i64 {
+  bytes[at] = a
+  bytes[at + 1] = b
+  bytes[at + 2] = c
+  bytes[at + 3] = d
+  return at + 4
+}
+
+func soundNumber32(bytes: ptr<i8>, at: i64, value: i64) -> i64 {
+  bytes[at] = (value % 256)
+  bytes[at + 1] = (value / 256 % 256)
+  bytes[at + 2] = (value / 65536 % 256)
+  bytes[at + 3] = (value / 16777216 % 256)
+  return at + 4
+}
+
+func soundNumber16(bytes: ptr<i8>, at: i64, value: i64) -> i64 {
+  bytes[at] = (value % 256)
+  bytes[at + 1] = (value / 256 % 256)
+  return at + 2
+}

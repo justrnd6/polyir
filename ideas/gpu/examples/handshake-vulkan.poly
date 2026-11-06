@@ -1,0 +1,64 @@
+// HOW LONG DOES EACH STEP OF "ASK THE GPU TO DO SOMETHING" TAKE? (Vulkan.) The same program as handshake.poly for Metal:
+// the same kernel and the same steps, so the two reports can be compared. Vulkan makes you do more of the work yourself
+// (descriptor sets, command buffers), and the report shows where that goes.
+//
+//   polyir --emit-glsl handshake-vulkan.poly       (tests/gpu.sh splits and compiles the shaders)
+//   polyir handshake-vulkan.poly --out handshake-vulkan && ./handshake-vulkan    (run in this folder)
+//
+// Exit 0 means the results were right. 10 no Vulkan GPU, 11 the shader is missing, 12 a launch failed, 13 a result was wrong.
+import "../Vulkan.poly"
+import "shared/print.poly"
+import "shared/handshake.poly"
+
+func main() -> i64 {
+    let n: i64 = 1048576
+    let input: ptr<float> = makeInput(n)
+    say("Vulkan: where the time goes")
+    newline()
+    var mark: i64 = wallMs()
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    reportRow("find the GPU                        ", wallMs() - mark, "ms", "once per program")
+    mark = wallMs()
+    let pipeline: i64 = vulkanPipeline(gpu, "addOne.spv", 2, 4)
+    if (pipeline == 0) { return 11 }
+    reportRow("build the pipeline from SPIR-V      ", wallMs() - mark, "ms", "once per kernel")
+    mark = wallMs()
+    let buffers: ptr<i64> = calloc(2, 8).toPtr()
+    buffers[0] = vulkanBuffer(gpu, input.toI64(), n * 4)
+    buffers[1] = vulkanEmptyBuffer(gpu, n * 4)
+    reportRow("make 2 buffers, fill one with 4 MiB ", wallMs() - mark, "ms", "once per buffer")
+    return launches(gpu, pipeline, buffers, input, n)
+}
+
+// One launch: the push constant block holds the element count.
+func launch(gpu: i64, pipeline: i64, buffers: ptr<i64>, count: i64) -> i64 {
+    let push: i64 = words(2)
+    let slots: ptr<i32> = push.toPtr()
+    slots[0] = count.toI32()
+    return vulkanDispatchBuffers(gpu, pipeline, count, push, buffers, 2)
+}
+
+func launches(gpu: i64, pipeline: i64, buffers: ptr<i64>, input: ptr<float>, n: i64) -> i64 {
+    let tiny: i64 = 1000
+    var mark: i64 = wallMs()
+    for (k = 0; k < tiny; k = k + 1) {
+        if (launch(gpu, pipeline, buffers, 1) == 0) { return 12 }
+    }
+    reportRow("launch for 1 element, and wait      ", microsEach(wallMs() - mark, tiny), "us", "every launch")
+    let big: i64 = 50
+    mark = wallMs()
+    for (k = 0; k < big; k = k + 1) {
+        if (launch(gpu, pipeline, buffers, n) == 0) { return 12 }
+    }
+    reportRow("launch for 1,048,576 elements, wait ", microsEach(wallMs() - mark, big), "us", "every launch")
+    mark = wallMs()
+    let output: ptr<float> = vulkanContents(buffers[1]).toPtr()
+    var sum: float = 0.0
+    for (i = 0; i < n; i = i + 1) {
+        sum = sum + output[i]
+    }
+    reportRow("the CPU reads the 4 MiB of results  ", wallMs() - mark, "ms", "mapped memory")
+    if (resultsAreRight(input, output, n) == 0) { return 13 }
+    return 0
+}

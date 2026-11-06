@@ -1,0 +1,168 @@
+extern func MTLCreateSystemDefaultDevice() -> i64
+extern func objc_getClass(name: string) -> i64
+extern func sel_registerName(name: string) -> i64
+extern func objc_msgSend(target: i64, selector: i64, a: i64, b: i64, c: i64, d: i64) -> i64
+extern func fopen(path: string, mode: string) -> i64
+extern func fread(buf: i64, size: i64, count: i64, file: i64) -> i64
+extern func fclose(file: i64) -> i64
+extern func calloc(count: i64, size: i64) -> i64
+global commandQueue: i64 = 0
+
+func send(target: i64, method: string, a: i64, b: i64, c: i64) -> i64 {
+  return objc_msgSend(target, sel_registerName(method), a, b, c, 0)
+}
+
+func nsString(text: string) -> i64 {
+  return send(objc_getClass("NSString"), "stringWithUTF8String:", text.toI64(), 0, 0)
+}
+
+func metalReadFile(path: string) -> string {
+  let size: i64 = 1048576
+  let buf: i64 = calloc(size + 1, 1)
+  let file: i64 = fopen(path, "r")
+  if (file == 0) {
+    return ""
+  }
+  fread(buf, 1, size, file)
+  fclose(file)
+  return buf.toPtr()
+}
+
+func metalDevice() -> i64 {
+  return MTLCreateSystemDefaultDevice()
+}
+
+func metalPipeline(device: i64, source: string, kernelName: string) -> i64 {
+  let errorSlot: i64[1]
+  errorSlot[0] = 0
+  let library: i64 = send(device, "newLibraryWithSource:options:error:", nsString(source), 0, errorSlot.toI64())
+  if (library == 0) {
+    return 0
+  }
+  let function: i64 = send(library, "newFunctionWithName:", nsString(kernelName), 0, 0)
+  if (function == 0) {
+    return 0
+  }
+  return send(device, "newComputePipelineStateWithFunction:error:", function, errorSlot.toI64(), 0)
+}
+
+func metalBuffer(device: i64, address: i64, byteCount: i64) -> i64 {
+  return send(device, "newBufferWithBytes:length:options:", address, byteCount, 0)
+}
+
+func metalEmptyBuffer(device: i64, byteCount: i64) -> i64 {
+  return send(device, "newBufferWithLength:options:", byteCount, 0, 0)
+}
+
+func metalContents(buf: i64) -> i64 {
+  return send(buf, "contents", 0, 0, 0)
+}
+
+func metalDispatch(device: i64, pipeline: i64, count: i64, b0: i64, b1: i64, b2: i64, b3: i64) -> i64 {
+  let buffers: ptr<i64> = calloc(4, 8).toPtr()
+  var used: i64 = 0
+  if (b0 != 0) {
+    buffers[used] = b0
+    used = used + 1
+  }
+  if (b1 != 0) {
+    buffers[used] = b1
+    used = used + 1
+  }
+  if (b2 != 0) {
+    buffers[used] = b2
+    used = used + 1
+  }
+  if (b3 != 0) {
+    buffers[used] = b3
+    used = used + 1
+  }
+  return metalDispatchBuffers(device, pipeline, count, buffers, used)
+}
+
+func metalDispatchBuffers(device: i64, pipeline: i64, count: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+  let total: i64[3]
+  total[0] = count
+  total[1] = 1
+  total[2] = 1
+  let perGroup: i64[3]
+  perGroup[0] = groupWidth(pipeline, count)
+  perGroup[1] = 1
+  perGroup[2] = 1
+  return metalRun(device, pipeline, buffers, bufferCount, "dispatchThreads:threadsPerThreadgroup:", total.toI64(), perGroup.toI64())
+}
+
+func metalDispatch2D(device: i64, pipeline: i64, width: i64, height: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+  let total: i64[3]
+  total[0] = width
+  total[1] = height
+  total[2] = 1
+  let perGroup: i64[3]
+  perGroup[0] = smaller(16, width)
+  perGroup[1] = smaller(16, height)
+  perGroup[2] = 1
+  return metalRun(device, pipeline, buffers, bufferCount, "dispatchThreads:threadsPerThreadgroup:", total.toI64(), perGroup.toI64())
+}
+
+func metalDispatchGroups(device: i64, pipeline: i64, count: i64, buffers: ptr<i64>, bufferCount: i64) -> i64 {
+  let groups: i64[3]
+  groups[0] = (count + 255) / 256
+  groups[1] = 1
+  groups[2] = 1
+  let perGroup: i64[3]
+  perGroup[0] = 256
+  perGroup[1] = 1
+  perGroup[2] = 1
+  return metalRun(device, pipeline, buffers, bufferCount, "dispatchThreadgroups:threadsPerThreadgroup:", groups.toI64(), perGroup.toI64())
+}
+
+func metalPadded(count: i64) -> i64 {
+  return (count + 255) / 256 * 256
+}
+
+func metalRun(device: i64, pipeline: i64, buffers: ptr<i64>, bufferCount: i64, launchMethod: string, sizeA: i64, sizeB: i64) -> i64 {
+  let queue: i64 = metalQueue(device)
+  let commands: i64 = send(queue, "commandBuffer", 0, 0, 0)
+  let encoder: i64 = send(commands, "computeCommandEncoder", 0, 0, 0)
+  if (encoder == 0) {
+    return 0
+  }
+  send(encoder, "setComputePipelineState:", pipeline, 0, 0)
+  for (slot = 0; slot < bufferCount; slot = slot + 1) {
+    bindBuffer(encoder, buffers[slot], slot)
+  }
+  send(encoder, launchMethod, sizeA, sizeB, 0)
+  send(encoder, "endEncoding", 0, 0, 0)
+  send(commands, "commit", 0, 0, 0)
+  send(commands, "waitUntilCompleted", 0, 0, 0)
+  return 1
+}
+
+func metalQueue(device: i64) -> i64 {
+  if (commandQueue == 0) {
+    commandQueue = send(device, "newCommandQueue", 0, 0, 0)
+  }
+  return commandQueue
+}
+
+func bindBuffer(encoder: i64, buf: i64, slot: i64) -> i64 {
+  if (buf == 0) {
+    return 0
+  }
+  return send(encoder, "setBuffer:offset:atIndex:", buf, 0, slot)
+}
+
+func smaller(a: i64, b: i64) -> i64 {
+  if (a < b) {
+    return a
+  }
+  return b
+}
+
+func groupWidth(pipeline: i64, count: i64) -> i64 {
+  let most: i64 = send(pipeline, "maxTotalThreadsPerThreadgroup", 0, 0, 0)
+  if (count < most) {
+    return count
+  }
+  return most
+}

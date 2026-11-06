@@ -1,0 +1,129 @@
+// SINGLE-PASS REDUCTION through Vulkan: the sum and the maximum of a million-plus numbers in three launches with
+// workgroup memory and barriers (shared/reduce1.poly), and the sum in ONE launch with an atomic float add (a
+// compare-and-swap loop on the buffer declared a second time as `uint`). Each answer is checked against the CPU.
+//
+//   polyir --emit-glsl reduce1-vulkan.poly       (tests/gpu.sh splits and compiles the shaders)
+//   polyir reduce1-vulkan.poly --out reduce1-vulkan && ./reduce1-vulkan    (run in this folder)
+//
+// Prints how long each way takes. Exit 0 means every answer equals the CPU's. 10 no Vulkan GPU, 11 a shader is missing,
+// 12 a dispatch failed, 13 the sum differs, 14 the maximum differs, 15 the one-launch total differs.
+import "../Vulkan.poly"
+import "shared/print.poly"
+import "shared/reduce.poly"
+import "shared/reduce1.poly"
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    // Three storage buffers for each (the numbers, the partial sums or the total, and the unused result); push
+    // constants: the element count and n (8 bytes).
+    let sumPipe: i64 = vulkanPipeline(gpu, "blockSum.spv", 3, 8)
+    let maxPipe: i64 = vulkanPipeline(gpu, "blockMax.spv", 3, 8)
+    let totalPipe: i64 = vulkanPipeline(gpu, "total.spv", 3, 8)
+    let treePipe: i64 = vulkanPipeline(gpu, "pairSum.spv", 2, 8)
+    if (sumPipe == 0 || maxPipe == 0 || totalPipe == 0 || treePipe == 0) { return 11 }
+    let n: i64 = 1048579
+    let values: ptr<float> = calloc(n, 4).toPtr()
+    fillTestData(values, n)
+    if (reduceByGroups(gpu, sumPipe, values, n) != cpuSum(values, n)) { return 13 }
+    if (reduceByGroups(gpu, maxPipe, values, n) != cpuMax(values, n)) { return 14 }
+    if (totalInOneLaunch(gpu, totalPipe, values, n) != cpuSum(values, n)) { return 15 }
+    return timings(gpu, sumPipe, totalPipe, treePipe, values, n)
+}
+
+func timings(gpu: i64, sumPipe: i64, totalPipe: i64, treePipe: i64, values: ptr<float>, n: i64) -> i64 {
+    var start: i64 = wallMs()
+    for (r = 0; r < 20; r = r + 1) { treeSum(gpu, treePipe, values, n) }
+    let tree: i64 = wallMs() - start
+    start = wallMs()
+    for (r = 0; r < 20; r = r + 1) { reduceByGroups(gpu, sumPipe, values, n) }
+    let groups: i64 = wallMs() - start
+    start = wallMs()
+    for (r = 0; r < 20; r = r + 1) { totalInOneLaunch(gpu, totalPipe, values, n) }
+    let single: i64 = wallMs() - start
+    say("sum of 1,048,579 numbers, average of 20 runs (ms x 10):")
+    newline()
+    row("pair-adding tree", passCount(n), tree / 2)
+    row("workgroup partial sums", launchCount(n), groups / 2)
+    row("one launch, atomic float add", 1, single / 2)
+    return 0
+}
+
+func row(what: string, launches: i64, tenthsOfMs: i64) -> i64 {
+    say("  ")
+    say(what)
+    say(": ")
+    sayNumber(launches)
+    say(" launches, ")
+    sayNumber(tenthsOfMs / 10)
+    say(".")
+    sayNumber(tenthsOfMs % 10)
+    say(" ms")
+    newline()
+    return 0
+}
+
+// The tree of reduce.poly: pass after pass, each pass halving the list (two buffers: numbers and result).
+func treeSum(gpu: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+    var current: i64 = vulkanBuffer(gpu, values.toI64(), n * 4)
+    var length: i64 = n
+    for (pass = 0; pass < 40; pass = pass + 1) {
+        if (length > 1) {
+            let next: i64 = (length + 1) / 2
+            let push: i32[2]
+            push[0] = next.toI32()
+            push[1] = length.toI32()
+            let out: i64 = vulkanEmptyBuffer(gpu, next * 4)
+            vulkanDispatch(gpu, pipeline, next, push.toI64(), current, out, 0, 0)
+            current = out
+            length = next
+        }
+    }
+    let answer: ptr<float> = vulkanContents(current).toPtr()
+    return answer[0]
+}
+
+// Launch after launch, each shrinking the list to one number per group of 256, until one number remains.
+func reduceByGroups(gpu: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+    var current: i64 = vulkanBuffer(gpu, values.toI64(), n * 4)
+    var length: i64 = n
+    for (launch = 0; launch < 10; launch = launch + 1) {
+        if (length > 1) {
+            current = oneLaunch(gpu, pipeline, current, length)
+            length = groupsFor(length)
+        }
+    }
+    let answer: ptr<float> = vulkanContents(current).toPtr()
+    return answer[0]
+}
+
+// One launch over `length` numbers: the numbers, the partial sums (one per group) and the unused result. The shader
+// guards its final write, so the result buffer needs room for `length` only.
+func oneLaunch(gpu: i64, pipeline: i64, numbers: i64, length: i64) -> i64 {
+    let push: i32[2]
+    push[0] = length.toI32()
+    push[1] = length.toI32()
+    let partial: i64 = vulkanEmptyBuffer(gpu, groupsFor(length) * 4)
+    let buffers: ptr<i64> = calloc(3, 8).toPtr()
+    buffers[0] = numbers
+    buffers[1] = partial
+    buffers[2] = vulkanEmptyBuffer(gpu, length * 4)
+    vulkanDispatchGroups(gpu, pipeline, length, push.toI64(), buffers, 3)
+    return partial
+}
+
+func totalInOneLaunch(gpu: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+    let push: i32[2]
+    push[0] = n.toI32()
+    push[1] = n.toI32()
+    let zero: float[1]
+    zero[0] = 0.0
+    let sum: i64 = vulkanBuffer(gpu, zero.toI64(), 4)
+    let buffers: ptr<i64> = calloc(3, 8).toPtr()
+    buffers[0] = vulkanBuffer(gpu, values.toI64(), n * 4)
+    buffers[1] = sum
+    buffers[2] = vulkanEmptyBuffer(gpu, n * 4)
+    vulkanDispatchGroups(gpu, pipeline, n, push.toI64(), buffers, 3)
+    let answer: ptr<float> = vulkanContents(sum).toPtr()
+    return answer[0]
+}

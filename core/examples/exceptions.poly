@@ -1,0 +1,48 @@
+// `try { ... } catch (name) { ... }` / `throw expr` — emulated via
+// `setjmp`/`longjmp`, not real LLVM `invoke`/`landingpad`: a `throw`
+// reaches the nearest enclosing `try` without touching any
+// intermediate stack frame (real exceptions' "throw far, catch far"
+// property), but runs no cleanup code during unwind (moot here —
+// nothing in polyir has destructors). `throw`'s value is always `i64`
+// (an error code, bound to `name` inside the `catch` block) —
+// `longjmp` itself only ever transports one native `int`-sized value.
+// `throw` with no enclosing `try` anywhere in the program is
+// undefined, the same "leave misuse to break honestly" policy as
+// everything else in polyir.
+
+func riskyDouble(x: i64) -> i64 {
+  if (x < 0) {
+    throw 99
+  }
+  return x * 2
+}
+
+func safeDouble(x: i64) -> i64 {
+  var result: i64 = 0
+  try {
+    result = riskyDouble(x)
+  } catch (code) {
+    result = code
+  }
+  return result
+}
+
+// Nested `try`/`catch`: a throw from inside the INNER try's own block
+// is caught by the inner catch; the outer handler is restored first
+// (before the inner catch's own statements run), so a throw from
+// INSIDE the inner catch itself propagates to the OUTER try instead
+// of looping back to the inner one.
+func nestedTryCheck(x: i64) -> i64 {
+  var result: i64 = 0
+  try {
+    try {
+      result = riskyDouble(x)
+    } catch (innerCode) {
+      result = innerCode + 1
+      throw result
+    }
+  } catch (outerCode) {
+    result = outerCode * 10
+  }
+  return result
+}

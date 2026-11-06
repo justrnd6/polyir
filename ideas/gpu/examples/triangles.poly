@@ -1,0 +1,369 @@
+// TRIANGLES AND MESHES on the GPU (Metal): drawing a triangle, then a polygon, a cube and
+// a sphere made of many triangles, with the working shown. This is "rasterization":
+// for every pixel, ask which triangle covers it and which one is nearest.
+//
+//   polyir --emit-msl triangles.poly > triangles.metal
+//   polyir triangles.poly --out triangles && ./triangles       (Apple Silicon; run in this folder)
+//
+// Nine pictures are saved (tri-*.pgm) and each is checked against the CPU running the
+// same kernel. Exit 0 means they all matched; 10 no GPU, 11 the Metal source is
+// missing, 12 a dispatch failed, 13 a picture differs from the CPU's.
+import "../Metal.poly"
+import "shared/picture.poly"
+
+extern func sqrtf(x: float) -> float
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+
+// The picture is made by ONE kernel run once per pixel. Its input is a list of triangles
+// already placed on the screen (the CPU did the 3D work: rotate, move, project).
+// Each triangle is 18 numbers: three corners, each (screen x, screen y, 1 / depth, nx, ny, nz).
+// view: 0 how many triangles   1 draw the outlines (1) or not (0)
+//       2 colouring: 0 lit by the light, 1 "barycentric" (each corner a different grey)
+//       3 picture width   4 picture height   5 6 7 the direction TO the light
+//
+// For a pixel, go through the triangles and keep the NEAREST one that covers it:
+//   1. "covers it" is a 2D question: three cross-product tests (the edge functions).
+//   2. "nearest" is the only 3D part: the corners' depths, blended by how close the
+//      pixel is to each corner (the barycentric weights w0, w1, w2).
+kernel func rasterize(index i: i32, uniform tris: ptr<float>, uniform view: ptr<float>) -> float {
+    let w: i32 = view[3].toI32()
+    let px: float = (i % w).toFloat() + 0.5
+    let py: float = (i / w).toFloat() + 0.5
+    let count: i32 = view[0].toI32()
+    var nearest: float = 0.0
+    var tone: float = 0.06
+    for (t = 0; t < count; t = t + 1) {
+        let b: i32 = t * 18
+        let x0: float = tris[b]
+        let y0: float = tris[b + 1]
+        let x1: float = tris[b + 6]
+        let y1: float = tris[b + 7]
+        let x2: float = tris[b + 12]
+        let y2: float = tris[b + 13]
+        // Twice the triangle's signed area (a 2 x 2 determinant). Its sign says which way
+        // round the corners go on the screen. Triangles are listed counter-clockwise as seen
+        // from outside the shape, and the screen's y axis points DOWN, so a triangle that
+        // faces the camera comes out NEGATIVE here; a positive one is a back face, skipped.
+        let area: float = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+        if (area < 0.0) {
+            // Barycentric weights: w0 is 1 at corner 0 and 0 along the opposite edge, and so on.
+            let w0: float = ((x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)) / area
+            let w1: float = ((x0 - x2) * (py - y2) - (y0 - y2) * (px - x2)) / area
+            let w2: float = ((x1 - x0) * (py - y0) - (y1 - y0) * (px - x0)) / area
+            if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
+                let depth: float = w0 * tris[b + 2] + w1 * tris[b + 8] + w2 * tris[b + 14]
+                if (depth > nearest) {
+                    nearest = depth
+                    if (view[2] > 0.5) {
+                        tone = w0 * 0.95 + w1 * 0.5 + w2 * 0.1
+                    } else {
+                        let nx: float = w0 * tris[b + 3] + w1 * tris[b + 9] + w2 * tris[b + 15]
+                        let ny: float = w0 * tris[b + 4] + w1 * tris[b + 10] + w2 * tris[b + 16]
+                        let nz: float = w0 * tris[b + 5] + w1 * tris[b + 11] + w2 * tris[b + 17]
+                        var lit: float = (nx * view[5] + ny * view[6] + nz * view[7]) / sqrtf(nx * nx + ny * ny + nz * nz)
+                        if (lit < 0.0) { lit = 0.0 }
+                        tone = 0.12 + 0.88 * lit
+                    }
+                    if (view[1] > 0.5) {
+                        // Distance (in pixels) from each edge = weight * |area| / edge length.
+                        let d0: float = 0.0 - w0 * area / sqrtf((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+                        let d1: float = 0.0 - w1 * area / sqrtf((x0 - x2) * (x0 - x2) + (y0 - y2) * (y0 - y2))
+                        let d2: float = 0.0 - w2 * area / sqrtf((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
+                        if (d0 < 1.0 || d1 < 1.0 || d2 < 1.0) { tone = 0.0 }
+                    }
+                }
+            }
+        }
+    }
+    return tone
+}
+
+// ── the CPU side: meshes ─────────────────────────────────────────────────────
+// A mesh in "object space" is a list of triangles, 18 numbers each: three corner
+// positions (x, y, z), then the three corners' normals (the direction the surface faces).
+func putTriangle(mesh: ptr<float>, t: i64, a: ptr<float>, b: ptr<float>, c: ptr<float>) -> i64 {
+    for (k = 0; k < 3; k = k + 1) {
+        mesh[t * 18 + k] = a[k]
+        mesh[t * 18 + 3 + k] = b[k]
+        mesh[t * 18 + 6 + k] = c[k]
+        // For a shape centred on the origin the surface faces away from the centre: a
+        // smooth normal is just the corner's own position. (A cube overrides this.)
+        mesh[t * 18 + 9 + k] = a[k]
+        mesh[t * 18 + 12 + k] = b[k]
+        mesh[t * 18 + 15 + k] = c[k]
+    }
+    return t + 1
+}
+
+func point(p: ptr<float>, x: float, y: float, z: float) -> i64 {
+    p[0] = x
+    p[1] = y
+    p[2] = z
+    return 0
+}
+
+// A cube is 6 square faces, each cut along a diagonal into 2 triangles: 12 triangles.
+func cubeMesh(mesh: ptr<float>) -> i64 {
+    let c: float[24]
+    for (k = 0; k < 8; k = k + 1) {
+        c[k * 3] = 1.0 - 2.0 * (k % 2).toFloat()
+        c[k * 3 + 1] = 1.0 - 2.0 * ((k / 2) % 2).toFloat()
+        c[k * 3 + 2] = 1.0 - 2.0 * (k / 4).toFloat()
+    }
+    // Each face lists its 4 corners (by number) going round; split as (0,1,2) and (0,2,3).
+    let faces: i32[24]
+    faces[0] = 0
+    faces[1] = 1
+    faces[2] = 3
+    faces[3] = 2
+    faces[4] = 4
+    faces[5] = 5
+    faces[6] = 7
+    faces[7] = 6
+    faces[8] = 0
+    faces[9] = 1
+    faces[10] = 5
+    faces[11] = 4
+    faces[12] = 2
+    faces[13] = 3
+    faces[14] = 7
+    faces[15] = 6
+    faces[16] = 0
+    faces[17] = 2
+    faces[18] = 6
+    faces[19] = 4
+    faces[20] = 1
+    faces[21] = 3
+    faces[22] = 7
+    faces[23] = 5
+    var t: i64 = 0
+    for (f = 0; f < 6; f = f + 1) {
+        t = faceTriangle(mesh, t, c, faces[f * 4], faces[f * 4 + 1], faces[f * 4 + 2])
+        t = faceTriangle(mesh, t, c, faces[f * 4], faces[f * 4 + 2], faces[f * 4 + 3])
+    }
+    return t
+}
+
+// One triangle of the cube. The corners are put in the order that makes its normal
+// (the cross product of two edges) point OUT of the cube; all three corners share it.
+func faceTriangle(mesh: ptr<float>, t: i64, c: ptr<float>, i0: i32, i1: i32, i2: i32) -> i64 {
+    let a: float[3]
+    let b: float[3]
+    let d: float[3]
+    point(a.toI64().toPtr(), c[i0 * 3], c[i0 * 3 + 1], c[i0 * 3 + 2])
+    point(b.toI64().toPtr(), c[i1 * 3], c[i1 * 3 + 1], c[i1 * 3 + 2])
+    point(d.toI64().toPtr(), c[i2 * 3], c[i2 * 3 + 1], c[i2 * 3 + 2])
+    let nx: float = (b[1] - a[1]) * (d[2] - a[2]) - (b[2] - a[2]) * (d[1] - a[1])
+    let ny: float = (b[2] - a[2]) * (d[0] - a[0]) - (b[0] - a[0]) * (d[2] - a[2])
+    let nz: float = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0])
+    var after: i64 = 0
+    // Outward means pointing the same way as the corner's position (the cube is centred on 0).
+    if (nx * a[0] + ny * a[1] + nz * a[2] > 0.0) {
+        after = putTriangle(mesh, t, a.toI64().toPtr(), b.toI64().toPtr(), d.toI64().toPtr())
+    } else {
+        after = putTriangle(mesh, t, a.toI64().toPtr(), d.toI64().toPtr(), b.toI64().toPtr())
+    }
+    return after
+}
+
+// A sphere as rings of latitude and slices of longitude. Every little patch is a four-corner
+// quad, cut into two triangles. More rings and slices give more triangles and a rounder look.
+func sphereMesh(mesh: ptr<float>, rings: i64, slices: i64) -> i64 {
+    var t: i64 = 0
+    let a: float[3]
+    let b: float[3]
+    let c: float[3]
+    let d: float[3]
+    for (r = 0; r < rings; r = r + 1) {
+        for (s = 0; s < slices; s = s + 1) {
+            spherePoint(a.toI64().toPtr(), r, s, rings, slices)
+            spherePoint(b.toI64().toPtr(), r, s + 1, rings, slices)
+            spherePoint(c.toI64().toPtr(), r + 1, s + 1, rings, slices)
+            spherePoint(d.toI64().toPtr(), r + 1, s, rings, slices)
+            t = putTriangle(mesh, t, a.toI64().toPtr(), c.toI64().toPtr(), b.toI64().toPtr())
+            t = putTriangle(mesh, t, a.toI64().toPtr(), d.toI64().toPtr(), c.toI64().toPtr())
+        }
+    }
+    return t
+}
+
+// Ring r of `rings` runs from the bottom pole (r = 0) to the top pole (r = rings);
+// slice s of `slices` goes once round.
+func spherePoint(p: ptr<float>, r: i64, s: i64, rings: i64, slices: i64) -> i64 {
+    let latitude: float = 3.14159265 * (r.toFloat() / rings.toFloat() - 0.5)
+    let longitude: float = 6.2831853 * s.toFloat() / slices.toFloat()
+    point(p, cosf(latitude) * cosf(longitude), sinf(latitude), cosf(latitude) * sinf(longitude))
+    return 0
+}
+
+// A flat polygon with n corners (a regular one, in the plane z = 0), cut into triangles by a
+// FAN: every triangle shares corner 0. n corners give n - 2 triangles.
+func polygonFan(mesh: ptr<float>, n: i64) -> i64 {
+    let corners: float[24]
+    for (k = 0; k < n; k = k + 1) {
+        let angle: float = 6.2831853 * k.toFloat() / n.toFloat() + 0.3
+        corners[k * 3] = cosf(angle)
+        corners[k * 3 + 1] = sinf(angle)
+        corners[k * 3 + 2] = 0.0
+    }
+    var t: i64 = 0
+    let toward: float[3]
+    for (k = 1; k < n - 1; k = k + 1) {
+        let a: float[3]
+        let b: float[3]
+        let c: float[3]
+        point(a.toI64().toPtr(), corners[0], corners[1], corners[2])
+        point(b.toI64().toPtr(), corners[k * 3], corners[k * 3 + 1], corners[k * 3 + 2])
+        point(c.toI64().toPtr(), corners[k * 3 + 3], corners[k * 3 + 4], corners[k * 3 + 5])
+        t = putTriangle(mesh, t, a.toI64().toPtr(), b.toI64().toPtr(), c.toI64().toPtr())
+    }
+    // A flat polygon faces the viewer: every normal is (0, 0, 1).
+    for (j = 0; j < t; j = j + 1) {
+        for (v = 0; v < 3; v = v + 1) {
+            mesh[j * 18 + 9 + v * 3] = 0.0
+            mesh[j * 18 + 10 + v * 3] = 0.0
+            mesh[j * 18 + 11 + v * 3] = 1.0
+        }
+    }
+    return t
+}
+
+// ── the CPU side: the "vertex stage" (rotate, move, project) ─────────────────
+// Turn every corner about y then x, push the object away from the camera by `distance`,
+// and project: screen x = centre + focal * x / depth, where depth = -z (the camera looks down -z).
+// `flat` replaces each corner's normal by the triangle's own normal (one flat colour per triangle).
+func placeMesh(mesh: ptr<float>, count: i64, screen: ptr<float>, ax: float, ay: float, distance: float, flat: i64, size: float) -> i64 {
+    let cy: float = cosf(ay)
+    let sy: float = sinf(ay)
+    let cx: float = cosf(ax)
+    let sx: float = sinf(ax)
+    let focal: float = size * 1.0
+    for (t = 0; t < count; t = t + 1) {
+        for (v = 0; v < 3; v = v + 1) {
+            let o: i64 = t * 18 + v * 3
+            let x: float = mesh[o]
+            let y: float = mesh[o + 1]
+            let z: float = mesh[o + 2]
+            // turn about y, then about x
+            let x1: float = cy * x + sy * z
+            let z1: float = 0.0 - sy * x + cy * z
+            let y2: float = cx * y - sx * z1
+            let z2: float = sx * y + cx * z1
+            let depth: float = distance - z2
+            let s: i64 = t * 18 + v * 6
+            screen[s] = size * 0.5 + focal * x1 / depth
+            screen[s + 1] = size * 0.5 - focal * y2 / depth
+            screen[s + 2] = 1.0 / depth
+            // the normal is turned the same way (it is a direction, so it is not moved)
+            let nx: float = mesh[o + 9]
+            let ny: float = mesh[o + 10]
+            let nz: float = mesh[o + 11]
+            let nx1: float = cy * nx + sy * nz
+            let nz1: float = 0.0 - sy * nx + cy * nz
+            screen[s + 3] = nx1
+            screen[s + 4] = cx * ny - sx * nz1
+            screen[s + 5] = sx * ny + cx * nz1
+        }
+        if (flat == 1) { flatten(screen, t) }
+    }
+    return 0
+}
+
+// Give all three corners of screen triangle t the same normal: the cross product of two edges,
+// turned so that it faces the camera side (positive z after the projection's flip).
+func flatten(screen: ptr<float>, t: i64) -> i64 {
+    var fx: float = 0.0
+    var fy: float = 0.0
+    var fz: float = 0.0
+    for (v = 0; v < 3; v = v + 1) {
+        fx = fx + screen[t * 18 + v * 6 + 3]
+        fy = fy + screen[t * 18 + v * 6 + 4]
+        fz = fz + screen[t * 18 + v * 6 + 5]
+    }
+    // The normals of a flat face agree except for the smooth ones of a curved mesh; their sum
+    // points the way the patch faces, which is all a flat colour needs.
+    for (v = 0; v < 3; v = v + 1) {
+        screen[t * 18 + v * 6 + 3] = fx
+        screen[t * 18 + v * 6 + 4] = fy
+        screen[t * 18 + v * 6 + 5] = fz
+    }
+    return 0
+}
+
+func setView(view: ptr<float>, count: i64, outline: float, colouring: float, size: float) -> i64 {
+    view[0] = count.toFloat()
+    view[1] = outline
+    view[2] = colouring
+    view[3] = size
+    view[4] = size
+    // the direction TO the light, from the upper left and in front: (0.4, 0.7, 0.6) made 1 long
+    let length: float = sqrtf(0.4 * 0.4 + 0.7 * 0.7 + 0.6 * 0.6)
+    view[5] = 0.4 / length
+    view[6] = 0.7 / length
+    view[7] = 0.6 / length
+    return 0
+}
+
+// ── the program ──────────────────────────────────────────────────────────────
+func main() -> i64 {
+    let device: i64 = metalDevice()
+    if (device == 0) { return 10 }
+    let pipeline: i64 = metalPipeline(device, metalReadFile("triangles.metal"), "rasterize")
+    if (pipeline == 0) { return 11 }
+    let mesh: ptr<float> = calloc(2000 * 18, 4).toPtr()
+    let screen: ptr<float> = calloc(2000 * 18, 4).toPtr()
+    let view: ptr<float> = calloc(8, 4).toPtr()
+    // 1. One triangle, each corner a different grey: the barycentric weights blend them.
+    let one: i64 = polygonFan(mesh, 3)
+    placeMesh(mesh, one, screen, 0.0, 0.0, 3.0, 1, 192.0)
+    setView(view, one, 0.0, 1.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-1-barycentric.pgm", one) != 0) { return 13 }
+    // 2. A hexagon cut into a fan of triangles, outlines drawn.
+    let fan: i64 = polygonFan(mesh, 6)
+    placeMesh(mesh, fan, screen, 0.0, 0.0, 3.0, 1, 192.0)
+    setView(view, fan, 1.0, 0.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-2-fan.pgm", fan) != 0) { return 13 }
+    // 3 and 4. A cube: 12 triangles, shown lit and with the triangles outlined.
+    let cube: i64 = cubeMesh(mesh)
+    placeMesh(mesh, cube, screen, 0.5, 0.6, 5.0, 1, 192.0)
+    setView(view, cube, 0.0, 0.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-3-cube.pgm", cube) != 0) { return 13 }
+    setView(view, cube, 1.0, 0.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-4-cube-wire.pgm", cube) != 0) { return 13 }
+    // 5, 6, 7. A coarse sphere: flat colours, smooth colours, and the triangles themselves.
+    let coarse: i64 = sphereMesh(mesh, 6, 8)
+    placeMesh(mesh, coarse, screen, 0.35, 0.4, 3.4, 1, 192.0)
+    setView(view, coarse, 0.0, 0.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-5-sphere-flat.pgm", coarse) != 0) { return 13 }
+    placeMesh(mesh, coarse, screen, 0.35, 0.4, 3.4, 0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-6-sphere-smooth.pgm", coarse) != 0) { return 13 }
+    setView(view, coarse, 1.0, 0.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-7-sphere-wire.pgm", coarse) != 0) { return 13 }
+    // 8 and 9. A finer sphere, smooth, plain and outlined.
+    let fine: i64 = sphereMesh(mesh, 16, 24)
+    placeMesh(mesh, fine, screen, 0.35, 0.4, 3.4, 0, 192.0)
+    setView(view, fine, 0.0, 0.0, 192.0)
+    if (draw(device, pipeline, screen, view, "tri-8-sphere-fine.pgm", fine) != 0) { return 13 }
+    setView(view, fine, 1.0, 0.0, 192.0)
+    return draw(device, pipeline, screen, view, "tri-9-sphere-fine-wire.pgm", fine) * 13
+}
+
+// Rasterize on the GPU, save the picture, and compare every pixel with the CPU running
+// the same kernel (a very few pixels exactly on a triangle's edge may round differently).
+func draw(device: i64, pipeline: i64, screen: ptr<float>, view: ptr<float>, name: string, count: i64) -> i64 {
+    let n: i64 = 192 * 192
+    let out: i64 = metalEmptyBuffer(device, n * 4)
+    let ok: i64 = metalDispatch(device, pipeline, n, metalBuffer(device, screen.toI64(), count * 72), metalBuffer(device, view.toI64(), 32), out, 0)
+    if (ok == 0) { return 1 }
+    let gpu: ptr<float> = metalContents(out).toPtr()
+    savePicture(name, gpu, 192, 192)
+    var differ: i64 = 0
+    for (i = 0; i < n; i = i + 1) {
+        var gap: float = gpu[i] - rasterize(i, screen, view)
+        if (gap < 0.0) { gap = 0.0 - gap }
+        if (gap > 0.01) { differ = differ + 1 }
+    }
+    if (differ > 40) { return 1 }
+    return 0
+}

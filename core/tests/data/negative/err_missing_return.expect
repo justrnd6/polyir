@@ -1,0 +1,14 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"f","paramNames":["a"],"paramTypes":[{"k":"HInt","bits":64}],"ret":{"k":"HInt","bits":64},"body":[{"k":"HIf","cond":{"k":"HBinary","op":"Gt","left":{"k":"HLocal","name":"a","ty":{"k":"HInt","bits":64},"at":[2,7]},"right":{"k":"HConstInt","value":0,"ty":{"k":"HInt","bits":64},"at":[2,11]},"ty":{"k":"HInt","bits":1},"at":[2,9]},"then":[{"k":"HReturn","value":{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[2,23]},"at":[2,23]}],"else":[],"at":[2,9]}],"isCoroutine":false,"at":[1,6]},
+{"k":"HFuncDef","name":"main","paramNames":[],"paramTypes":[],"ret":{"k":"HInt","bits":64},"body":[{"k":"HReturn","value":{"k":"HCall","callee":"f","args":[{"k":"HConstInt","value":1,"ty":{"k":"HInt","bits":64},"at":[4,31]}],"ty":{"k":"HInt","bits":64},"at":[4,29]},"at":[4,29]}],"isCoroutine":false,"at":[4,6]}]
+$ --emit-msl
+exit 1
+kernel check failed:
+  no `kernel func` found

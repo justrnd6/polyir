@@ -1,0 +1,38 @@
+// The python target as a virtual environment: build/pip/requirements.txt with the pip deps (and git ones) and the
+// program polyir generates. pip resolves, downloads and verifies them into build/pip/venv.
+import "../Project.poly"
+
+func pipPlan(p: Project, target: string, out: Plan) -> void {
+  let dir: string = toolDir("pip")
+  let file: string = "${dir}/${programName(p)}.py"
+  out.steps.push(emitStep(p, target, file))
+  if (len(pipDeps(p)) == 0) {
+    out.steps.push(step("run", target, ["python3", "-W", "error", file], pythonHint()))
+  } else {
+    pipWithDeps(p, dir, file, out)
+  }
+}
+
+func pipWithDeps(p: Project, dir: string, file: string, out: Plan) -> void {
+  addFile(out, "${dir}/requirements.txt", pipDeps(p).join("\n") + "\n")
+  out.steps.push(step("build", "python", ["python3", "-m", "venv", "${dir}/venv"], pythonHint()))
+  out.steps.push(step("build", "python", ["${dir}/venv/bin/pip", "install", "--quiet", "--disable-pip-version-check", "-r", "${dir}/requirements.txt"],
+    pythonHint()))
+  out.steps.push(step("run", "python", ["${dir}/venv/bin/python", "-W", "error", file], pythonHint()))
+}
+
+func pythonHint() -> string {
+  return "install Python 3 from python.org"
+}
+
+// Each dependency as a requirements line: compatible with its version, or a git url at its tag.
+func pipDeps(p: Project) -> mutarray<string> {
+  let lines: mutarray<string>
+  for (d in depsFrom(p, "pip")) {
+    lines.push("${d.name}~=${d.version}")
+  }
+  for (d in depsFrom(p, "git")) {
+    lines.push("${d.name} @ git+${d.url}@${d.tag}")
+  }
+  return lines
+}

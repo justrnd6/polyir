@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  duplicate struct 'P'
+$ --analyze --strict
+exit 1
+check failed:
+  duplicate struct 'P'
+$ --emit-hir-json
+exit 1
+check failed:
+  duplicate struct 'P'
+$ --emit-msl
+exit 1
+kernel check failed:
+  duplicate struct 'P'

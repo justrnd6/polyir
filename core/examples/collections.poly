@@ -1,0 +1,57 @@
+// Lists, maps and sets come in two kinds. `array<T>`, `map<K,V>` and `set<T>` cannot be changed once they are made: `with`
+// gives a new one with the change. `mutarray<T>`, `mutmap<K,V>` and `mutset<T>` change in place (`push`, `add`, `m[k] = v`).
+// `freeze()` turns a changeable one into an unchangeable copy, and `thaw()` the other way.
+
+struct Point(x: i64, y: i64);
+
+// Growing an immutable array: every `with` is a new array; the old one is unchanged.
+func grow() -> i64 {
+  let none: array<i64> = array<i64>()
+  let one: array<i64> = none.with(10)
+  let two: array<i64> = one.with(20)
+  return len(none) * 1000 + len(one) * 100 + len(two) * 10 + two[1] / 10
+}
+
+// The same list built in place, then frozen for the rest of the program.
+func build() -> array<i64> {
+  let xs: mutarray<i64> = mutarray<i64>()
+  for (i = 0; i < 5; i = i + 1) {
+    push(xs, i * i)
+  }
+  return xs.freeze()
+}
+
+// A map and a set are built by `with` too; `has` asks about a key, `m[k]` reads a value (0 when the key is absent).
+func lookup() -> i64 {
+  let ages: map<string, i64> = map<string, i64>().with("ann", 31).with("bo", 27)
+  let seen: set<i64> = set<i64>().with(3).with(5).with(3)
+  var score: i64 = ages["ann"] + ages["bo"] + len(seen)
+  if (ages.has("cy") == false) { score = score + 100 }
+  if (seen.has(5)) { score = score + 1000 }
+  return score
+}
+
+// An immutable struct is a good key: it is compared field by field and hashed from its fields.
+func visited() -> i64 {
+  let seen: mutset<Point> = mutset<Point>(16)
+  seen.add(Point(x: 1, y: 2))
+  seen.add(Point(x: 3, y: 4))
+  seen.add(Point(x: 1, y: 2))
+  var score: i64 = len(seen)
+  if (seen.has(Point(x: 3, y: 4))) { score = score + 10 }
+  return score
+}
+
+// `==` compares what collections hold, whatever order they were built in.
+func sameThings() -> i64 {
+  let a: map<i64, string> = map<i64, string>().with(1, "a").with(2, "b")
+  let b: map<i64, string> = map<i64, string>().with(2, "b").with(1, "a")
+  var score: i64 = 0
+  if (a == b) { score = score + 1 }
+  if (a === b) { score = score + 100 }
+  return score
+}
+
+func main() -> i64 {
+  return grow() + build()[4] * 10000 + lookup() + visited() + sameThings()
+}

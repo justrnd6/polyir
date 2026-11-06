@@ -1,0 +1,7 @@
+// This project's own tasks, added to meta-build's plan (see tools/metabuild/src/Extend.poly):
+//   poly hir      writes the checked program as typed HIR, to read
+//   every build   first writes how long the source is
+func extend(p: Project, out: Plan) -> void {
+  out.steps.push(taskWriting("hir", ["polyir", p.main, "--emit-hir"], "build/main.hir"))
+  out.steps.push(taskWriting("build", ["wc", "-l", p.main], "build/lines.txt"))
+}

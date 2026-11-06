@@ -1,0 +1,123 @@
+// STREAM: the half of sound output that does not depend on the operating system.
+//
+// HOW SOUND OUTPUT WORKS. The sound hardware consumes samples at a fixed speed (44,100 frames every
+// second, say) and never waits. A program hands it BUFFERS, blocks of a few thousand frames, and
+// the hardware plays them in order. If the next buffer is not ready in time the sound stutters, so
+// a program that makes sound as it goes (a game, a synthesizer, an instrument) must refill each
+// buffer from a CALLBACK just before the hardware needs it.
+//
+// This file describes that from the program's side. A program gives a FILL FUNCTION:
+//
+//   func fill(state: i64, buffer: ptr<float>, frames: i64, first: i64) -> i64
+//
+// that the system calls whenever it needs more sound. It must write `frames` frames into `buffer`
+// (a frame holds one float, from -1 to +1, for each channel, interleaved: left, right, left, right)
+// and return how many it really wrote; returning 0 means "the sound is over". `first` is the number
+// of the first frame asked for (the position in the sound), and `state` is any address the program
+// handed over when it started the stream: a place to keep a note to itself, such as a phase or a
+// Sound to read from. Because it can be called from another thread at any time, it should do little
+// and never wait.
+//
+// The files audio/macos.poly, audio/linux.poly and audio/windows.poly each define
+// `audioStreamAt`, which opens the speakers and keeps calling `streamFeed` below. `ideas/audio-output/Audio.poly`
+// imports the one for the system the program is built on (see the `{os}` in its import line).
+import "../audio/Sound.poly"
+
+extern func calloc(count: i64, size: i64) -> i64
+
+// A running stream. The fields never change; the numbers that do change live behind `progress`
+// (a struct is a value, not memory): [0] the number of the next frame to make, [1] 1 once the fill
+// function has said the sound is over, [2] how many buffers have been handed to the hardware and
+// not yet played, [3] how many times the hardware has asked for more.
+struct Stream(
+    fill: ptr<func(i64, ptr<float>, i64, i64) -> i64>,
+    state: i64,
+    channels: i64,
+    rate: i64,
+    limit: i64,
+    volume: float,
+    progress: ptr<i64>
+)
+
+// A new stream. `seconds` is the longest it may run (0 = until the fill function says it is over)
+// and `volume` scales every sample (1 = unchanged, 0 = silent, though the hardware still runs).
+func streamNew(fill: ptr<func(i64, ptr<float>, i64, i64) -> i64>, state: i64, channels: i64, rate: i64,
+        seconds: float, volume: float) -> Stream {
+    let limit: i64 = (seconds * rate.toFloat()).toI64()
+    let counters: ptr<i64> = calloc(4, 8).toPtr()
+    return Stream(fill: fill, state: state, channels: channels, rate: rate, limit: limit, volume: volume, progress: counters)
+}
+
+// How many frames each buffer holds, and how many are kept in flight. Three buffers of 2,048 frames
+// at 44,100 frames a second is about 46 milliseconds each: long enough to be reliable, short
+// enough that a change in the program is heard within a tenth of a second.
+func streamBufferFrames() -> i64 {
+    return 2048
+}
+
+func streamBufferCount() -> i64 {
+    return 3
+}
+
+// Make the next `frames` frames (fewer near the end of the sound) in `buffer`: returns how many
+// were made, or 0 once the sound is over. Called by every platform's output loop or callback.
+func streamFeed(stream: Stream, buf: ptr<float>, frames: i64) -> i64 {
+    let first: i64 = stream.progress[0]
+    let wanted: i64 = streamWanted(stream, first, frames)
+    if (wanted <= 0) { return streamFinish(stream) }
+    let fill: ptr<func(i64, ptr<float>, i64, i64) -> i64> = stream.fill
+    let made: i64 = fill(stream.state, buf, wanted, first)
+    if (made <= 0) { return streamFinish(stream) }
+    streamScale(buf, made * stream.channels, stream.volume)
+    stream.progress[0] = first + made
+    stream.progress[3] = stream.progress[3] + 1
+    return made
+}
+
+// `frames`, or fewer when the stream's time limit comes sooner.
+func streamWanted(stream: Stream, first: i64, frames: i64) -> i64 {
+    if (stream.limit > 0 && stream.limit - first < frames) { return stream.limit - first }
+    return frames
+}
+
+// Mark the stream as over (the platform code then lets the queued buffers play out); always 0.
+func streamFinish(stream: Stream) -> i64 {
+    stream.progress[1] = 1
+    return 0
+}
+
+func streamScale(buf: ptr<float>, count: i64, volume: float) -> i64 {
+    if (volume == 1.0) { return 0 }
+    for (i = 0; i < count; i = i + 1) {
+        buf[i] = buf[i] * volume
+    }
+    return 0
+}
+
+// Has the fill function said the sound is over?
+func streamFinished(stream: Stream) -> i1 {
+    return stream.progress[1] == 1
+}
+
+// ── playing a Sound ──────────────────────────────────────────────────────────────────────
+// The fill function that plays a Sound: `state` is the address of a Sound stored in memory (see
+// `soundStream` below), and `first` says where in it to read from.
+func soundFill(state: i64, buf: ptr<float>, frames: i64, first: i64) -> i64 {
+    let view: ptr<Sound> = state.toPtr()
+    let sound: Sound = view[0]
+    var made: i64 = frames
+    if (first + made > sound.count) { made = sound.count - first }
+    if (made <= 0) { return 0 }
+    for (i = 0; i < made * sound.channels; i = i + 1) {
+        buf[i] = sound.samples[first * sound.channels + i]
+    }
+    return made
+}
+
+// A stream that plays `s` once at `volume` (the Sound is copied into memory the stream keeps).
+func soundStream(s: Sound, volume: float) -> Stream {
+    let slot: ptr<Sound> = calloc(1, 32).toPtr()
+    slot[0] = s
+    let fill: ptr<func(i64, ptr<float>, i64, i64) -> i64> = soundFill
+    return streamNew(fill, slot.toI64(), s.channels, s.rate, 0.0, volume)
+}

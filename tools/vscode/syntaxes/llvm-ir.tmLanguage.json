@@ -1,0 +1,78 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "llvm-ir",
+  "scopeName": "source.llvm-ir",
+  "comment": "Minimal — just enough to read the polyir IR preview pane (identifiers, types, keywords, comments). Not a complete LLVM textual IR grammar.",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#global-identifiers" },
+    { "include": "#local-identifiers" },
+    { "include": "#types" },
+    { "include": "#keywords" },
+    { "include": "#numbers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.semicolon.llvm-ir", "match": ";.*$" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "name": "string.quoted.double.llvm-ir", "match": "\"[^\"]*\"" }
+      ]
+    },
+    "global-identifiers": {
+      "comment": "@name — functions (incl. llvm.coro.* intrinsics), globals",
+      "patterns": [
+        { "name": "entity.name.function.llvm-ir", "match": "@[a-zA-Z0-9_.]+" }
+      ]
+    },
+    "local-identifiers": {
+      "comment": "%name / %N — SSA registers, labels, struct type names (%polyir_coro)",
+      "patterns": [
+        { "name": "variable.other.llvm-ir", "match": "%[a-zA-Z0-9_.]+" }
+      ]
+    },
+    "types": {
+      "patterns": [
+        { "name": "support.type.primitive.llvm-ir", "match": "\\b(i1|i8|i16|i32|i64|i128|float|double|void|ptr|token|label)\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.llvm-ir",
+          "match": "\\b(define|declare|ret|br|switch|unreachable|resume)\\b"
+        },
+        {
+          "name": "keyword.other.llvm-ir",
+          "match": "\\b(alloca|load|store|getelementptr|extractvalue|insertvalue|phi|select|call|icmp|fcmp|atomicrmw|cmpxchg|fence|bitcast|trunc|zext|sext|fptrunc|fpext|fptosi|fptoui|sitofp|uitofp|ptrtoint|inttoptr|shufflevector|extractelement|insertelement|add|sub|mul|sdiv|udiv|srem|urem|fadd|fsub|fmul|fdiv|and|or|xor|shl|lshr|ashr)\\b"
+        },
+        {
+          "name": "storage.modifier.llvm-ir",
+          "match": "\\b(external|internal|private|global|constant|target|triple|datalayout|presplitcoroutine|align|none|to|label|volatile|atomic|monotonic|acquire|release|acq_rel|seq_cst|unordered)\\b"
+        },
+        {
+          "name": "constant.language.llvm-ir",
+          "match": "\\b(true|false|null|undef|zeroinitializer)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.llvm-ir", "match": "-?\\b[0-9]+(\\.[0-9]+)?\\b" }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.section.braces.llvm-ir", "match": "[{}]" },
+        { "name": "punctuation.section.brackets.llvm-ir", "match": "[\\[\\]]" },
+        { "name": "punctuation.section.parens.llvm-ir", "match": "[()]" },
+        { "name": "punctuation.separator.comma.llvm-ir", "match": "," }
+      ]
+    }
+  }
+}

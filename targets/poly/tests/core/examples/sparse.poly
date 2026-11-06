@@ -1,0 +1,37 @@
+func writeAndReadBack() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0, 0] = 10
+  sp[2, 3] = 20
+  sp[5, 1] = 30
+  return sp[2, 3] * 100 + sp[5, 1] * 10 + sp[0, 0]
+}
+
+func unsetCellIsZero() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[1, 1] = 99
+  return sp[9, 9]
+}
+
+func lastWriteWins() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[3, 3] = 1
+  sp[3, 3] = 2
+  sp[3, 3] = 3
+  return sp[3, 3]
+}
+
+func oneDimensionalRoundTrip() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0] = 100
+  sp[7] = 200
+  sp[3] = 300
+  return sp[7] * 100 + sp[3] * 10 + sp[0]
+}
+
+func lenAfterWrites() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0, 0] = 1
+  sp[1, 1] = 2
+  sp[1, 1] = 3
+  return sp.len()
+}

@@ -1,0 +1,24 @@
+// The 1D discrete Fourier transform, shared by the examples that look at the frequencies in a signal.
+extern func sqrtf(x: float) -> float
+extern func sinf(x: float) -> float
+extern func cosf(x: float) -> float
+
+// 1D DFT. Bin k asks: "how much of a wave that repeats k times across the list is in
+// here?" It multiplies the signal, sample by sample, by a cosine and a sine of that
+// speed and adds up the results (a dot product with each wave). A big total means the
+// wave is present. `re` and `im` are the two totals (cosine and sine parts); the
+// answer is their combined size, scaled so a sine of height 1 reads as 1.
+// p: 0 the number of samples.
+kernel func dft(index k: i32, uniform x: ptr<float>, uniform p: ptr<float>) -> float {
+    let n: i32 = p[0].toI32()
+    var re: float = 0.0
+    var im: float = 0.0
+    for (j = 0; j < n; j = j + 1) {
+        // The wave's position at sample j, in turns (k * j / n of a full cycle).
+        // The remainder keeps the angle small, which keeps the cosine and sine accurate.
+        let turns: float = ((k * j) % n).toFloat() / n.toFloat()
+        re = re + x[j] * cosf(6.2831853 * turns)
+        im = im - x[j] * sinf(6.2831853 * turns)
+    }
+    return 2.0 * sqrtf(re * re + im * im) / n.toFloat()
+}

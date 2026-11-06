@@ -1,0 +1,197 @@
+// The write barrier (docs/memory.md, Part 3), checked where the compiled code stores a reference into an object. Each check takes the only
+// reference to a list out of an object that the collector may not have looked at yet, overwriting it, and keeps the list only in its own
+// variables and in objects it makes afterwards (which a cycle under way counts as already looked at). That is exactly the move the barrier
+// is for: without it, the collector never sees the list and frees it while the program still uses it. Run under POLYIR_GC_STRESS=incremental
+// (a slice of one word at every safe point, the marks checked at the end of every marking), a store without its barrier stops the program
+// with "gc verify: ...". Each line printed is one check; the VM prints the same lines.
+
+struct Holder {
+    var item: array<i64>
+}
+
+// Garbage: lists made and dropped, each round a safe point.
+func churn(n: i64) -> i64 {
+    var total: i64 = 0
+    for (k = 0; k < n; k = k + 1) {
+        let junk: array<i64> = array<i64>().with(k).with(k + 1)
+        total = total + junk[1]
+    }
+    return total
+}
+
+func listOf(n: i64) -> array<i64> {
+    return array<i64>().with(n)
+}
+
+func world(n: i64) -> mutarray<array<i64> > {
+    let all: mutarray<array<i64> > = mutarray<array<i64> >()
+    for (i = 0; i < n; i = i + 1) {
+        push(all, listOf(i))
+    }
+    return all
+}
+
+func sum(all: mutarray<array<i64> >) -> i64 {
+    var total: i64 = 0
+    for (i = 0; i < len(all); i = i + 1) {
+        total = total + all[i][0]
+    }
+    return total
+}
+
+func sumHeld(all: mutarray<Holder>) -> i64 {
+    var total: i64 = 0
+    for (i = 0; i < len(all); i = i + 1) {
+        total = total + all[i].item[0]
+    }
+    return total
+}
+
+// Elements: `all[a] = all[b]` overwrites the only reference the heap has to the list `held`, which goes back in at `b` (a part of the block
+// the collector may have looked at already). 0 + 1 + ... + 63.
+func elements() -> i64 {
+    let all: mutarray<array<i64> > = world(64)
+    for (r = 0; r < 200; r = r + 1) {
+        let a: i64 = r % 64
+        let b: i64 = (r * 7 + 3) % 64
+        let held: array<i64> = all[a]
+        all[a] = all[b]
+        churn(3)
+        all[b] = held
+    }
+    return sum(all)
+}
+
+// Fields: each holder's list moves into a new holder. 40 * 11.
+func fields() -> i64 {
+    let holders: mutarray<Holder> = mutarray<Holder>()
+    for (i = 0; i < 40; i = i + 1) {
+        push(holders, Holder { item: listOf(11) })
+    }
+    churn(30)
+    let kept: mutarray<Holder> = mutarray<Holder>()
+    for (r = 0; r < 40; r = r + 1) {
+        let held: array<i64> = holders[r].item
+        holders[r].item = listOf(0)
+        churn(3)
+        push(kept, Holder { item: held })
+    }
+    return sumHeld(kept)
+}
+
+// A closure that swaps the list in its captured variable's cell for a new one and gives the old one back.
+func swapper() -> closure(i64) -> array<i64> {
+    var current: array<i64> = listOf(7)
+    return closure(n: i64) -> array<i64> {
+        let old: array<i64> = current
+        current = listOf(n)
+        return old
+    }
+}
+
+// Captured variables' cells, overwritten while the lists they held are still in use. 40 * 7.
+func cells() -> i64 {
+    let swappers: mutarray<closure(i64) -> array<i64> > = mutarray<closure(i64) -> array<i64> >()
+    for (i = 0; i < 40; i = i + 1) {
+        push(swappers, swapper())
+    }
+    churn(30)
+    let kept: mutarray<Holder> = mutarray<Holder>()
+    for (r = 0; r < 40; r = r + 1) {
+        let swap: closure(i64) -> array<i64> = swappers[r]
+        let held: array<i64> = swap(0)
+        churn(3)
+        push(kept, Holder { item: held })
+    }
+    return sumHeld(kept)
+}
+
+// Lists truncated and pushed to: the push overwrites the element the truncate left behind (natively; the VM drops it at the truncate).
+// 80 * 2. Half the rounds go through the lists in the order the collector looks at them, half in the opposite order.
+func truncateOne(all: mutarray<array<i64> >, kept: mutarray<Holder>) -> i64 {
+    let held: array<i64> = all[2]
+    all.truncate(2)
+    push(all, listOf(0))
+    churn(3)
+    push(kept, Holder { item: held })
+    return 0
+}
+
+func truncated() -> i64 {
+    let lists: mutarray<mutarray<array<i64> > > = mutarray<mutarray<array<i64> > >()
+    for (i = 0; i < 80; i = i + 1) {
+        push(lists, world(3))
+    }
+    churn(30)
+    let kept: mutarray<Holder> = mutarray<Holder>()
+    for (r = 0; r < 40; r = r + 1) {
+        truncateOne(lists[r], kept)
+    }
+    for (r = 79; r >= 40; r = r - 1) {
+        truncateOne(lists[r], kept)
+    }
+    return sumHeld(kept)
+}
+
+// A coroutine's yield slot, overwritten by every yield while the caller keeps what the last one gave. 0 + 1 + ... + 39.
+coro func counting(n: i64) -> array<i64> {
+    for (i = 0; i < n; i = i + 1) {
+        churn(3)
+        yield listOf(i)
+    }
+}
+
+func yields() -> i64 {
+    let kept: mutarray<Holder> = mutarray<Holder>()
+    for (xs in counting(40)) {
+        churn(3)
+        push(kept, Holder { item: xs })
+    }
+    return sumHeld(kept)
+}
+
+// A coroutine's own variables, overwritten after it resumes (a coroutine writes its frame without barriers; the collector looks at the
+// whole frame when it resumes). Each coroutine is resumed three times: the first gives a list to `current`; the second moves it to `last`
+// and gives it away in a holder; the third overwrites `last`, so the holder has the only reference. 40 * 3. The rounds go from the last
+// coroutine to the first, the opposite of the order the collector looks at them in.
+coro func shuffling() -> Holder {
+    var current: array<i64> = listOf(3)
+    yield Holder { item: listOf(0) }
+    var last: array<i64> = current
+    current = listOf(0)
+    churn(3)
+    yield Holder { item: last }
+    last = listOf(0)
+    churn(3)
+    yield Holder { item: last }
+}
+
+func frames() -> i64 {
+    let started: mutarray<coro<Holder> > = mutarray<coro<Holder> >()
+    for (i = 0; i < 40; i = i + 1) {
+        let made: coro<Holder> = shuffling()
+        made.resume()
+        push(started, made)
+    }
+    churn(30)
+    let kept: mutarray<Holder> = mutarray<Holder>()
+    for (r = 39; r >= 0; r = r - 1) {
+        let step: coro<Holder> = started[r]
+        let second: variant<Holder> = step.resume()
+        push(kept, second.unwrapAt(0))
+        step.resume()
+    }
+    return sumHeld(kept)
+}
+
+// Each check makes its objects, then churns long enough for a new cycle to begin, so they were made before the cycle the check runs in (an
+// object made during a cycle is black, and could hide nothing).
+func main() -> i64 {
+    print(str(elements()))
+    print(str(fields()))
+    print(str(cells()))
+    print(str(truncated()))
+    print(str(yields()))
+    print(str(frames()))
+    return 0
+}

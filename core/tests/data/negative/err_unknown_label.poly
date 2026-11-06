@@ -1,0 +1,4 @@
+func main() -> i64 {
+  goto nowhere()
+  return 0
+}

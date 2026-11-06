@@ -1,0 +1,6 @@
+struct Rect(width: i64, height: i64) {
+}
+
+func area(r: Rect) -> i64 {
+  return r.width * r.height
+}

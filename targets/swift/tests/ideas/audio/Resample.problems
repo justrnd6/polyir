@@ -1,0 +1,2 @@
+targets/swift/Swift.translate:192: `extern(name, params, result)` is unsupported: this Swift keeps polyir's memory in its classes, not in C's
+targets/swift/Swift.translate:329: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

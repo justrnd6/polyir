@@ -1,0 +1,10 @@
+import "../Vulkan.poly"
+import "shared/camera.poly"
+
+func main() -> i64 {
+  let gpu: i64 = vulkanStart()
+  if (gpu == 0) {
+    return 10
+  }
+  return runAll(gpu, "")
+}

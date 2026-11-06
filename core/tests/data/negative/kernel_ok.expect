@@ -1,0 +1,25 @@
+$ --analyze
+exit 0
+ok
+$ --analyze --strict
+exit 0
+ok
+$ --emit-hir-json
+exit 0
+[{"k":"HFuncDef","name":"scale","paramNames":["x","k"],"paramTypes":[{"k":"HFloat","bits":32},{"k":"HFloat","bits":32}],"ret":{"k":"HFloat","bits":32},"body":[{"k":"HReturn","value":{"k":"HBinary","op":"Mul","left":{"k":"HLocal","name":"x","ty":{"k":"HFloat","bits":32},"at":[2,10]},"right":{"k":"HLocal","name":"k","ty":{"k":"HFloat","bits":32},"at":[2,14]},"ty":{"k":"HFloat","bits":32},"at":[2,12]},"at":[2,12]}],"isCoroutine":false,"stage":"compute","roles":[0,1],"at":[1,13]}]
+$ --emit-msl
+exit 0
+#include <metal_stdlib>
+using namespace metal;
+
+inline float scale_item(float x, float k) {
+    return (x * k);
+}
+
+kernel void scale(device const float* x_in [[buffer(0)]],
+    constant float& k [[buffer(1)]],
+    device float* __out [[buffer(2)]],
+    uint __gid [[thread_position_in_grid]]) {
+    __out[__gid] = scale_item(x_in[__gid], k);
+}
+

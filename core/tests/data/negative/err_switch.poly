@@ -1,0 +1,13 @@
+func main() -> i64 {
+  switch (3) {
+    1 => one()
+    1 => two()
+    else => other()
+  }
+  label one():
+  return 1
+  label two():
+  return 2
+  label other():
+  return 3
+}

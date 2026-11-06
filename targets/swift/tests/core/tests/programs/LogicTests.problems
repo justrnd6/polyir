@@ -1,0 +1,2 @@
+targets/swift/Swift.translate:328: `cast(value: ptr, type)` is unsupported: a pointer is a list here, not an address
+targets/swift/Swift.translate:329: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

@@ -1,0 +1,2 @@
+fill function called 22 times for 44100 frames in 1115 ms
+cycles counted: left 329, right 494

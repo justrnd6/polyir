@@ -1,0 +1,6 @@
+targets/python/Python.translate:124: `extern(name, params, result)` is unsupported: Python cannot call a C function
+targets/python/Python.translate:440: `atomicLoad(object, order)` is unsupported: Python has no memory to share between threads
+targets/python/Python.translate:441: `atomicStore(object, value, order)` is unsupported: Python has no memory to share between threads
+targets/python/Python.translate:442: `atomicRmw(object, op, value, order)` is unsupported: Python has no memory to share between threads
+targets/python/Python.translate:443: `cmpxchg(object, expected, value, success, failure)` is unsupported: Python has no memory to share between threads
+targets/python/Python.translate:444: `fence(order)` is unsupported: Python has no memory to share between threads

@@ -1,0 +1,277 @@
+// Structs with a `var` field are REFERENCE types: every name for one is the same object, as in Java. Structs with no `var`
+// field are immutable values. `val` makes an independent copy (on a parameter, or in front of an expression).
+import "Check.poly"
+
+struct Counter {
+    var n: i64
+    id: i64
+    func bump() -> i64 {
+        this.n = this.n + 1
+        return this.n
+    }
+}
+
+struct Pt(x: i64, y: i64)
+
+struct Holder {
+    var items: mutarray<i64>
+    var inner: Counter
+}
+
+struct Cell<T> {
+    var v: T
+}
+
+interface Reading {
+    func read() -> i64
+}
+
+struct Gauge : Reading {
+    var level: i64
+    func read() -> i64 { return this.level }
+}
+
+func addTen(c: Counter) -> i64 {
+    c.n = c.n + 10
+    return 0
+}
+
+func addTenOnACopy(c: val Counter) -> i64 {
+    c.n = c.n + 10
+    return c.n
+}
+
+func checkTwoNamesForOneObjectShareIt() -> double {
+    let a: Counter = Counter(n: 1, id: 7)
+    let b: Counter = a
+    b.n = 5
+    return offInt(a.n, 5) + offInt(a.id, 7)
+}
+
+func checkACalleeChangesTheCallersObject() -> double {
+    let a: Counter = Counter(n: 1, id: 0)
+    addTen(a)
+    return offInt(a.n, 11)
+}
+
+func checkAValParameterIsTheCalleesOwnCopy() -> double {
+    let a: Counter = Counter(n: 1, id: 0)
+    let seen: i64 = addTenOnACopy(a)
+    return offInt(seen, 11) + offInt(a.n, 1)
+}
+
+func checkValInFrontOfAnExpressionCopies() -> double {
+    let a: Counter = Counter(n: 1, id: 3)
+    let b: Counter = val a
+    b.n = 50
+    return offInt(a.n, 1) + offInt(b.n, 50) + offInt(b.id, 3)
+}
+
+func checkCopyMethodAndValAgree() -> double {
+    let a: Counter = Counter(n: 4, id: 0)
+    let b: Counter = a.copy()
+    a.n = 9
+    return offInt(b.n, 4)
+}
+
+func checkAMethodChangesThis() -> double {
+    let a: Counter = Counter(n: 0, id: 0)
+    a.bump()
+    a.bump()
+    return offInt(a.n, 2)
+}
+
+func checkAnImmutableStructIsAValue() -> double {
+    let p: Pt = Pt(x: 1, y: 2)
+    let q: Pt = val p
+    let r: Pt = p.copy()
+    return offInt(q.x + r.y, 3)
+}
+
+func checkAFieldHoldingAnotherReferenceStruct() -> double {
+    let h: Holder = Holder(items: mutarray<i64>(), inner: Counter(n: 1, id: 0))
+    let alias: Holder = h
+    alias.inner.n = 8
+    push(alias.items, 5)
+    return offInt(h.inner.n, 8) + offInt(len(h.items), 1)
+}
+
+func checkAFieldCanBeReplacedWithAnotherObject() -> double {
+    let h: Holder = Holder(items: mutarray<i64>(), inner: Counter(n: 1, id: 0))
+    let keep: Counter = h.inner
+    h.inner = Counter(n: 2, id: 0)
+    return offInt(keep.n, 1) + offInt(h.inner.n, 2)
+}
+
+func checkAGenericStructWithAVarField() -> double {
+    let c: Cell<i64> = Cell(v: 1)
+    let d: Cell<i64> = c
+    d.v = 9
+    return offInt(c.v, 9)
+}
+
+func checkAnInterfaceValueSeesLaterChanges() -> double {
+    let g: Gauge = Gauge(level: 1)
+    let r: Reading = g
+    g.level = 42
+    return offInt(r.read(), 42)
+}
+
+func checkAStructInADarrayIsTheSameObject() -> double {
+    let all: mutarray<Counter> = mutarray<Counter>()
+    let a: Counter = Counter(n: 1, id: 0)
+    push(all, a)
+    a.n = 6
+    return offInt(all[0].n, 6)
+}
+
+func checkAStructInAClosureIsShared() -> double {
+    let a: Counter = Counter(n: 1, id: 0)
+    let f: closure() -> i64 = closure() -> i64 {
+        a.n = a.n + 1
+        return a.n
+    }
+    f()
+    return offInt(a.n, 2)
+}
+
+// ── objects nothing else can see are released; the others are kept ────────────────
+func makeCounter(start: i64) -> Counter {
+    let c: Counter = Counter(n: start, id: 1)
+    c.n = c.n + 1
+    return c
+}
+
+func lend(c: Counter) -> i64 {
+    return c.n * 2
+}
+
+func keepIn(store: mutarray<Counter>, c: Counter) -> i64 {
+    push(store, c)
+    return 0
+}
+
+func checkAReturnedObjectSurvives() -> double {
+    let a: Counter = makeCounter(5)
+    let b: Counter = makeCounter(10)
+    return offInt(a.n * 100 + b.n, 611)
+}
+
+func checkAnObjectLentToACalleeIsUsableAfterwards() -> double {
+    var total: i64 = 0
+    for (i = 0; i < 100; i = i + 1) {
+        let c: Counter = Counter(n: i, id: 0)
+        total = total + lend(c) + c.n
+        c.n = 0
+    }
+    return offInt(total, 3 * 4950)
+}
+
+func checkAnObjectAnotherCalleeKeepsSurvives() -> double {
+    let store: mutarray<Counter> = mutarray<Counter>()
+    for (i = 0; i < 4; i = i + 1) {
+        let c: Counter = Counter(n: i * 10, id: 0)
+        keepIn(store, c)
+    }
+    return offInt(store[0].n + store[1].n + store[2].n + store[3].n, 60)
+}
+
+func checkAValParameterCopyIsReleasedAndTheOriginalIsNot() -> double {
+    let a: Counter = Counter(n: 1, id: 0)
+    var total: i64 = 0
+    for (i = 0; i < 50; i = i + 1) {
+        total = total + addTenOnACopy(a)
+    }
+    return offInt(total, 50 * 11) + offInt(a.n, 1)
+}
+
+func earlyReturnWithObjects(n: i64) -> i64 {
+    let c: Counter = Counter(n: n, id: 0)
+    if (n > 5) { return c.n * 2 }
+    c.bump()
+    return c.n
+}
+
+func checkAReturnInsideAnIfReleasesTheObjectAndKeepsTheValue() -> double {
+    return offInt(earlyReturnWithObjects(9) * 100 + earlyReturnWithObjects(2), 1800 + 3)
+}
+
+// ── let fixes the name, var lets it move, val is let over a complete copy ──────────
+func checkLetVarAndValOnReferenceStructs() -> double {
+    let a: Counter = Counter(n: 1, id: 0)
+    let alias: Counter = a
+    val copy: Counter = a
+    var moving: Counter = a
+    a.n = 10
+    moving = Counter(n: 100, id: 0)
+    moving.n = moving.n + 1
+    return offInt(alias.n, 10) + offInt(copy.n, 1) + offInt(moving.n, 101) + offInt(a.n, 10)
+}
+
+func checkValOnAContainerIsAnIndependentCopy() -> double {
+    let d: mutarray<i64> = mutarray<i64>()
+    push(d, 4)
+    val e: mutarray<i64> = d
+    push(d, 5)
+    return offInt(len(e), 1) + offInt(len(d), 2)
+}
+
+// ── the parenthesised shorthand: fields in the header, an optional body for methods ──
+struct Dot(x: i64, y: i64);
+
+struct Span(lo: i64, hi: i64) {
+    func width() -> i64 { return this.hi - this.lo }
+}
+
+struct Meter(var reading: i64, id: i64) {
+    func bump() -> i64 {
+        this.reading = this.reading + 1
+        return this.reading
+    }
+}
+
+struct Wrapper<T>(value: T);
+
+struct Plate(code: i64) : Reading {
+    func read() -> i64 { return this.code }
+}
+
+func checkShorthandStructsWork() -> double {
+    let d: Dot = Dot(x: 3, y: 4)
+    let s: Span = Span(lo: 2, hi: 9)
+    let w: Wrapper<i64> = Wrapper(value: 5)
+    let r: Reading = Plate(code: 7)
+    return offInt(d.x + d.y, 7) + offInt(s.width(), 7) + offInt(w.value, 5) + offInt(r.read(), 7)
+}
+
+func checkAShorthandStructWithAVarFieldIsAReference() -> double {
+    let m: Meter = Meter(reading: 1, id: 2)
+    let alias: Meter = m
+    alias.bump()
+    return offInt(m.reading, 2) + offInt(m.id, 2)
+}
+
+// ── maps that own what they hold ──────────────────────────────────────────────────────
+func checkAHashmapOfObjectsIsUsableThenReleased() -> double {
+    var total: i64 = 0
+    for (i = 0; i < 100; i = i + 1) {
+        let m: mutmap<i64, Counter> = mutmap<i64, Counter>(8)
+        m[1] = Counter(n: i, id: 1)
+        m[2] = Counter(n: 5, id: 2)
+        m[2] = Counter(n: 6, id: 2)
+        m[1].bump()
+        total = total + m[1].n - i + m[2].n + len(m)
+    }
+    return offInt(total, 100 * (1 + 6 + 2))
+}
+
+func checkASparseOfStringsIsUsableThenReleased() -> double {
+    var total: i64 = 0
+    for (i = 0; i < 100; i = i + 1) {
+        let s: sparse<string> = sparse<string>()
+        s[0, 0] = "a" + "b"
+        s[2, 3] = "c" + "d"
+        if (s[2, 3] == "cd") { total = total + len(s) }
+    }
+    return offInt(total, 200)
+}

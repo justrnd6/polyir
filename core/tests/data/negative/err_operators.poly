@@ -1,0 +1,7 @@
+func main() -> i64 {
+  let a: string = "a" - "b"
+  let b: i64 = 1 && 2
+  let c: i64 = !"x"
+  let d: double = 1.5 % 2.0
+  return 0
+}

@@ -1,0 +1,31 @@
+func riskyDouble(x: i64) -> i64 {
+  if (x < 0) {
+    throw 99
+  }
+  return x * 2
+}
+
+func safeDouble(x: i64) -> i64 {
+  var result: i64 = 0
+  try {
+    result = riskyDouble(x)
+  } catch (code) {
+    result = code
+  }
+  return result
+}
+
+func nestedTryCheck(x: i64) -> i64 {
+  var result: i64 = 0
+  try {
+    try {
+      result = riskyDouble(x)
+    } catch (innerCode) {
+      result = innerCode + 1
+      throw result
+    }
+  } catch (outerCode) {
+    result = outerCode * 10
+  }
+  return result
+}

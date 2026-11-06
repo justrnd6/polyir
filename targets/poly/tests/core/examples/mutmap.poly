@@ -1,0 +1,43 @@
+func collisionAndOverwrite() -> i64 {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  hm[0] = 100
+  hm[5] = 500
+  hm[1] = 10
+  hm[1] = 20
+  return hm[0] * 10000 + hm[5] * 10 + hm[1]
+}
+
+func missingKeyIsZero() -> i64 {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  hm[0] = 7
+  return hm[42]
+}
+
+func sizeCheck() -> i64 {
+  let hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+  hm[0] = 1
+  hm[1] = 2
+  hm[1] = 99
+  return hm.len() * 100
+}
+
+func stringKeyedWriteAndReadBack() -> i64 {
+  let hm: mutmap<string, i64> = mutmap<string, i64>(4)
+  hm["one"] = 1
+  hm["two"] = 2
+  hm["one"] = 11
+  return hm["one"] * 100 + hm["two"]
+}
+
+func stringKeyMissingIsZero() -> i64 {
+  let hm: mutmap<string, i64> = mutmap<string, i64>(4)
+  hm["present"] = 5
+  return hm["absent"]
+}
+
+func hashmapPtrValueMissIsSafe() -> i64 {
+  let hm: mutmap<i64, string> = mutmap<i64, string>(4)
+  hm[1] = "present"
+  let missing: string = hm[99]
+  return 1
+}

@@ -1,0 +1,39 @@
+// THE CLASSIC PROBLEMS OF GPU COMPUTING, on the GPU (Vulkan): the same seven problems, kernels and checks as classics.poly
+// (Metal), from shared/classics.poly. For every problem the program runs the kernel through Vulkan and the same kernel on
+// the CPU, checks that the answers agree, and prints how long each took.
+//
+//   polyir --emit-glsl classics-vulkan.poly       (one shader per kernel; tests/gpu.sh splits and compiles them)
+//   polyir classics-vulkan.poly --out classics-vulkan && ./classics-vulkan    (run in this folder)
+//
+// Exit 0 means every answer matched and every check held. 10 no Vulkan GPU, 12 a kernel would not start (or its shader is
+// missing), 13 the GPU and CPU disagree, 14 a property check failed.
+import "../Vulkan.poly"
+import "shared/print.poly"
+import "shared/classics.poly"
+
+// The kernel, ready to run. Vulkan loads a compiled shader file <name>.spv (so `source` is not used). It has four storage
+// buffers (a, b, opts, the result) and one push constant, the number of threads.
+func makePipeline(ctx: i64, source: string, name: string) -> i64 {
+    return vulkanPipeline(ctx, name + ".spv", 4, 4)
+}
+
+// One launch: copy the three inputs into buffers, make an empty buffer for the results, run `outCount` threads, wait, and
+// return a pointer to the results. (If the GPU cannot run it, an array of zeros comes back, so the checks fail loudly.)
+func launch(ctx: i64, pipeline: i64, a: ptr<float>, aCount: i64, b: ptr<float>, bCount: i64, opts: ptr<float>, outCount: i64) -> ptr<float> {
+    let push: i64 = words(2)
+    let slots: ptr<i32> = push.toPtr()
+    slots[0] = outCount.toI32()
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    buffers[0] = vulkanBuffer(ctx, a.toI64(), aCount * 4)
+    buffers[1] = vulkanBuffer(ctx, b.toI64(), bCount * 4)
+    buffers[2] = vulkanBuffer(ctx, opts.toI64(), 16)
+    buffers[3] = vulkanEmptyBuffer(ctx, outCount * 4)
+    if (vulkanDispatchBuffers(ctx, pipeline, outCount, push, buffers, 4) == 0) { return calloc(outCount, 4).toPtr() }
+    return vulkanContents(buffers[3]).toPtr()
+}
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    return runAll(gpu, "")
+}

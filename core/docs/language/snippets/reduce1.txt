@@ -1,0 +1,4 @@
+sum of 1,048,579 numbers, average of 20 runs (ms x 10):
+  pair-adding tree: 21 launches, 4.9 ms
+  workgroup partial sums: 3 launches, 0.9 ms
+  one launch, atomic float add: 1 launches, 2.1 ms

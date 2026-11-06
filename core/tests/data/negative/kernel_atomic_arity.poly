@@ -1,0 +1,2 @@
+kernel func d(index i: i32, writable c: ptr<i32>) -> i32 { atomicMax(c, 0)
+  return 0 }

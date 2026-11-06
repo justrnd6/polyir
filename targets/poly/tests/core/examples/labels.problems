@@ -1,0 +1,3 @@
+targets/poly/Poly.translate:175: `machine(state, cases)` is unimplemented: the tree holds labels as a machine; .poly writes them as labels
+targets/poly/Poly.translate:176: `case(state, number, body)` is unimplemented: the tree holds labels as a machine; .poly writes them as labels
+targets/poly/Poly.translate:177: `jump(state, number)` is unimplemented: the tree holds labels as a machine; .poly writes them as labels

@@ -1,0 +1,50 @@
+// AN IMAGE AS A SIGNAL (Vulkan): the same kernels, pictures and checks as pixels.poly (Metal), from shared/pixels.poly.
+// A picture is a list of numbers, one measurement per position, and the GPU's thread number is simply the position in
+// that list. Each kernel runs through Vulkan and on the CPU and the pictures must agree, and the same four properties of
+// the maths are checked (averaging keeps the mean, enlarge-then-decimate returns the small picture, bilinear stays inside
+// the original's range, a 2-bit picture has at most four levels).
+//
+//   polyir --emit-glsl pixels-vulkan.poly       (one shader per kernel; tests/gpu.sh splits and compiles them)
+//   polyir pixels-vulkan.poly --out pixels-vulkan && ./pixels-vulkan    (run in this folder)
+//
+// Prints a small table of pixel numbers and saves pixels-*.ppm and pixels-scan.pgm. Exit 0 means all matched. 10 no Vulkan
+// GPU, 11 a shader is missing, 12 a launch failed, 13 the GPU and CPU disagree, 14 a property failed.
+import "../Vulkan.poly"
+import "shared/picture.poly"
+import "shared/plot.poly"
+import "shared/print.poly"
+import "shared/pixels.poly"
+
+// One kernel on the GPU: `outCount` output pixels from the source picture (`srcW` x `srcH`) and a setting. The shader is
+// <name>.spv with three storage buffers (the picture, the settings, the result) and one push constant, the output count.
+// (`device` is the Vulkan context; `source` is not used: Vulkan loads a compiled shader file instead of source text.)
+func runKernel(device: i64, source: string, name: string, img: ptr<float>, srcW: i64, srcH: i64, setting: float, outCount: i64) -> ptr<float> {
+    let pipeline: i64 = vulkanPipeline(device, name + ".spv", 3, 4)
+    if (pipeline == 0) { return 0.toPtr() }
+    let opts: ptr<float> = settings(srcW, srcH, setting)
+    let push: i64 = words(2)
+    let slots: ptr<i32> = push.toPtr()
+    slots[0] = outCount.toI32()
+    let buffers: ptr<i64> = calloc(4, 8).toPtr()
+    buffers[0] = vulkanBuffer(device, img.toI64(), srcW * srcH * 16)
+    buffers[1] = vulkanBuffer(device, opts.toI64(), 16)
+    buffers[2] = vulkanEmptyBuffer(device, outCount * 16)
+    if (buffers[0] == 0 || buffers[1] == 0 || buffers[2] == 0) { return 0.toPtr() }
+    if (vulkanDispatchBuffers(device, pipeline, outCount, push, buffers, 3) == 0) { return 0.toPtr() }
+    return vulkanContents(buffers[2]).toPtr()
+}
+
+func main() -> i64 {
+    let gpu: i64 = vulkanStart()
+    if (gpu == 0) { return 10 }
+    printTable(facePicture())
+    var code: i64 = scanDemo(gpu, "")
+    if (code != 0) { return code }
+    code = channelsDemo(gpu, "")
+    if (code != 0) { return code }
+    code = bitsDemo(gpu, "")
+    if (code != 0) { return code }
+    code = resizeDemo(gpu, "")
+    if (code != 0) { return code }
+    return enlargeDemo(gpu, "")
+}

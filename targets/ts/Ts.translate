@@ -1,0 +1,249 @@
+# Ts
+source: polyir
+target: ts
+base: Js
+style: indent 2, braces same-line, names keep, paths ., qualify full, generics kept, extension ts
+
+// The JavaScript page with the types written out: this page starts with every rule of Js.translate, and a rule here
+// replaces the one alike there. A module is a namespace, and a struct's nested structs are in a namespace of the same name
+// after its class (`Point.Builder`). The file is a module (`export {}`), and it declares the Node names its code uses.
+
+## declarations
+program(support, items) :=
+  {imports}
+  export {};
+
+  {items.include}
+
+  {support}
+
+  {items}
+program(support, items, exports) :=
+  {imports}
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  export { {exports} };
+program(support, items, main) :=
+  {imports}
+  export {};
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  main();
+program(support, items, main: int) :=
+  {imports}
+  export {};
+
+  {items.include}
+
+  {support}
+
+  {items}
+
+  const status = main();
+  if (typeof process !== "undefined") {
+    process.exitCode = Number(status);
+  }
+  uses: process
+
+module(name, items) :=
+  namespace {name} {
+    {items.member}
+  }
+module.member(name, items) :=
+  export namespace {name} {
+    {items.member}
+  }
+
+// A field is a parameter property of the constructor: `constructor(public x: bigint) {}`.
+struct(name, typeParams, fields, methods, nested, statics) :=
+  class {name}<{typeParams}> {
+    constructor({fields.param?}) {}
+
+    {methods}
+
+    {statics}
+  }
+
+  namespace {name} {nested.member?}
+struct.member(name, typeParams, fields, methods, nested, statics) :=
+  export class {name}<{typeParams}> {
+    constructor({fields.param?}) {}
+
+    {methods}
+
+    {statics}
+  }
+
+  export namespace {name} {nested.member?}
+field(name, type)                   := {name}: {type};
+field(name, type, value)            := {name}: {type} = {value};
+field.param(name, type)             := public {name}: {type}
+field.param(name, type, value)      := public {name}: {type} = {value}
+
+method(name, params, result, body)  := {name}({params}): {result} {body}
+static(name, params, result, body)  := static {name}({params}): {result} {body}
+func(name, typeParams, params, result, body) := function {name}<{typeParams}>({params}): {result} {body}
+func.member(name, typeParams, params, result, body) := export function {name}<{typeParams}>({params}): {result} {body}
+coro(name, params, yields, body) :=
+  function {name}({params}): Coroutine<{yields}> {
+    return new Coroutine<{yields}>(function* (coroutine: Coroutine<{yields}>) {
+      {body}
+    });
+  }
+  uses: variant, coroutine
+coro.member(name, params, yields, body) :=
+  export function {name}({params}): Coroutine<{yields}> {
+    return new Coroutine<{yields}>(function* (coroutine: Coroutine<{yields}>) {
+      {body}
+    });
+  }
+  uses: variant, coroutine
+kernel(stage, name, params, result, body) := function {name}({params}): {result} {body}
+param(name, type)                   := {name}: {type}
+
+interface(name, methods)            := interface {name} {methods}
+interface.member(name, methods)     := export interface {name} {methods}
+signature(name, params, result)     := {name}({params}): {result};
+
+extern(name: sinf, params, result)  := const sinf = (x: number): number => Math.fround(Math.sin(x));
+extern(name: cosf, params, result)  := const cosf = (x: number): number => Math.fround(Math.cos(x));
+extern(name: tanf, params, result)  := const tanf = (x: number): number => Math.fround(Math.tan(x));
+extern(name: sqrtf, params, result) := const sqrtf = (x: number): number => Math.fround(Math.sqrt(x));
+extern(name: floorf, params, result) := const floorf = (x: number): number => Math.fround(Math.floor(x));
+extern(name: ceilf, params, result) := const ceilf = (x: number): number => Math.fround(Math.ceil(x));
+extern(name: logf, params, result)  := const logf = (x: number): number => Math.fround(Math.log(x));
+extern(name: expf, params, result)  := const expf = (x: number): number => Math.fround(Math.exp(x));
+extern(name: fabsf, params, result) := const fabsf = (x: number): number => Math.fround(Math.abs(x));
+extern(name: powf, params, result)  := const powf = (x: number, y: number): number => Math.fround(Math.pow(x, y));
+extern(name: fmaxf, params, result) := const fmaxf = (x: number, y: number): number => Math.fround(Math.max(x, y));
+extern(name: fminf, params, result) := const fminf = (x: number, y: number): number => Math.fround(Math.min(x, y));
+extern(name: getchar, params, result) :=
+  function getchar(): number {
+    const byte = Buffer.alloc(1);
+    return require("fs").readSync(0, byte, 0, 1, null) === 1 ? byte[0] : -1;
+  }
+  uses: buffer, require
+extern(name: putchar, params, result) :=
+  function putchar<T extends number | bigint>(c: T): T {
+    process.stdout.write(String.fromCharCode(Number(c) & 255));
+    return c;
+  }
+  uses: process
+
+global(name, type, value)           := let {name}: {type} = {value};
+
+## statements
+let(name, type, value)              := const {name}: {type} = {value};
+var(name, type)                     := let {name}: {type} = {type.zero};
+var(name, type, value)              := let {name}: {type} = {value};
+// A caught value can be anything.
+try(body, name, handler)            := try {body} catch ({name}: any) {handler}
+
+## expressions
+closure(params, result, body)       := ({params}): {result} => {body}
+
+// An `either` is an Either: `Either.ok<bigint, string>(1n)`, with `isOk`, `okValue` and `errValue`.
+ok(type, value)                     := {type.ok}({value})
+  uses: either
+err(type, value)                    := {type.err}({value})
+  uses: either
+
+## builtins
+isOk(object)                        := {object}.isOk
+isErr(object)                       := !{object}.isOk
+unwrapOk(object)                    := {object}.okValue
+unwrapErr(object)                   := {object}.errValue
+
+## types
+i8                                  := number
+i16                                 := number
+i32                                 := number
+i64                                 := bigint
+u8                                  := number
+u16                                 := number
+u32                                 := number
+u64                                 := bigint
+bool                                := boolean
+float                               := number
+double                              := number
+string                              := string
+void                                := void
+struct(name)                        := {name}
+instance(name, args)                := {name}<{args}>
+param(name)                         := {name}
+host(name, binding)                 := {binding}
+host(name, binding, args)           := {binding}<{args}>
+array(elem)                         := Array<{elem}>
+mutarray(elem)                      := Array<{elem}>
+map(key, value)                     := Map<{key}, {value}>
+mutmap(key, value)                  := Map<{key}, {value}>
+set(elem)                           := Set<{elem}>
+mutset(elem)                        := Set<{elem}>
+optional(elem)                      := {elem} | null
+either(ok, err)                     := Either<{ok}, {err}>
+variant(cases)                      := Variant
+// A function type's parameters have no names here, so they are a tuple: `(...args: [bigint, string]) => boolean`.
+closure(params, result)             := (...args: [{params}]) => {result}
+closure(params: empty, result)      := () => {result}
+func(params, result)                := (...args: [{params}]) => {result}
+func(params: empty, result)         := () => {result}
+coro(elem)                          := Coroutine<{elem}>
+// A pointer is a kernel's buffer, indexed as a list.
+ptr(elem)                           := Array<{elem}>
+vec(elem, size)                     := Array<{elem}>
+matrix(elem, size)                  := Grid<{elem}>
+fixed(elem, size)                   := Array<{elem}>
+buffer(elem, size)                  := Array<{elem}>
+grid(elem, rows, cols)              := Grid<{elem}>
+tensor(elem, dims)                  := Grid<{elem}>
+sparse(elem)                        := Sparse<{elem}>
+
+either.ok(ok, err)                  := Either.ok<{ok}, {err}>
+either.err(ok, err)                 := Either.err<{ok}, {err}>
+
+## reserved
+// TypeScript's own words, besides JavaScript's.
+type namespace interface declare abstract readonly keyof infer is module private public protected implements package
+any unknown never Either Coroutine
+
+## imports
+// The Node names the file's code uses, declared once at the top when a rule or a support file that uses one is written.
+buffer := declare const Buffer: any;
+process := declare const process: any;
+require := declare const require: any;
+
+## support
+i64 := runtime/I64.ts
+u64 := runtime/U64.ts
+same := runtime/Same.ts
+fail := runtime/Fail.ts
+  uses: process
+present := runtime/Present.ts
+either := runtime/Either.ts
+variant := runtime/Variant.ts
+coroutine := runtime/Coroutine.ts
+pushed := runtime/Pushed.ts
+truncate := runtime/Truncate.ts
+copyOf := runtime/CopyOf.ts
+utf8 := runtime/Utf8.ts
+textLength := runtime/TextLength.ts
+textByte := runtime/TextByte.ts
+textSlice := runtime/TextSlice.ts
+textFind := runtime/TextFind.ts
+hashText := runtime/HashText.ts
+valueKey := runtime/ValueKey.ts
+valueMap := runtime/ValueMap.ts
+valueSet := runtime/ValueSet.ts
+grid := runtime/Grid.ts
+sparse := runtime/Sparse.ts
+lanes := runtime/Lanes.ts

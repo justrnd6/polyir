@@ -1,0 +1,64 @@
+// KERNEL SHAPES: more than four buffers, a grid of threads, and atomics beyond "add".
+//
+// A kernel is written for one element, but how the threads are laid out can change:
+//
+//   MANY BUFFERS   a kernel may take as many inputs as it likes (the GPU APIs allow dozens); the host
+//                  hands over the buffers as an array (`metalDispatchBuffers`, `vulkanDispatchBuffers`).
+//   A GRID         a kernel with TWO `index` parameters runs over width x height threads: the first
+//                  `index` is the column and the second the row. The result (and every element input)
+//                  is the picture row by row, so cell (x, y) is element y * width + x. The host launches
+//                  it with `metalDispatch2D` / `vulkanDispatch2D`.
+//   MORE ATOMICS   besides `atomicAdd` for whole numbers there are `atomicAddFloat` (a float is added
+//                  with a compare-and-swap loop), `atomicMin` and `atomicMax`.
+//
+// On the CPU the atomics are plain functions (core/stdlib/Gpu.poly, built in): one thread at a time cannot race.
+extern func sinf(x: float) -> float
+
+// Seven element inputs, one number and the result: nine buffers in one launch.
+kernel func blend7(a: float, b: float, c: float, d: float, e: float, f: float, g: float, uniform k: float) -> float {
+    return k * (a + 2.0 * b + 3.0 * c) + (d - e) * (f + g)
+}
+
+// PLASMA, the classic interference pattern: three sine waves added, from 0 to 1. Thread (x, y) of a
+// width x height grid computes one pixel; `phase` moves the waves.
+kernel func plasma(index x: i32, index y: i32, uniform width: i32, uniform height: i32, uniform phase: float) -> float {
+    let u: float = x.toFloat() / width.toFloat()
+    let v: float = y.toFloat() / height.toFloat()
+    let a: float = sinf(10.0 * u + phase)
+    let b: float = sinf(8.0 * v - phase)
+    let c: float = sinf(6.0 * (u + v) + 2.0 * phase)
+    return 0.5 + 0.1667 * (a + b + c)
+}
+
+// A grid kernel with an ELEMENT input: `pixel` is this thread's own pixel of the input picture (element
+// y * width + x), and the answer darkens it toward the edges (a vignette).
+kernel func vignette(pixel: float, index x: i32, index y: i32, uniform width: i32, uniform height: i32) -> float {
+    let dx: float = (x.toFloat() / width.toFloat()) - 0.5
+    let dy: float = (y.toFloat() / height.toFloat()) - 0.5
+    let edge: float = 1.0 - 1.6 * (dx * dx + dy * dy)
+    return pixel * edge
+}
+
+// Every thread reports one made-up value, `(i * 7919) % 10007`, to four kinds of shared tally:
+// a whole-number count and a float total in one of four bins, and the smallest and largest value overall.
+kernel func tally(index i: i32, writable counts: ptr<i32>, writable sums: ptr<float>, writable lows: ptr<i32>, writable highs: ptr<i32>) -> i32 {
+    let value: i32 = (i * 7919) % 10007
+    atomicAdd(counts, i % 4, 1)
+    atomicAddFloat(sums, i % 4, 0.5)
+    atomicMin(lows, 0, value)
+    atomicMax(highs, 0, value)
+    return 0
+}
+
+// The value thread i reports, for the CPU check.
+func reported(i: i32) -> i32 {
+    return (i * 7919) % 10007
+}
+
+// ── checking a float against the CPU's ────────────────────────────────────────────────────
+func nearly(a: float, b: float, tolerance: float) -> i64 {
+    var gap: float = a - b
+    if (gap < 0.0) { gap = 0.0 - gap }
+    if (gap <= tolerance) { return 1 }
+    return 0
+}

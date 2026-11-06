@@ -1,0 +1,40 @@
+func doubleIt(x: i64) -> i64 {
+  return x * 2
+}
+
+func applyTwice(f: ptr<func(i64) -> i64 >, x: i64) -> i64 {
+  let once: i64 = f(x)
+  return f(once)
+}
+
+func applyDoubleTwice(x: i64) -> i64 {
+  return applyTwice(doubleIt, x)
+}
+
+func directDoubleCheck(x: i64) -> i64 {
+  return doubleIt(x)
+}
+
+func addOne(x: i64) -> i64 {
+  return x + 1
+}
+
+func pickAndApply(x: i64, useAddOne: i64) -> i64 {
+  var fn: ptr<func(i64) -> i64 > = doubleIt
+  if (useAddOne != 0) {
+    fn = addOne
+  }
+  return fn(x)
+}
+
+func applyNTimes(f: ptr<func(i64) -> i64 >, x: i64, n: i64) -> i64 {
+  var acc: i64 = x
+  for (i = 0; i < n; i = i + 1) {
+    acc = f(acc)
+  }
+  return acc
+}
+
+func doubleFourTimes(x: i64) -> i64 {
+  return applyNTimes(doubleIt, x, 4)
+}

@@ -1,0 +1,56 @@
+// `closure(params) -> Type { ... }` — a lambda literal capturing its
+// free variables BY REFERENCE, automatically (no explicit capture
+// list). Lowers to a `{fnPtr, envPtr}` pair, called via ordinary
+// `c(args)` syntax; `envPtr` is a heap-allocated array of raw
+// pointers, one per captured name, each holding that name's own box
+// pointer (never its value) — so a mutation inside the closure is
+// visible to the function that created it, and vice versa.
+
+// A non-escaping closure capturing one `var`, called twice in the
+// SAME function that created it — the second call sees the first
+// call's mutation, because both calls read/write the SAME box.
+func counterTwice() -> i64 {
+  var count: i64 = 0
+  let inc: closure() -> i64 = closure() -> i64 {
+    count = count + 1
+    return count
+  }
+  let a: i64 = inc()
+  let b: i64 = inc()
+  return a * 100 + b
+}
+
+// The real escape case by-reference capture exists for: a closure
+// RETURNED from its own creating function. The captured parameter's
+// box survives past `makeMultiplier`'s own return — `triple` still
+// reads the correct `factor` every time it's called afterward.
+func makeMultiplier(factor: i64) -> closure(i64) -> i64 {
+  let mul: closure(i64) -> i64 = closure(x: i64) -> i64 {
+    return x * factor
+  }
+  return mul
+}
+
+func tripleOf(x: i64) -> i64 {
+  let triple: closure(i64) -> i64 = makeMultiplier(3)
+  return triple(x)
+}
+
+// Two closures created in the SAME function, both capturing the SAME
+// `var` — both see each other's mutations (same box), not two
+// independent copies.
+func sharedCounter() -> i64 {
+  var shared: i64 = 0
+  let bumpBy1: closure() -> i64 = closure() -> i64 {
+    shared = shared + 1
+    return shared
+  }
+  let bumpBy10: closure() -> i64 = closure() -> i64 {
+    shared = shared + 10
+    return shared
+  }
+  let a: i64 = bumpBy1()
+  let b: i64 = bumpBy10()
+  let c: i64 = bumpBy1()
+  return a * 10000 + b * 100 + c
+}

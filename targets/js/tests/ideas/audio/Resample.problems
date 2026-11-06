@@ -1,0 +1,2 @@
+targets/js/Js.translate:143: `extern(name, params, result)` is unsupported: JavaScript cannot call a C function
+targets/js/Js.translate:313: `cast(value, type: ptr)` is unsupported: a pointer is a list here, not an address

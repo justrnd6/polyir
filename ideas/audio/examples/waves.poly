@@ -1,0 +1,25 @@
+// The Wave library (../Wave.poly): `sine`, `square`, `sawtooth`, `triangle`, `noise`, `fade` and `noteFrequency`, with
+// `sign`, `fract`, `clamp` and `mix` from core/stdlib/Math.poly, which Wave.poly imports. (Math is also built into the
+// language: a program that only needs those four can call them with no import.)
+import "../Wave.poly"
+
+// A phase is measured in whole cycles: `sine(f * t)` is a pure tone of f hertz at time t seconds.
+//
+//   polyir --jit waves.poly --entry concertAHeight        -> 1000
+//   polyir --jit waves.poly --entry softAttack            -> 500
+
+// The loudest point of a concert A (440 Hz): a quarter of a cycle in, the sine is at its peak (times 1000).
+func concertAHeight() -> i64 {
+    let quarterCycle: float = 0.25 / noteFrequency(69.0)
+    return (sine(noteFrequency(69.0) * quarterCycle) * 1000.0).toI64()
+}
+
+// A note that fades in over its first second: half way through the fade it is at half volume (times 1000).
+func softAttack() -> i64 {
+    return (fade(0.5, 1.0, 1.0, 4.0) * 1000.0).toI64()
+}
+
+// One sample of a chord: three sine waves added (a chord is just notes added together).
+func chordSample(t: float) -> float {
+    return 0.3 * (sine(noteFrequency(60.0) * t) + sine(noteFrequency(64.0) * t) + sine(noteFrequency(67.0) * t))
+}

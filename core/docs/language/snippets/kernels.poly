@@ -1,0 +1,9 @@
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k + 1.0
+}
+
+kernel func smooth(index i: i32, uniform src: ptr<float>, uniform n: i32) -> float {
+    if (i == 0) { return src[i] }
+    if (i == n - 1) { return src[i] }
+    return (src[i - 1] + src[i] + src[i + 1]) / 3.0
+}

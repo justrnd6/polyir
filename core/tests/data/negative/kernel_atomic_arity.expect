@@ -1,0 +1,16 @@
+$ --analyze
+exit 1
+check failed:
+  kernel_atomic_arity.poly:1:60: atomicMax takes 3 arguments but 2 were given
+$ --analyze --strict
+exit 1
+check failed:
+  kernel_atomic_arity.poly:1:60: atomicMax takes 3 arguments but 2 were given
+$ --emit-hir-json
+exit 1
+check failed:
+  kernel_atomic_arity.poly:1:60: atomicMax takes 3 arguments but 2 were given
+$ --emit-msl
+exit 1
+kernel check failed:
+  kernel_atomic_arity.poly:1:60: atomicMax takes 3 arguments but 2 were given

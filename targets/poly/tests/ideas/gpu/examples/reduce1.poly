@@ -1,0 +1,128 @@
+import "../Metal.poly"
+import "shared/print.poly"
+import "shared/reduce.poly"
+import "shared/reduce1.poly"
+extern func calloc(count: i64, size: i64) -> i64
+
+func main() -> i64 {
+  let device: i64 = metalDevice()
+  if (device == 0) {
+    return 10
+  }
+  let source: string = metalReadFile("reduce1.metal")
+  let n: i64 = 1048579
+  let values: ptr<float> = calloc(n, 4).toPtr()
+  fillTestData(values, n)
+  let sumPipe: i64 = metalPipeline(device, source, "blockSum")
+  let maxPipe: i64 = metalPipeline(device, source, "blockMax")
+  let totalPipe: i64 = metalPipeline(device, source, "total")
+  let treePipe: i64 = metalPipeline(device, source, "pairSum")
+  if (reduceByGroups(device, sumPipe, values, n) != cpuSum(values, n)) {
+    return 13
+  }
+  if (reduceByGroups(device, maxPipe, values, n) != cpuMax(values, n)) {
+    return 14
+  }
+  if (totalInOneLaunch(device, totalPipe, values, n) != cpuSum(values, n)) {
+    return 15
+  }
+  return timings(device, sumPipe, totalPipe, treePipe, values, n)
+}
+
+func timings(device: i64, sumPipe: i64, totalPipe: i64, treePipe: i64, values: ptr<float>, n: i64) -> i64 {
+  var start: i64 = wallMs()
+  for (r = 0; r < 20; r = r + 1) {
+    treeSum(device, treePipe, values, n)
+  }
+  let tree: i64 = wallMs() - start
+  start = wallMs()
+  for (r = 0; r < 20; r = r + 1) {
+    reduceByGroups(device, sumPipe, values, n)
+  }
+  let groups: i64 = wallMs() - start
+  start = wallMs()
+  for (r = 0; r < 20; r = r + 1) {
+    totalInOneLaunch(device, totalPipe, values, n)
+  }
+  let single: i64 = wallMs() - start
+  say("sum of 1,048,579 numbers, average of 20 runs (ms x 10):")
+  newline()
+  row("pair-adding tree", passCount(n), tree / 2)
+  row("workgroup partial sums", launchCount(n), groups / 2)
+  row("one launch, atomic float add", 1, single / 2)
+  return 0
+}
+
+func row(what: string, launches: i64, tenthsOfMs: i64) -> i64 {
+  say("  ")
+  say(what)
+  say(": ")
+  sayNumber(launches)
+  say(" launches, ")
+  sayNumber(tenthsOfMs / 10)
+  say(".")
+  sayNumber(tenthsOfMs % 10)
+  say(" ms")
+  newline()
+  return 0
+}
+
+func treeSum(device: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+  var current: i64 = metalBuffer(device, values.toI64(), n * 4)
+  var length: i64 = n
+  for (pass = 0; pass < 40; pass = pass + 1) {
+    if (length > 1) {
+      let next: i64 = (length + 1) / 2
+      let size: i32[1]
+      size[0] = length.toI32()
+      let out: i64 = metalEmptyBuffer(device, next * 4)
+      metalDispatch(device, pipeline, next, current, metalBuffer(device, size.toI64(), 4), out, 0)
+      current = out
+      length = next
+    }
+  }
+  let answer: ptr<float> = metalContents(current).toPtr()
+  return answer[0]
+}
+
+func reduceByGroups(device: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+  var current: i64 = metalBuffer(device, values.toI64(), n * 4)
+  var length: i64 = n
+  for (launch = 0; launch < 10; launch = launch + 1) {
+    if (length > 1) {
+      current = oneLaunch(device, pipeline, current, length)
+      length = groupsFor(length)
+    }
+  }
+  let answer: ptr<float> = metalContents(current).toPtr()
+  return answer[0]
+}
+
+func oneLaunch(device: i64, pipeline: i64, numbers: i64, length: i64) -> i64 {
+  let size: i32[1]
+  size[0] = length.toI32()
+  let partial: i64 = metalEmptyBuffer(device, groupsFor(length) * 4)
+  let buffers: ptr<i64> = calloc(4, 8).toPtr()
+  buffers[0] = numbers
+  buffers[1] = metalBuffer(device, size.toI64(), 4)
+  buffers[2] = partial
+  buffers[3] = metalEmptyBuffer(device, metalPadded(length) * 4)
+  metalDispatchGroups(device, pipeline, length, buffers, 4)
+  return partial
+}
+
+func totalInOneLaunch(device: i64, pipeline: i64, values: ptr<float>, n: i64) -> float {
+  let size: i32[1]
+  size[0] = n.toI32()
+  let zero: float[1]
+  zero[0] = 0.0
+  let sum: i64 = metalBuffer(device, zero.toI64(), 4)
+  let buffers: ptr<i64> = calloc(4, 8).toPtr()
+  buffers[0] = metalBuffer(device, values.toI64(), n * 4)
+  buffers[1] = metalBuffer(device, size.toI64(), 4)
+  buffers[2] = sum
+  buffers[3] = metalEmptyBuffer(device, metalPadded(n) * 4)
+  metalDispatchGroups(device, pipeline, n, buffers, 4)
+  let answer: ptr<float> = metalContents(sum).toPtr()
+  return answer[0]
+}

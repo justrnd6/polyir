@@ -1,0 +1,23 @@
+// Cycles: two nodes that refer to each other and that nothing else reaches, made 200,000 times. A tracing collector reclaims a cycle like any
+// other garbage (reference counting would not).
+
+struct Node {
+    id: i64
+    var peer: optional<Node>
+}
+
+func pair(i: i64) -> i64 {
+    let a: Node = Node { id: i, peer: None<Node>() }
+    let z: Node = Node { id: -1, peer: Some<Node>(a) }
+    a.peer = Some<Node>(z)
+    return a.peer.unwrap().peer.unwrap().id  // a.peer.peer is a
+}
+
+func main() -> i64 {
+    var count: i64 = 0
+    for (i = 0; i < 200000; i = i + 1) {
+        if (pair(i) == i) { count = count + 1 }
+    }
+    print(str(count))
+    return 0
+}

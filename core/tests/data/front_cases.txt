@@ -1,0 +1,4799 @@
+@@@ case c000 areas=core from=CcChecks.nina:34:units
+@@@ source
+func twice(n: i64) -> i64 { return n * 2 }
+func main() -> i64 { return twice(21) }
+
+@@@ expect hir
+func twice(n:i64)->i64 {return (Mul:i64 n 2)}
+func main()->i64 {return twice:i64(21)}
+@@@ case c001 areas=core from=CcChecks.nina:102:parameters
+@@@ source
+func greet(name: string, n: i64) -> string { return name }
+func main() -> i64 {
+  if (greet("a", 1) == "a") { return 1 }
+  return 0
+}
+
+@@@ expect hir
+func greet(name:string,n:i64)->string {return name}
+func main()->i64 {if (Eq:i1 greet:string("a",1) "a") {return 1} else {}; return 0}
+@@@ case c002 areas=core from=DebugChecks.nina:15:program
+@@@ source
+meta "license" = "MIT"
+meta area "doc" = "Area of a square"
+struct Sq(side: i64);
+func area(s: Sq) -> i64 {
+  let a: i64 = s.side * s.side
+  return a
+}
+func main() -> i64 {
+  return area(Sq { side: 3 })
+}
+
+@@@ expect hir
+struct Sq{side:i64}
+func area(s:Sq)->i64 {let a:i64 = (Mul:i64 s.#0 s.#0); return a}
+func main()->i64 {return area:i64(Sq{#0=3})}
+@@@ case c003 areas=core from=DiagnosticChecks.nina:92:lintSource
+@@@ source
+func f() -> i64 {
+    var a: i64 = 1
+    var b: i64 = 2
+    b = b + 1
+    return a + b
+}
+
+struct S {
+    n: i64
+    func m() -> i64 {
+        var k: i64 = 3
+        return k + this.n
+    }
+}
+
+@@@ expect hir
+func f()->i64 {var a:i64 = 1; var b:i64 = 2; b@ = (Add:i64 b@ 1); return (Add:i64 a@ b@)}
+struct S{n:i64}
+func S_m(this:S)->i64 {var k:i64 = 3; return (Add:i64 k@ this.#0)}
+@@@ case c004 areas=closures,coroutines,interfaces,containers from=HirJsonChecks.nina:100:source
+@@@ source
+struct P {
+ x: i64
+ y: double
+}
+struct Counter {
+ var n: i64
+}
+interface Shape {
+ func area() -> double
+}
+struct Sq : Shape {
+ s: double
+ func area() -> double {
+ return this.s * this.s
+ }
+}
+global total: i64 = 7
+func spin(n: i64) -> i64 {
+ var c: i64 = 0
+ goto top(0)
+label top(i: i64):
+ branch i < n ? body(i) : done(i)
+label body(i: i64):
+ c = c + i
+ goto top(i + 1)
+label done(i: i64):
+ return c
+}
+func adder(k: i64) -> closure(i64) -> i64 {
+ return closure(x: i64) -> i64 {
+ return x + k
+ }
+}
+coro func count(n: i64) -> i64 {
+ for (i = 0; i < n; i = i + 1) {
+ yield i
+ }
+}
+func main() -> i64 {
+ let p: P = P { x: 1, y: 2.5 }
+ let a: mutarray<i64> = mutarray<i64>()
+ push(a, p.x)
+ let f: closure(i64) -> i64 = adder(2)
+ return spin(len(a)) + f(3) + total
+}
+
+@@@ expect hir
+struct P{x:i64,y:f64}
+struct Counter{var n:i64}
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{area}:Sq
+struct Sq{s:f64}
+func Sq_area(this:Sq)->f64 {return (Mul:f64 this.#0 this.#0)}
+global total:i64
+func spin(n:i64)->i64 {var c:i64 = 0; goto top(0); label top(i:i64):; branch (Lt:i1 i n) ? body(i) : done(i); label body(i:i64):; c@ = (Add:i64 c@ i); goto top((Add:i64 i 1)); label done(i:i64):; return c@}
+func adder(k:i64)->closure(i64)->i64 {return <node>}
+func count(n:i64)->coro<i64> {for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {yield i}}
+func main()->i64 {let p:P = P{#0=1,#1=2.5}; var a:mutarray<i64> = new mutarray<i64>(); (push a@,p.#0); let f:closure(i64)->i64 = adder:closure(i64)->i64(2); return (Add:i64 (Add:i64 spin:i64((len a@)) (*f):i64(3)) @total)}
+@@@ case c005 areas=core from=HirJsonChecks.nina:254:wrapped
+@@@ source
+func one() -> i64 {
+ return 1
+}
+
+@@@ expect hir
+func one()->i64 {return 1}
+@@@ case c006 areas=host from=HostChecks.nina:15:memberMistakes
+@@@ source
+extern type L = java "L" {
+  func size() -> i32
+  func size() -> i64
+}
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+3:8: L declares size twice (give a host overload its own name and bind it: = java "hostName")
+@@@ case c007 areas=host,containers from=HostChecks.nina:29:bridgeTarget
+@@@ source
+bridge array<i64> <-> ruby "x"
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:23: unknown target 'ruby' (known: native, java, kotlin, js, swift, cpp, python, rust, objc, c, wasm)
+@@@ case c008 areas=host,sums from=HostChecks.nina:34:bridgeTemplate
+@@@ source
+bridge optional<T> <-> java "T" { toHost = "value" }
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:44: a bridge template needs $ for the value
+@@@ case c009 areas=host,sums from=HostChecks.nina:39:bridgeDirection
+@@@ source
+bridge optional<T> <-> java "T" { sideways = "$" }
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:35: a bridge rule is toHost or fromHost, not 'sideways'
+@@@ case c010 areas=host,generics from=HostChecks.nina:47:bagDecls
+@@@ source
+extern type Bag<T> = java "java.util.ArrayList" {
+  static func new() -> Bag<T>
+  func add(x: T) -> i1
+}
+
+@@@ expect hir
+
+@@@ case c011 areas=host,generics,containers from=HostChecks.nina:52:goodHostCall
+@@@ source
+extern type Bag<T> = java "java.util.ArrayList" {
+  static func new() -> Bag<T>
+  func add(x: T) -> i1
+}
+func main() -> i64 {
+  let b: Bag<i64> = Bag.new()
+  b.add(3)
+  return 0
+}
+
+@@@ expect hir
+func main()->i64 {let b:Bag_i64 = Bag_i64_new:Bag_i64(); Bag_i64_add:i1(b,3); return 0}
+host Bag_i64 = java=java.util.ArrayList
+extern Bag_i64_new()->Bag_i64
+host member Bag_i64_new = 
+extern Bag_i64_add(self:Bag_i64,x:i64)->i1
+host member Bag_i64_add = 
+@@@ case c012 areas=host,generics,containers from=HostChecks.nina:63:hostArgumentType
+@@@ source
+extern type Bag<T> = java "java.util.ArrayList" {
+  static func new() -> Bag<T>
+  func add(x: T) -> i1
+}
+func main() -> i64 {
+  let b: Bag<i64> = Bag.new()
+  b.add("text")
+  return 0
+}
+
+@@@ expect check failed
+7:9: expected an integer but found a string
+@@@ case c013 areas=host,generics from=HostChecks.nina:69:hostMember
+@@@ source
+extern type Bag<T> = java "java.util.ArrayList" {
+  static func new() -> Bag<T>
+  func add(x: T) -> i1
+}
+func main() -> i64 {
+  let b: Bag<i64> = Bag.new()
+  b.remove(3)
+  return 0
+}
+
+@@@ expect check failed
+7:5: unknown function remove
+@@@ case c014 areas=core from=HostChecks.nina:90:emptyMain
+@@@ source
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func main()->i64 {return 0}
+@@@ case c015 areas=host,generics,interfaces from=HostChecks.nina:92:hostDecls
+@@@ source
+extern type ArrayList<T> = java "java.util.ArrayList" | js "Array"
+extern interface Runnable = java "java.lang.Runnable" {
+  func run() -> i64
+}
+
+@@@ expect hir
+host Runnable = java=java.lang.Runnable
+struct Runnable{data:ptr<i8>,vtable:ptr<i8>}
+interface Runnable{run}:
+@@@ case c016 areas=host,generics,interfaces from=HostChecks.nina:124:jobSource
+@@@ source
+extern type ArrayList<T> = java "java.util.ArrayList" | js "Array"
+extern interface Runnable = java "java.lang.Runnable" {
+  func run() -> i64
+}
+struct Job(id: i64) : Runnable {
+  func run() -> i64 { return this.id }
+}
+func main() -> i64 { return 3 }
+
+@@@ expect hir
+host Runnable = java=java.lang.Runnable
+struct Runnable{data:ptr<i8>,vtable:ptr<i8>}
+interface Runnable{run}:Job
+struct Job{id:i64}
+func Job_run(this:Job)->i64 {return this.#0}
+func main()->i64 {return 3}
+@@@ case c017 areas=host from=HostChecks.nina:133:noBinding
+@@@ source
+extern type B
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:13: extern type B needs a binding, e.g. = java "pkg.Name"
+@@@ case c018 areas=host from=HostChecks.nina:138:unknownTarget
+@@@ source
+extern type B = ruby "b"
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:17: unknown target 'ruby' (known: native, java, kotlin, js, swift, cpp, python, rust, objc, c, wasm)
+@@@ case c019 areas=host from=HostChecks.nina:143:targetTwice
+@@@ source
+extern type B = java "a" | java "b"
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:28: target 'java' is bound twice
+@@@ case c020 areas=host from=HostChecks.nina:148:nameTaken
+@@@ source
+struct B(x: i64);
+extern type B = java "b"
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+2:13: duplicate struct, interface or extern type 'B'
+@@@ case c021 areas=host,generics,interfaces from=HostChecks.nina:156:missingMethod
+@@@ source
+extern type ArrayList<T> = java "java.util.ArrayList" | js "Array"
+extern interface Runnable = java "java.lang.Runnable" {
+  func run() -> i64
+}
+struct Job(id: i64) : Runnable {
+  func go() -> i64 { return 1 }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+5:23: Job does not implement Runnable: it needs func run() -> i64
+@@@ case c022 areas=host,generics,interfaces from=HostChecks.nina:162:wrongSignature
+@@@ source
+extern type ArrayList<T> = java "java.util.ArrayList" | js "Array"
+extern interface Runnable = java "java.lang.Runnable" {
+  func run() -> i64
+}
+struct Job(id: i64) : Runnable {
+  func run() -> double { return 1.0 }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+6:8: Job.run does not match Runnable.run: expected func run() -> i64, found func run() -> double
+@@@ case c023 areas=host from=HostChecks.nina:172:hostTypeInSignature
+@@@ source
+extern type H = java "H"
+func keep(h: H) -> i64 { return 1 }
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+host H = java=H
+func keep(h:H)->i64 {return 1}
+func main()->i64 {return 0}
+@@@ case c024 areas=core from=HostChecks.nina:178:hostOnlyCall
+@@@ source
+extern func tick() -> i64 = java "System.nanoTime()"
+func main() -> i64 { return tick() }
+
+@@@ expect hir
+extern tick()->i64
+host member tick = java=System.nanoTime()
+func main()->i64 {return tick:i64()}
+@@@ case c025 areas=host from=HostChecks.nina:182:unusedHostDecls
+@@@ source
+extern type H = java "H"
+extern func abs(x: i32) -> i32 = native "abs" | java "Math.abs($0)"
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+host H = java=H
+extern abs(x:i32)->i32
+host member abs = native=abs | java=Math.abs($0)
+func main()->i64 {return 0}
+@@@ case c026 areas=interfaces from=InterfaceChecks.nina:14:shape
+@@@ source
+interface Shape {
+  func area() -> double
+}
+
+@@@ expect hir
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{area}:
+@@@ case c027 areas=interfaces from=InterfaceChecks.nina:34:methodDeclaredTwice
+@@@ source
+interface Shape {
+  func area() -> double
+  func area() -> double
+}
+
+@@@ expect check failed
+3:8: interface Shape declares area twice
+@@@ case c028 areas=interfaces,containers from=InterfaceChecks.nina:39:fixedArrayParameter
+@@@ source
+interface Shape {
+  func fill(cells: i64[4]) -> double
+}
+
+@@@ expect check failed
+2:13: interface methods cannot take a fixed-size array (cells): pass a ptr<T> or a mutarray<T>
+@@@ case c029 areas=interfaces from=InterfaceChecks.nina:44:duplicateName
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct Shape {
+  r: double
+}
+
+@@@ expect check failed
+duplicate struct 'Shape'
+@@@ case c030 areas=interfaces from=InterfaceChecks.nina:55:unknownInterface
+@@@ source
+struct C : Nope {
+  r: double
+}
+
+@@@ expect check failed
+1:12: unknown interface Nope
+@@@ case c031 areas=interfaces from=InterfaceChecks.nina:60:aStructIsNotAnInterface
+@@@ source
+struct A {
+  x: i64
+}
+struct C : A {
+  r: double
+}
+
+@@@ expect check failed
+4:12: A is a struct, not an interface
+@@@ case c032 areas=interfaces from=InterfaceChecks.nina:65:missingMethod
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct C : Shape {
+  r: double
+}
+
+@@@ expect check failed
+4:12: C does not implement Shape: it needs func area() -> double
+@@@ case c033 areas=interfaces from=InterfaceChecks.nina:70:wrongReturnType
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct C : Shape {
+  r: double
+  func area() -> i64 { return 1 }
+}
+
+@@@ expect check failed
+6:8: C.area does not match Shape.area: expected func area() -> double, found func area() -> i64
+@@@ case c034 areas=interfaces from=InterfaceChecks.nina:75:wrongParameters
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct C : Shape {
+  r: double
+  func area(k: i64) -> double { return 1.0 }
+}
+
+@@@ expect check failed
+6:8: C.area does not match Shape.area: expected func area() -> double, found func area(k: i64) -> double
+@@@ case c035 areas=generics,interfaces from=InterfaceChecks.nina:81:genericStructUnknownInterface
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct Box<T> : Nope {
+  v: T
+}
+
+@@@ expect check failed
+4:17: unknown interface Nope
+@@@ case c036 areas=generics,interfaces from=InterfaceChecks.nina:86:genericStructWrongInstantiation
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct Box<T> : Shape {
+  v: T
+  func area() -> T { return this.v }
+}
+func main() -> double {
+  let b: Box<i64> = Box { v: 1 }
+  return 0.0
+}
+
+@@@ expect check failed
+6:8: Box_i64.area does not match Shape.area: expected func area() -> double, found func area() -> i64
+@@@ case c037 areas=interfaces from=InterfaceChecks.nina:91:circle
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct C : Shape {
+  r: double
+  func area() -> double { return this.r }
+}
+
+@@@ expect hir
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{area}:C
+struct C{r:f64}
+func C_area(this:C)->f64 {return this.#0}
+@@@ case c038 areas=interfaces from=InterfaceChecks.nina:108:structThatDidNotDeclareTheInterface
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct R {
+  w: double
+  func area() -> double { return this.w }
+}
+func f() -> double {
+  let s: Shape = R { w: 1.0 }
+  return s.area()
+}
+
+@@@ expect check failed
+9:18: R does not implement Shape (declare it: struct R : Shape)
+@@@ case c039 areas=core from=InterfaceChecks.nina:114:assigningAFixedField
+@@@ source
+struct Counter {
+  var n: i64
+  id: i64
+}
+func f() -> i64 {
+  let a: Counter = Counter { n: 1, id: 2 }
+  a.id = 3
+  return 0
+}
+
+@@@ expect check failed
+7:5: cannot assign field id of Counter: it is not a var field. Counter can change: n; fixed: id
+@@@ case c040 areas=core from=InterfaceChecks.nina:120:rebindingALetName
+@@@ source
+func f() -> i64 {
+  let a: i64 = 1
+  a = 2
+  return a
+}
+
+@@@ expect check failed
+3:3: cannot assign to a: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+@@@ case c041 areas=core from=InterfaceChecks.nina:126:assigningAFieldOfAShorthandStruct
+@@@ source
+struct Pt(x: i64, y: i64);
+func f() -> i64 {
+  let p: Pt = Pt { x: 1, y: 2 }
+  p.y = 3
+  return 0
+}
+
+@@@ expect check failed
+4:5: cannot assign field y of Pt: it is not a var field. Pt has no var fields, so it is an immutable value (declare a field `var x: T` to make it assignable)
+@@@ case c042 areas=closures from=InterfaceChecks.nina:133:equalsOnAClosure
+@@@ source
+func f() -> i64 {
+  let a: closure() -> i64 = closure() -> i64 { return 1 }
+  let b: closure() -> i64 = closure() -> i64 { return 1 }
+  if (a == b) { return 1 }
+  return 0
+}
+
+@@@ expect check failed
+4:9: a closure()->i64 cannot be compared with ==: use === to ask whether it is the same one
+@@@ case c043 areas=core from=InterfaceChecks.nina:140:identityOnNumbers
+@@@ source
+func f() -> i64 {
+  let a: i64 = 1
+  if (a === 1) { return 1 }
+  return 0
+}
+
+@@@ expect check failed
+3:9: === asks whether two objects are the same one, and a i64 is a plain value: use ==
+@@@ case c044 areas=containers from=InterfaceChecks.nina:145:pushOnAnImmutableArray
+@@@ source
+func f() -> i64 {
+  let a: array<i64> = array<i64>()
+  push(a, 1)
+  return 0
+}
+
+@@@ expect check failed
+3:3: an array cannot be changed once it is made: use with(x) to get a changed copy, or thaw() for one you can change in place
+@@@ case c045 areas=containers from=InterfaceChecks.nina:151:indexAssignmentOnAnImmutableArray
+@@@ source
+func f() -> i64 {
+  let a: array<i64> = array<i64>().with(1)
+  a[0] = 2
+  return 0
+}
+
+@@@ expect check failed
+3:3: an array cannot be changed once it is made: use with(...) to get a changed copy, or thaw() into a mutarray to change in place
+@@@ case c046 areas=containers from=InterfaceChecks.nina:157:withOnAMutableArray
+@@@ source
+func f() -> i64 {
+  let a: mutarray<i64> = mutarray<i64>()
+  let b: mutarray<i64> = a.with(1)
+  return 0
+}
+
+@@@ expect check failed
+3:28: with() makes a changed copy of an array, map or set; a mutarray changes in place: use push(x)
+@@@ case c047 areas=containers from=InterfaceChecks.nina:163:aFloatAsAMapKey
+@@@ source
+func f() -> i64 {
+  let m: map<float, i64> = map<float, i64>()
+  return 0
+}
+
+@@@ expect check failed
+2:28: a float cannot be a map or set key: use an integer or a string
+@@@ case c048 areas=core from=InterfaceChecks.nina:168:assigningAFieldOfAnImmutableStruct
+@@@ source
+struct Pt {
+  x: i64
+}
+func f() -> i64 {
+  let p: Pt = Pt { x: 1 }
+  p.x = 3
+  return 0
+}
+
+@@@ expect check failed
+6:5: cannot assign field x of Pt: it is not a var field. Pt has no var fields, so it is an immutable value (declare a field `var x: T` to make it assignable)
+@@@ case c049 areas=interfaces from=InterfaceChecks.nina:174:methodTheInterfaceLacks
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct C : Shape {
+  r: double
+  func area() -> double { return this.r }
+}
+func f() -> double {
+  let s: Shape = C { r: 1.0 }
+  return s.perimeter()
+}
+
+@@@ expect check failed
+10:12: Shape has no method perimeter
+@@@ case c050 areas=interfaces from=InterfaceChecks.nina:180:fieldOfAnInterface
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct C : Shape {
+  r: double
+  func area() -> double { return this.r }
+}
+func f() -> double {
+  let s: Shape = C { r: 1.0 }
+  return s.r
+}
+
+@@@ expect check failed
+10:12: Shape is an interface: it has methods, not fields (call a method instead of reading r)
+@@@ case c051 areas=interfaces from=InterfaceChecks.nina:185:wrongArgumentCount
+@@@ source
+interface Shape {
+  func scale(k: double) -> double
+}
+struct C : Shape {
+  r: double
+  func scale(k: double) -> double { return this.r * k }
+}
+func f() -> double {
+  let s: Shape = C { r: 1.0 }
+  return s.scale(1.0, 2.0)
+}
+
+@@@ expect check failed
+10:12: Shape.scale takes 1 arguments but 2 were given
+@@@ case c052 areas=interfaces from=InterfaceChecks.nina:191:returningAStructThatDidNotDeclareTheInterface
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct R {
+  w: double
+  func area() -> double { return this.w }
+}
+func f() -> Shape {
+  return R { w: 1.0 }
+}
+
+@@@ expect check failed
+9:10: R does not implement Shape (declare it: struct R : Shape)
+@@@ case c053 areas=core from=InterfaceChecks.nina:195:plainRect
+@@@ source
+struct R {
+  w: double
+  func area() -> double { return this.w }
+}
+
+@@@ expect hir
+struct R{w:f64}
+func R_area(this:R)->f64 {return this.#0}
+@@@ case c054 areas=interfaces from=InterfaceChecks.nina:197:scaler
+@@@ source
+interface Shape {
+  func scale(k: double) -> double
+}
+struct C : Shape {
+  r: double
+  func scale(k: double) -> double { return this.r * k }
+}
+
+@@@ expect hir
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{scale}:C
+struct C{r:f64}
+func C_scale(this:C,k:f64)->f64 {return (Mul:f64 this.#0 k)}
+@@@ case c055 areas=kernel,interfaces from=InterfaceChecks.nina:203:kernelMistake
+@@@ source
+interface Shape {
+  func area() -> double
+}
+kernel func k(index i: i64, s: Shape) -> i64 {
+  return 1
+}
+
+@@@ expect hir
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{area}:
+func k(i:i64,s:Shape)->i64 {return 1}
+kernel k compute 3,0
+@@@ case c056 areas=core from=JavaChecks.nina:113:lineMap
+@@@ source
+func twice(x: i64) -> i64 {
+  let y: i64 = x + x
+  return y
+}
+func main() -> i64 { return twice(2) }
+
+@@@ expect hir
+func twice(x:i64)->i64 {let y:i64 = (Add:i64 x x); return y}
+func main()->i64 {return twice:i64(2)}
+@@@ case c057 areas=core from=JavaChecks.nina:164:names
+@@@ source
+struct List(n: i64);
+func new(x: i64) -> i64 { return x }
+func main() -> i64 {
+  let l: List = List { n: 1 }
+  return new(l.n)
+}
+
+@@@ expect hir
+struct List{n:i64}
+func new(x:i64)->i64 {return x}
+func main()->i64 {let l:List = List{#0=1}; return new:i64(l.#0)}
+@@@ case c058 areas=core from=JavaChecks.nina:173:shapesSource
+@@@ source
+struct Pt(x: i64, y: i64);
+struct Counter(var n: i64, name: string);
+func main() -> i64 {
+  let c: Counter = Counter { n: 1, name: "a" }
+  c.n = c.n + 1
+  let p: Pt = Pt { x: 1, y: 2 }
+  return c.n + p.x
+}
+
+@@@ expect hir
+struct Pt{x:i64,y:i64}
+struct Counter{var n:i64,name:string}
+func main()->i64 {let c:Counter = Counter{#0=1,#1="a"}; c.#0 = (Add:i64 c.#0 1); let p:Pt = Pt{#0=1,#1=2}; return (Add:i64 c.#0 p.#0)}
+@@@ case c059 areas=core from=JavaChecks.nina:178:unsignedSource
+@@@ source
+func f(a: u32, b: u32, m: u64) -> i64 {
+  let q: u32 = a / b
+  let s: u8 = 200
+  let w: u8 = s + s
+  if (a > b && m >> 3 == 1) { return q.toI64() + w.toI64() }
+  return 0
+}
+func main() -> i64 { return f(10, 3, 8) }
+
+@@@ expect hir
+func f(a:u32,b:u32,m:u64)->i64 {let q:u32 = (Div:u32 a b); let s:u8 = 200; let w:u8 = (Add:u8 s s); if (LogAnd:i1 (Gt:i1 a b) (Eq:i1 (Shr:u64 m 3) 1)) {return (Add:i64 (cast:i64 q) (cast:i64 w))} else {}; return 0}
+func main()->i64 {return f:i64((coerce:u32 10),(coerce:u32 3),(coerce:u64 8))}
+@@@ case c060 areas=host,generics,sums,containers from=JavaChecks.nina:183:hostsSource
+@@@ source
+extern type Bag<T> = java "java.util.ArrayList" {
+  static func new() -> Bag<T>
+  func add(x: T) -> i1
+  func size() -> i32
+}
+extern type Env = java "java.lang.System" {
+  static func getenv(name: string) -> optional<string>
+}
+bridge optional<T> <-> java "T" {
+  fromHost = "Optional.ofNullable($)"
+}
+func main() -> i64 {
+  let b: Bag<i64> = Bag.new()
+  b.add(3)
+  if (Env.getenv("X").isNone()) { return b.size().toI64() }
+  return 0
+}
+
+@@@ expect hir
+host Env = java=java.lang.System
+extern Env_getenv(name:string)->optional<string>
+host member Env_getenv = 
+bridge optional<T> <-> java T
+func main()->i64 {let b:Bag_i64 = Bag_i64_new:Bag_i64(); Bag_i64_add:i1(b,3); if (isNone Env_getenv:optional<string>("X")) {return (cast:i64 Bag_i64_size:i32(b))} else {}; return 0}
+host Bag_i64 = java=java.util.ArrayList
+extern Bag_i64_new()->Bag_i64
+host member Bag_i64_new = 
+extern Bag_i64_add(self:Bag_i64,x:i64)->i1
+host member Bag_i64_add = 
+extern Bag_i64_size(self:Bag_i64)->i32
+host member Bag_i64_size = 
+@@@ case c061 areas=sums from=JavaChecks.nina:190:eitherSource
+@@@ source
+func f(a: i64) -> either<i64, i64> {
+  return eitherOk<i64, i64>(a)
+}
+func g(r: either<i64, i64>) -> i64 {
+  if (r.isErr()) { return r.unwrapErr() }
+  return r.unwrapOk()
+}
+func main() -> i64 { return g(f(1)) }
+
+@@@ expect hir
+func f(a:i64)->either<i64,i64> {return ok(a)}
+func g(r:either<i64,i64>)->i64 {if (isErr r) {return (unwrapErr r)} else {}; return (unwrapOk r)}
+func main()->i64 {return g:i64(f:either<i64,i64>(1))}
+@@@ case c062 areas=containers from=JsChecks.nina:52:typedSource
+@@@ source
+struct Pt(x: i64, y: string);
+func add(a: i64, b: i64) -> i64 { return a + b }
+func main() -> i64 {
+  let a: i64 = 5
+  let m: mutmap<string, i64> = mutmap<string, i64>(4)
+  m["k"] = a
+  return add(a, 1)
+}
+
+@@@ expect hir
+struct Pt{x:i64,y:string}
+func add(a:i64,b:i64)->i64 {return (Add:i64 a b)}
+func main()->i64 {let a:i64 = 5; var m:mutmap<string,i64> = new mutmap<string,i64>(4); m@["k"] = a; return add:i64(a,1)}
+@@@ case c063 areas=kernel from=KernelChecks.nina:59:gridSource
+@@@ source
+kernel func cell(index x: i32, index y: i32, uniform w: i32) -> i32 {
+    return y * w + x
+}
+
+@@@ expect hir
+func cell(x:i32,y:i32,w:i32)->i32 {return (Add:i32 (Mul:i32 y w) x)}
+kernel cell compute 3,3,1
+@@@ case c064 areas=kernel,prelude from=KernelChecks.nina:76:atomicSource
+@@@ source
+kernel func tally(index i: i32, writable counts: ptr<i32>, writable sums: ptr<float>, writable lows: ptr<i32>, writable highs: ptr<i32>) -> i32 {
+    atomicAdd(counts, 0, 1)
+    atomicAddFloat(sums, 0, 0.5)
+    atomicMin(lows, 0, i)
+    atomicMax(highs, 0, i)
+    return 0
+}
+
+@@@ expect hir
+func atomicAdd(counts:ptr<i32>,slot:i32,amount:i32)->i32 {let old:i32 = counts[slot]; counts[slot] = (Add:i32 old amount); return old}
+func atomicAddFloat(sums:ptr<f32>,slot:i32,amount:f32)->f32 {let old:f32 = sums[slot]; sums[slot] = (Add:f32 old amount); return old}
+func atomicMin(values:ptr<i32>,slot:i32,candidate:i32)->i32 {let old:i32 = values[slot]; if (Lt:i1 candidate old) {values[slot] = candidate} else {}; return old}
+func atomicMax(values:ptr<i32>,slot:i32,candidate:i32)->i32 {let old:i32 = values[slot]; if (Gt:i1 candidate old) {values[slot] = candidate} else {}; return old}
+func tally(i:i32,counts:ptr<i32>,sums:ptr<f32>,lows:ptr<i32>,highs:ptr<i32>)->i32 {atomicAdd:i32(counts,(coerce:i32 0),(coerce:i32 1)); atomicAddFloat:f32(sums,(coerce:i32 0),(coerce:f32 0.5)); atomicMin:i32(lows,(coerce:i32 0),i); atomicMax:i32(highs,(coerce:i32 0),i); return 0}
+kernel tally compute 3,4,4,4,4
+@@@ case c065 areas=kernel,containers,prelude from=KernelChecks.nina:101:workgroupSource
+@@@ source
+kernel func blockSum(index i: i32, uniform src: ptr<float>, uniform n: i32, workgroup tile: ptr<float>, writable partial: ptr<float>) -> i32 {
+    let lane: i32 = localIndex(i)
+    if (i < n) { tile[lane] = src[i] } else { tile[lane] = 0.0 }
+    barrier()
+    for (s = groupSize() / 2; s > 0; s = s / 2) {
+        if (lane < s) { tile[lane] = tile[lane] + tile[lane + s] }
+        barrier()
+    }
+    if (lane == 0) { partial[groupIndex(i)] = tile[0] }
+    return 0
+}
+
+@@@ expect hir
+func groupSize()->i32 {return 1}
+func localIndex(i:i32)->i32 {return 0}
+func groupIndex(i:i32)->i32 {return i}
+func barrier()->i32 {return 0}
+func blockSum(i:i32,src:ptr<f32>,n:i32,tile:ptr<f32>,partial:ptr<f32>)->i32 {let lane:i32 = localIndex:i32(i); if (Lt:i1 i n) {tile[lane] = src[i]} else {tile[lane] = 0}; barrier:i32(); for (s=(Div:i32 groupSize:i32() 2); (Gt:i1 s 0); (Div:i32 s 2)) {if (Lt:i1 lane s) {tile[lane] = (Add:f32 tile[lane] tile[(Add:i32 lane s)])} else {}; barrier:i32()}; if (Eq:i1 lane 0) {partial[groupIndex:i32(i)] = tile[0]} else {}; return 0}
+kernel blockSum compute 3,2,1,5,4
+@@@ case c066 areas=kernel from=KernelChecks.nina:130:remainderSource
+@@@ source
+kernel func leftover(a: float, b: float) -> float {
+    return a % b
+}
+
+@@@ expect hir
+func leftover(a:f32,b:f32)->f32 {return (Rem:f32 a b)}
+kernel leftover compute 0,0
+@@@ case c067 areas=kernel from=KernelChecks.nina:142:helperOnlyWhenUsed
+@@@ source
+kernel func twice(x: float) -> float {
+    return x * 2.0
+}
+
+@@@ expect hir
+func twice(x:f32)->f32 {return (Mul:f32 x 2)}
+kernel twice compute 0
+@@@ case c068 areas=kernel from=KernelChecks.nina:152:calledKernelsOnly
+@@@ source
+kernel func a(x: float) -> float {
+    return x + 1.0
+}
+
+kernel func b(x: float) -> float {
+    return x * 2.0
+}
+
+kernel func c(x: float) -> float {
+    return a(x)
+}
+
+@@@ expect hir
+func a(x:f32)->f32 {return (Add:f32 x 1)}
+kernel a compute 0
+func b(x:f32)->f32 {return (Mul:f32 x 2)}
+kernel b compute 0
+func c(x:f32)->f32 {return a:f32(x)}
+kernel c compute 0
+@@@ case c069 areas=kernel from=KernelChecks.nina:179:marks
+@@@ source
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k
+}
+kernel func look(index i: i32, uniform src: ptr<float>, writable out: ptr<float>) -> float {
+    return src[i]
+}
+func plain(x: float) -> float {
+    return x
+}
+
+@@@ expect hir
+func scale(x:f32,k:f32)->f32 {return (Mul:f32 x k)}
+kernel scale compute 0,1
+func look(i:i32,src:ptr<f32>,out:ptr<f32>)->f32 {return src[i]}
+kernel look compute 3,2,4
+func plain(x:f32)->f32 {return x}
+@@@ case c070 areas=kernel,prelude from=KernelChecks.nina:319:barrierInsideAnIf
+@@@ source
+kernel func k(index i: i32, workgroup t: ptr<float>) -> i32 {
+    if (i > 3) { barrier() }
+    return 0
+}
+
+@@@ expect hir
+func barrier()->i32 {return 0}
+func k(i:i32,t:ptr<f32>)->i32 {if (Gt:i1 i 3) {barrier:i32()} else {}; return 0}
+kernel k compute 3,5
+@@@ case c071 areas=kernel,prelude from=KernelChecks.nina:325:earlyReturnBeforeABarrier
+@@@ source
+kernel func k(index i: i32, workgroup t: ptr<float>) -> i32 {
+    if (i > 3) { return 1 }
+    barrier()
+    return 0
+}
+
+@@@ expect hir
+func barrier()->i32 {return 0}
+func k(i:i32,t:ptr<f32>)->i32 {if (Gt:i1 i 3) {return 1} else {}; barrier:i32(); return 0}
+kernel k compute 3,5
+@@@ case c072 areas=kernel from=KernelChecks.nina:331:workgroupWithAnElementInput
+@@@ source
+kernel func k(x: float, index i: i32, workgroup t: ptr<float>) -> float {
+    return x
+}
+
+@@@ expect hir
+func k(x:f32,i:i32,t:ptr<f32>)->f32 {return x}
+kernel k compute 0,3,5
+@@@ case c073 areas=kernel from=KernelChecks.nina:336:threeIndexParameters
+@@@ source
+kernel func k(index a: i32, index b: i32, index c: i32) -> i32 {
+    return a
+}
+
+@@@ expect hir
+func k(a:i32,b:i32,c:i32)->i32 {return a}
+kernel k compute 3,3,3
+@@@ case c074 areas=kernel from=KernelChecks.nina:341:workgroupInAGrid
+@@@ source
+kernel func k(index a: i32, index b: i32, workgroup t: ptr<float>) -> i32 {
+    return a
+}
+
+@@@ expect hir
+func k(a:i32,b:i32,t:ptr<f32>)->i32 {return a}
+kernel k compute 3,3,5
+@@@ case c075 areas=kernel,prelude from=KernelChecks.nina:350:atomicaddOnFloats
+@@@ source
+kernel func k(index i: i32, writable a: ptr<float>) -> i32 {
+    atomicAdd(a, 0, 1)
+    return 0
+}
+
+@@@ expect hir
+func atomicAdd(counts:ptr<i32>,slot:i32,amount:i32)->i32 {let old:i32 = counts[slot]; counts[slot] = (Add:i32 old amount); return old}
+func k(i:i32,a:ptr<f32>)->i32 {atomicAdd:i32(a,(coerce:i32 0),(coerce:i32 1)); return 0}
+kernel k compute 3,4
+@@@ case c076 areas=kernel,prelude from=KernelChecks.nina:355:atomicaddfloatOnIntegers
+@@@ source
+kernel func k(index i: i32, writable a: ptr<i32>) -> i32 {
+    atomicAddFloat(a, 0, 1.0)
+    return 0
+}
+
+@@@ expect hir
+func atomicAddFloat(sums:ptr<f32>,slot:i32,amount:f32)->f32 {let old:f32 = sums[slot]; sums[slot] = (Add:f32 old amount); return old}
+func k(i:i32,a:ptr<i32>)->i32 {atomicAddFloat:f32(a,(coerce:i32 0),(coerce:f32 1)); return 0}
+kernel k compute 3,4
+@@@ case c077 areas=kernel,prelude from=KernelChecks.nina:361:atomicOnAReadOnlyArray
+@@@ source
+kernel func k(index i: i32, uniform a: ptr<i32>) -> i32 {
+    atomicMin(a, 0, 1)
+    return 0
+}
+
+@@@ expect hir
+func atomicMin(values:ptr<i32>,slot:i32,candidate:i32)->i32 {let old:i32 = values[slot]; if (Lt:i1 candidate old) {values[slot] = candidate} else {}; return old}
+func k(i:i32,a:ptr<i32>)->i32 {atomicMin:i32(a,(coerce:i32 0),(coerce:i32 1)); return 0}
+kernel k compute 3,2
+@@@ case c078 areas=kernel,prelude from=KernelChecks.nina:366:callingAKernelThatHasWorkgroupMemory
+@@@ source
+kernel func g(index i: i32, workgroup t: ptr<float>) -> i32 {
+    barrier()
+    return 0
+}
+
+kernel func k(index i: i32, workgroup t: ptr<float>) -> i32 {
+    return g(i, t)
+}
+
+@@@ expect hir
+func barrier()->i32 {return 0}
+func g(i:i32,t:ptr<f32>)->i32 {barrier:i32(); return 0}
+kernel g compute 3,5
+func k(i:i32,t:ptr<f32>)->i32 {return g:i32(i,t)}
+kernel k compute 3,5
+@@@ case c079 areas=coroutines,sums from=KotlinChecks.nina:75:steppedCoroutine
+@@@ source
+coro func evens(n: i64) -> i64 {
+  for (i = 0; i < n; i = i + 2) {
+    yield i
+  }
+}
+func main() -> i64 {
+  let g: coro<i64> = evens(5)
+  let step: variant<i64> = g.resume()
+  if (step.isCase(0)) { return step.unwrapAt(0) }
+  return 0
+}
+
+@@@ expect hir
+func evens(n:i64)->coro<i64> {for (i=0; (Lt:i1 i n); (Add:i64 i 2)) {yield i}}
+func main()->i64 {let g:coro<i64> = evens:coro<i64>(5); let step:variant<i64> = (resume g); if (isCase step,0) {return (unwrapAt step,0)} else {}; return 0}
+@@@ case c080 areas=core from=KotlinChecks.nina:82:steppedLoop
+@@@ source
+func count(n: i64) -> i64 {
+  var total: i64 = 0
+  for (i = 0; i < n; i = i + 2) {
+    total = total + i
+  }
+  return total
+}
+func main() -> i64 { return count(5) }
+
+@@@ expect hir
+func count(n:i64)->i64 {var total:i64 = 0; for (i=0; (Lt:i1 i n); (Add:i64 i 2)) {total@ = (Add:i64 total@ i)}; return total@}
+func main()->i64 {return count:i64(5)}
+@@@ case c081 areas=generics,closures,exceptions,sums,containers from=Main.nina:34:fullProgramSource
+@@@ source
+struct Point {
+    x: double
+    y: double
+    func dist() -> double {
+        return this.x * this.x + this.y * this.y
+    }
+}
+
+func distanceSquared(a: Point, b: Point) -> double {
+    let dx: double = a.x - b.x
+    let dy: double = a.y - b.y
+    return dx * dx + dy * dy
+}
+
+func distFromOrigin(bx: double, by: double) -> double {
+    return distanceSquared(Point { x: 0.0, y: 0.0 }, Point { x: bx, y: by })
+}
+
+func gcd(a0: i64, b0: i64) -> i64 {
+    goto loop(a0, b0)
+label loop(a: i64, b: i64):
+    branch b == 0 ? done(a) : body(a, b)
+label body(a: i64, b: i64):
+    let r: i64 = a % b
+    goto loop(b, r)
+label done(result: i64):
+    return result
+}
+
+func classify(x: i64) -> i64 {
+    if (x < 0) {
+        return 0 - 1
+    } else {
+        if (x == 0) {
+            return 0
+        } else {
+            return 1
+        }
+    }
+}
+
+func sumBuf(buf: ptr<double>, len: i64) -> double {
+    for (i = 0, total = 0.0; i < len; i = i + 1, total = total + buf[i]) {
+    }
+    return total
+}
+
+func histTest() -> i64 {
+    let hist: i64[4]
+    hist[0] = 10
+    hist[1] = 20
+    hist[2] = 30
+    hist[3] = 40
+    return hist[1] + hist[2]
+}
+
+func bitwisePrecedenceCheck() -> i64 {
+    let a: i64 = 6
+    let b: i64 = 3
+    let c: i64 = 1
+    let d: i64 = 2
+    return a | b & c ^ d
+}
+
+func shiftPrecedenceCheck() -> i64 {
+    let x: i64 = 1
+    return x << 2 & 3
+}
+
+func vecMulSumViaVar(a: double, b: double) -> double {
+    let v1: vec<double, 4> = vec[a, a + 1.0, a + 2.0, a + 3.0]
+    let v2: vec<double, 4> = vec[b, b, b, b]
+    let p: vec<double, 4> = v1 * v2
+    var total: double = 0.0
+    for (i = 0; i < 4; i = i + 1) {
+        total = total + p[i]
+    }
+    return total
+}
+
+func doubleIt(x: i64) -> i64 {
+    return x * 2
+}
+
+func addOne(x: i64) -> i64 {
+    return x + 1
+}
+
+func pickAndApply(x: i64, useAddOne: i64) -> i64 {
+    var fn: ptr<func(i64) -> i64> = doubleIt
+    if (useAddOne != 0) {
+        fn = addOne
+    }
+    return fn(x)
+}
+
+global counter: i64 = 0
+
+func bump() -> i64 {
+    counter = counter + 1
+    return counter
+}
+
+func sumPushed(a: i64, b: i64, c: i64) -> i64 {
+    let arr: mutarray<i64> = mutarray<i64>()
+    push(arr, a)
+    push(arr, b)
+    push(arr, c)
+    push(arr, a + b + c)
+    return arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+func sumToVar(n: i64) -> i64 {
+    var total: i64 = 0
+    for (i = 0; i < n; i = i + 1) {
+        total = total + i
+    }
+    return total
+}
+
+func sumEvensBelow(n: i64) -> i64 {
+    var arr: mutarray<i64> = mutarray<i64>()
+    for (i = 0; i < n; i = i + 1) {
+        if (i % 2 == 0) {
+            arr = push(arr, i)
+        }
+    }
+    var total: i64 = 0
+    for (i = 0; i < len(arr); i = i + 1) {
+        total = total + arr[i]
+    }
+    return total
+}
+
+func absViaIf(x: i64) -> i64 {
+    var r: i64 = x
+    if (r < 0) {
+        r = 0 - r
+    }
+    return r
+}
+
+func maxVal(a: i64, b: i64) -> i64 {
+    var result: i64 = 0
+    if (a < b) {
+        result = b
+    } else {
+        result = a
+    }
+    return result
+}
+
+func gridCellCheck() -> i64 {
+    let g: grid<i64, 2, 2>
+    g[0, 0] = 10
+    g[0, 1] = 20
+    g[1, 0] = 30
+    g[1, 1] = 40
+    return g[1, 0] - g[0, 1]
+}
+
+func tensorCellCheck() -> i64 {
+    let t: tensor<i64, 2, 2, 2>
+    t[0, 0, 0] = 1
+    t[0, 0, 1] = 2
+    t[0, 1, 0] = 3
+    t[1, 0, 0] = 4
+    t[1, 1, 1] = 5
+    return t[1, 1, 1] * 100 + t[1, 0, 0] * 10 + t[0, 1, 0]
+}
+
+func sparseLastWriteWins() -> i64 {
+    var sp: sparse<i64> = sparse<i64>()
+    sp[3, 3] = 1
+    sp[3, 3] = 2
+    sp[3, 3] = 3
+    return sp[3, 3]
+}
+
+func sparseUnsetIsZero() -> i64 {
+    var sp: sparse<i64> = sparse<i64>()
+    sp[1, 1] = 99
+    return sp[9, 9]
+}
+
+func square(x: i64) -> i64 {
+    return x * x
+}
+
+func methodEquivalenceCheck(x: i64) -> i64 {
+    return square(x) - x.square()
+}
+
+func methodPushPersists() -> i64 {
+    var arr: mutarray<i64> = mutarray<i64>()
+    arr.push(10)
+    arr.push(20)
+    return len(arr)
+}
+
+func hashmapCollisionAndOverwrite() -> i64 {
+    var hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+    hm[0] = 100
+    hm[5] = 500
+    hm[1] = 10
+    hm[1] = 20
+    return hm[0] * 10000 + hm[5] * 10 + hm[1]
+}
+
+func hashmapMissingKeyIsZero() -> i64 {
+    var hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+    hm[0] = 7
+    return hm[42]
+}
+
+func sparseOneDim() -> i64 {
+    var sp: sparse<i64> = sparse<i64>()
+    sp[0] = 100
+    sp[7] = 200
+    return sp[7] * 10 + sp[0]
+}
+
+func gridDimsCheck() -> i64 {
+    let g: grid<i64, 3, 4>
+    return g.rows() * 100 + g.cols()
+}
+
+func tensorDimsCheck() -> i64 {
+    let t: tensor<i64, 2, 3, 4>
+    return t.dim(0) * 100 + t.dim(1) * 10 + t.dim(2)
+}
+
+func sparseLenCheck() -> i64 {
+    var sp: sparse<i64> = sparse<i64>()
+    sp[0, 0] = 1
+    sp[1, 1] = 2
+    sp[1, 1] = 3
+    return sp.len()
+}
+
+func hashmapSizeCheck() -> i64 {
+    var hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+    hm[0] = 1
+    hm[1] = 2
+    hm[1] = 99
+    return hm.len() * 100
+}
+
+func charEqualsItself() -> i64 {
+    let c: char = 'A'
+    if (c == 'A') { return 1 }
+    return 0
+}
+
+func charDarrayRoundTrip() -> i64 {
+    var cs: mutarray<char> = mutarray<char>()
+    cs.push('h')
+    cs.push('i')
+    if (cs[0] == 'h' && cs[1] == 'i') { return 1 }
+    return 0
+}
+
+func stringKeyedHashmapCheck() -> i64 {
+    var hm: mutmap<string, i64> = mutmap<string, i64>(4)
+    hm["one"] = 1
+    hm["two"] = 2
+    hm["one"] = 11
+    return hm["one"] * 100 + hm["two"]
+}
+
+func hashSameContentCheck() -> i64 {
+    let a: string = "same"
+    let b: string = "same"
+    return hash(a) - hash(b)
+}
+
+func streqCheck() -> i64 {
+    if ("match" != "match") { return 0 }
+    if ("match" == "nomatch") { return 0 }
+    return 1
+}
+
+func fixedArrayLenCheck() -> i64 {
+    let hist: i64[4]
+    return hist.len()
+}
+
+func sumFixedParam(arr: i64[4]) -> i64 {
+    return arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+func lenOnFixedParam(arr: i64[4]) -> i64 {
+    return arr.len()
+}
+
+func fixedArrayParamCheck() -> i64 {
+    let hist: i64[4]
+    hist[0] = 1
+    hist[1] = 2
+    hist[2] = 3
+    hist[3] = 4
+    return sumFixedParam(hist) * 100 + lenOnFixedParam(hist)
+}
+
+func arrayFillToCapacity() -> i64 {
+    let arr: buffer<i64, 4> = buffer<i64, 4>()
+    arr[0] = 10
+    arr[1] = 20
+    arr[2] = 30
+    arr[3] = 40
+    return arr[0] + arr[1] + arr[2] + arr[3]
+}
+
+func arrayCapacityCheck() -> i64 {
+    let arr: buffer<i64, 4> = buffer<i64, 4>()
+    arr[0] = 1
+    arr[1] = 2
+    return arr.capacity()
+}
+
+func arrayLetBoundIndexedFill() -> i64 {
+    let arr: buffer<i64, 3> = buffer<i64, 3>()
+    arr[0] = 5
+    arr[1] = 6
+    arr[2] = 7
+    return arr[0] + arr[1] + arr[2]
+}
+
+func arrayParamCheck(arr: buffer<i64, 3>) -> i64 {
+    return arr[0] + arr[1] + arr[2] + arr.capacity()
+}
+
+func arrayViaParam() -> i64 {
+    let arr: buffer<i64, 3> = buffer<i64, 3>()
+    arr[0] = 100
+    arr[1] = 200
+    arr[2] = 300
+    return arrayParamCheck(arr)
+}
+
+func stringConcatCheck() -> i64 {
+    let combined: string = "ab" + "cd"
+    if (combined != "abcd") { return 0 }
+    return 1
+}
+
+func darrayConcatCheck() -> i64 {
+    var a: mutarray<i64> = mutarray<i64>()
+    push(a, 1)
+    push(a, 2)
+    var b: mutarray<i64> = mutarray<i64>()
+    push(b, 3)
+    push(b, 4)
+    let combined: mutarray<i64> = a + b
+    if (len(combined) != 4) { return 0 }
+    return combined[0] * 1000 + combined[1] * 100 + combined[2] * 10 + combined[3]
+}
+
+func structLabelParam() -> i64 {
+    goto done(Pair { a: 3, b: 4 })
+label done(p: Pair):
+    return p.a + p.b
+}
+
+func letPushInsideIf() -> i64 {
+    let arr: mutarray<i64> = mutarray<i64>()
+    if (1 == 1) {
+        push(arr, 5)
+    }
+    push(arr, 6)
+    return len(arr)
+}
+
+func tensorOneDimensional() -> i64 {
+    let t: tensor<i64, 4>
+    t[0] = 10
+    t[1] = 20
+    t[2] = 30
+    t[3] = 40
+    return t[1] + t[2]
+}
+
+func tensorFourDimensional() -> i64 {
+    let t: tensor<i64, 2, 2, 2, 2>
+    t[0, 0, 0, 0] = 1
+    t[1, 1, 1, 1] = 99
+    t[0, 1, 0, 1] = 5
+    return t[1, 1, 1, 1] * 100 + t[0, 1, 0, 1]
+}
+
+func mlpRelu(x: double) -> double {
+    if (x < 0.0) { return 0.0 }
+    return x
+}
+
+func mlpXorForward(x1: double, x2: double) -> double {
+    let w1: tensor<double, 2, 2>
+    w1[0, 0] = 1.0
+    w1[0, 1] = 1.0
+    w1[1, 0] = 1.0
+    w1[1, 1] = 1.0
+    let b1: tensor<double, 2>
+    b1[0] = 0.0
+    b1[1] = 0.0 - 1.0
+    let hidden: tensor<double, 2>
+    for (i = 0; i < 2; i = i + 1) {
+        var preActivation: double = b1[i]
+        preActivation = preActivation + w1[i, 0] * x1
+        preActivation = preActivation + w1[i, 1] * x2
+        hidden[i] = mlpRelu(preActivation)
+    }
+    let w2: tensor<double, 2>
+    w2[0] = 1.0
+    w2[1] = 0.0 - 2.0
+    var output: double = 0.0
+    for (i = 0; i < 2; i = i + 1) {
+        output = output + w2[i] * hidden[i]
+    }
+    return output
+}
+struct Circle {
+    r: double
+    func dist() -> double {
+        return this.r * this.r
+    }
+}
+
+func structMethodCheck() -> double {
+    let p: Point = Point { x: 3.0, y: 4.0 }
+    let c: Circle = Circle { r: 5.0 }
+    return p.dist() + c.dist()
+}
+
+struct Pair {
+    a: i64
+    b: i64
+    func sum() -> i64 {
+        return this.a + this.b
+    }
+    func doubledSum() -> i64 {
+        return this.sum() * 2
+    }
+}
+
+func structMethodChainCheck() -> i64 {
+    let p: Pair = Pair { a: 3, b: 4 }
+    return p.doubledSum()
+}
+
+func shuffleReverseCheck() -> i64 {
+    let v: vec<i64, 4> = vec[10, 20, 30, 40]
+    let r: vec<i64, 4> = v.shuffle(3, 2, 1, 0)
+    return r[0] * 1000 + r[1] * 100 + r[2] * 10 + r[3]
+}
+
+func shuffleDuplicateCheck() -> i64 {
+    let v: vec<i64, 4> = vec[1, 2, 3, 4]
+    let r: vec<i64, 4> = v.shuffle(0, 0, 1, 1)
+    return r[0] * 1000 + r[1] * 100 + r[2] * 10 + r[3]
+}
+
+func throwIfNegative(x: i64) -> i64 {
+    if (x < 0) {
+        throw 99
+    }
+    return x * 2
+}
+
+func tryCatchBasic(x: i64) -> i64 {
+    var result: i64 = 0
+    try {
+        result = throwIfNegative(x)
+    } catch (code) {
+        result = code
+    }
+    return result
+}
+
+func closureCounterCheck() -> i64 {
+    var count: i64 = 0
+    let inc: closure() -> i64 = closure() -> i64 {
+        count = count + 1
+        return count
+    }
+    let a: i64 = inc()
+    let b: i64 = inc()
+    return a * 100 + b
+}
+
+func makeMultiplier(factor: i64) -> closure(i64) -> i64 {
+    let mul: closure(i64) -> i64 = closure(x: i64) -> i64 {
+        return x * factor
+    }
+    return mul
+}
+
+func closureEscapeCheck() -> i64 {
+    let triple: closure(i64) -> i64 = makeMultiplier(3)
+    return triple(7)
+}
+func divideChecked(a: i64, b: i64) -> i64 {
+    var r: either<i64, i64> = eitherOk<i64, i64>(0)
+    if (b == 0) {
+        r = eitherErr<i64, i64>(99)
+    } else {
+        r = eitherOk<i64, i64>(a / b)
+    }
+    if (r.isErr()) {
+        return r.unwrapErr()
+    }
+    return r.unwrapOk()
+}
+
+func eitherCoercionCheck() -> i64 {
+    let r: either<double, i64> = eitherOk<double, i64>(3)
+    return r.unwrapOk().toI64()
+}
+
+func variantTagCheck(which: i64) -> i64 {
+    var v: variant<i64, double, i64> = variant<i64, double, i64>(0, 0)
+    if (which == 0) { v = variant<i64, double, i64>(0, 10) }
+    if (which == 1) { v = variant<i64, double, i64>(1, 2.5) }
+    if (which == 2) { v = variant<i64, double, i64>(2, 30) }
+    if (v.tag() == 0) { return v.unwrapAt(0) }
+    if (v.tag() == 1) { return v.unwrapAt(1).toI64() * 100 }
+    return v.unwrapAt(2) * 1000
+}
+
+func isCaseCheck() -> i64 {
+    let v: variant<i64, double> = variant<i64, double>(1, 7.0)
+    if (v.isCase(1)) { return 1 }
+    return 0
+}
+
+func castChainCheck() -> i64 {
+    let d: double = 9.0
+    let asI64: i64 = d.toI64()
+    let backToD: double = asI64.toDouble()
+    return backToD.toI64() + asI64
+}
+struct Triple {
+    a: i64
+    b: i64
+    c: i64
+}
+
+func makeTriple(ok: i64) -> either<Triple, i64> {
+    if (ok == 0) {
+        return eitherErr<Triple, i64>(0 - 1)
+    }
+    return eitherOk<Triple, i64>(Triple { a: 111, b: 222, c: 333 })
+}
+
+func tripleCheck(ok: i64) -> i64 {
+    let r: either<Triple, i64> = makeTriple(ok)
+    if (r.isErr()) {
+        return r.unwrapErr()
+    }
+    let t: Triple = r.unwrapOk()
+    return t.a * 1000000 + t.b * 1000 + t.c
+}
+struct Box<T> {
+    value: T
+    func getValue() -> T {
+        return this.value
+    }
+}
+
+func boxI64Check() -> i64 {
+    let b: Box<i64> = Box { value: 42 }
+    return b.getValue()
+}
+
+func boxDoubleCheck() -> i64 {
+    let b: Box<double> = Box { value: 3.5 }
+    return b.getValue().toI64()
+}
+
+func bothBoxesCheck() -> i64 {
+    let bi: Box<i64> = Box { value: 100 }
+    let bd: Box<double> = Box { value: 2.0 }
+    return bi.getValue() + bd.getValue().toI64()
+}
+
+struct GenPair<A, B> {
+    a: A
+    b: B
+    func sumAsInt() -> i64 {
+        return this.a.toI64() + this.b.toI64()
+    }
+}
+
+func pairCheck() -> i64 {
+    let p: GenPair<i64, double> = GenPair { a: 7, b: 8.5 }
+    return p.sumAsInt()
+}
+
+struct Doubler<T> {
+    value: T
+    func doubled() -> T {
+        return this.value + this.value
+    }
+}
+
+func doublerI64Check() -> i64 {
+    let d: Doubler<i64> = Doubler { value: 21 }
+    return d.doubled()
+}
+
+func doublerDoubleCheck() -> i64 {
+    let d: Doubler<double> = Doubler { value: 10.5 }
+    return d.doubled().toI64()
+}
+struct EitherContainer<T> {
+    value: either<T, i64>
+    func unwrapOrDefault(def: T) -> T {
+        if (this.value.isErr()) {
+            return def
+        }
+        return this.value.unwrapOk()
+    }
+}
+
+func eitherContainerOkCheck() -> i64 {
+    let c: EitherContainer<i64> = EitherContainer { value: eitherOk<i64, i64>(42) }
+    return c.unwrapOrDefault(0)
+}
+
+func eitherContainerErrCheck() -> i64 {
+    let c: EitherContainer<i64> = EitherContainer { value: eitherErr<i64, i64>(99) }
+    return c.unwrapOrDefault(7)
+}
+
+struct GPair<A, B> {
+    a: A
+    b: B
+}
+
+func makeGPairResult(ok: i64) -> either<GPair<i64, i64>, i64> {
+    if (ok == 0) {
+        return eitherErr<GPair<i64, i64>, i64>(0 - 1)
+    }
+    return eitherOk<GPair<i64, i64>, i64>(GPair { a: 11, b: 22 })
+}
+
+func gpairResultCheck(ok: i64) -> i64 {
+    let r: either<GPair<i64, i64>, i64> = makeGPairResult(ok)
+    if (r.isErr()) {
+        return r.unwrapErr()
+    }
+    let p: GPair<i64, i64> = r.unwrapOk()
+    return p.a * 100 + p.b
+}
+extern func malloc(size: i64) -> ptr<i64>
+
+func atomicIncrement() -> i64 {
+    let counter: ptr<i64> = malloc(8)
+    counter[0] = 41
+    let old: i64 = counter.atomicRmw("add", 1, "seq_cst")
+    let after: i64 = counter.atomicLoad("seq_cst")
+    return old * 100 + after
+}
+
+func cmpxchgSucceeds() -> i64 {
+    let slot: ptr<i64> = malloc(8)
+    slot[0] = 10
+    let old: i64 = slot.cmpxchg(10, 20, "seq_cst", "seq_cst")
+    return old * 1000 + slot.atomicLoad("seq_cst")
+}
+
+func cmpxchgFails() -> i64 {
+    let slot: ptr<i64> = malloc(8)
+    slot[0] = 10
+    let old: i64 = slot.cmpxchg(999, 20, "seq_cst", "seq_cst")
+    return old * 1000 + slot.atomicLoad("seq_cst")
+}
+
+func storeWithFence() -> i64 {
+    let slot: ptr<i64> = malloc(8)
+    slot.atomicStore(7, "release")
+    fence("acquire")
+    return slot.atomicLoad("acquire")
+}
+
+@@@ expect hir
+struct Point{x:f64,y:f64}
+func Point_dist(this:Point)->f64 {return (Add:f64 (Mul:f64 this.#0 this.#0) (Mul:f64 this.#1 this.#1))}
+func distanceSquared(a:Point,b:Point)->f64 {let dx:f64 = (Sub:f64 a.#0 b.#0); let dy:f64 = (Sub:f64 a.#1 b.#1); return (Add:f64 (Mul:f64 dx dx) (Mul:f64 dy dy))}
+func distFromOrigin(bx:f64,by:f64)->f64 {return distanceSquared:f64(Point{#0=0,#1=0},Point{#0=bx,#1=by})}
+func gcd(a0:i64,b0:i64)->i64 {goto loop(a0,b0); label loop(a:i64,b:i64):; branch (Eq:i1 b 0) ? done(a) : body(a,b); label body(a:i64,b:i64):; let r:i64 = (Rem:i64 a b); goto loop(b,r); label done(result:i64):; return result}
+func classify(x:i64)->i64 {if (Lt:i1 x 0) {return (Sub:i64 0 1)} else {if (Eq:i1 x 0) {return 0} else {return 1}}}
+func sumBuf(buf:ptr<f64>,len:i64)->f64 {for (i=0,total=0; (Lt:i1 i len); (Add:i64 i 1),(Add:f64 total buf[i])) {}; return total}
+func histTest()->i64 {let hist:i64[4] = new i64[4](); hist[0] = 10; hist[1] = 20; hist[2] = 30; hist[3] = 40; return (Add:i64 hist[1] hist[2])}
+func bitwisePrecedenceCheck()->i64 {let a:i64 = 6; let b:i64 = 3; let c:i64 = 1; let d:i64 = 2; return (Or:i64 a (Xor:i64 (And:i64 b c) d))}
+func shiftPrecedenceCheck()->i64 {let x:i64 = 1; return (And:i64 (Shl:i64 x 2) 3)}
+func vecMulSumViaVar(a:f64,b:f64)->f64 {let v1:vec<f64,4> = vec[a,(Add:f64 a 1),(Add:f64 a 2),(Add:f64 a 3)]; let v2:vec<f64,4> = vec[b,b,b,b]; let p:vec<f64,4> = (Mul:vec<f64,4> v1 v2); var total:f64 = 0; for (i=0; (Lt:i1 i 4); (Add:i64 i 1)) {total@ = (Add:f64 total@ p[i])}; return total@}
+func doubleIt(x:i64)->i64 {return (Mul:i64 x 2)}
+func addOne(x:i64)->i64 {return (Add:i64 x 1)}
+func pickAndApply(x:i64,useAddOne:i64)->i64 {var fn:ptr<func(i64)->i64> = &doubleIt; if (Ne:i1 useAddOne 0) {fn@ = &addOne} else {}; return (*fn@):i64(x)}
+global counter:i64
+func bump()->i64 {@counter = (Add:i64 @counter 1); return @counter}
+func sumPushed(a:i64,b:i64,c:i64)->i64 {var arr:mutarray<i64> = new mutarray<i64>(); (push arr@,a); (push arr@,b); (push arr@,c); (push arr@,(Add:i64 (Add:i64 a b) c)); return (Add:i64 (Add:i64 (Add:i64 arr@[0] arr@[1]) arr@[2]) arr@[3])}
+func sumToVar(n:i64)->i64 {var total:i64 = 0; for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {total@ = (Add:i64 total@ i)}; return total@}
+func sumEvensBelow(n:i64)->i64 {var arr:mutarray<i64> = new mutarray<i64>(); for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {if (Eq:i1 (Rem:i64 i 2) 0) {arr@ = (push arr@,i)} else {}}; var total:i64 = 0; for (i=0; (Lt:i1 i (len arr@)); (Add:i64 i 1)) {total@ = (Add:i64 total@ arr@[i])}; return total@}
+func absViaIf(x:i64)->i64 {var r:i64 = x; if (Lt:i1 r@ 0) {r@ = (Sub:i64 0 r@)} else {}; return r@}
+func maxVal(a:i64,b:i64)->i64 {var result:i64 = 0; if (Lt:i1 a b) {result@ = b} else {result@ = a}; return result@}
+func gridCellCheck()->i64 {let g:grid<i64,2,2> = new grid<i64,2,2>(); g[0,0] = 10; g[0,1] = 20; g[1,0] = 30; g[1,1] = 40; return (Sub:i64 g[1,0] g[0,1])}
+func tensorCellCheck()->i64 {let t:tensor<i64,2,2,2> = new tensor<i64,2,2,2>(); t[0,0,0] = 1; t[0,0,1] = 2; t[0,1,0] = 3; t[1,0,0] = 4; t[1,1,1] = 5; return (Add:i64 (Add:i64 (Mul:i64 t[1,1,1] 100) (Mul:i64 t[1,0,0] 10)) t[0,1,0])}
+func sparseLastWriteWins()->i64 {var sp:sparse<i64> = new sparse<i64>(); sp@[3,3] = 1; sp@[3,3] = 2; sp@[3,3] = 3; return sp@[3,3]}
+func sparseUnsetIsZero()->i64 {var sp:sparse<i64> = new sparse<i64>(); sp@[1,1] = 99; return sp@[9,9]}
+func square(x:i64)->i64 {return (Mul:i64 x x)}
+func methodEquivalenceCheck(x:i64)->i64 {return (Sub:i64 square:i64(x) square:i64(x))}
+func methodPushPersists()->i64 {var arr:mutarray<i64> = new mutarray<i64>(); (push arr@,10); (push arr@,20); return (len arr@)}
+func hashmapCollisionAndOverwrite()->i64 {var hm:mutmap<i64,i64> = new mutmap<i64,i64>(4); hm@[0] = 100; hm@[5] = 500; hm@[1] = 10; hm@[1] = 20; return (Add:i64 (Add:i64 (Mul:i64 hm@[0] 10000) (Mul:i64 hm@[5] 10)) hm@[1])}
+func hashmapMissingKeyIsZero()->i64 {var hm:mutmap<i64,i64> = new mutmap<i64,i64>(4); hm@[0] = 7; return hm@[42]}
+func sparseOneDim()->i64 {var sp:sparse<i64> = new sparse<i64>(); sp@[0] = 100; sp@[7] = 200; return (Add:i64 (Mul:i64 sp@[7] 10) sp@[0])}
+func gridDimsCheck()->i64 {let g:grid<i64,3,4> = new grid<i64,3,4>(); return (Add:i64 (Mul:i64 (rows g) 100) (cols g))}
+func tensorDimsCheck()->i64 {let t:tensor<i64,2,3,4> = new tensor<i64,2,3,4>(); return (Add:i64 (Add:i64 (Mul:i64 (dim t,0) 100) (Mul:i64 (dim t,1) 10)) (dim t,2))}
+func sparseLenCheck()->i64 {var sp:sparse<i64> = new sparse<i64>(); sp@[0,0] = 1; sp@[1,1] = 2; sp@[1,1] = 3; return (len sp@)}
+func hashmapSizeCheck()->i64 {var hm:mutmap<i64,i64> = new mutmap<i64,i64>(4); hm@[0] = 1; hm@[1] = 2; hm@[1] = 99; return (Mul:i64 (len hm@) 100)}
+func charEqualsItself()->i64 {let c:i8 = 65; if (Eq:i1 c 65) {return 1} else {}; return 0}
+func charDarrayRoundTrip()->i64 {var cs:mutarray<i8> = new mutarray<i8>(); (push cs@,104); (push cs@,105); if (LogAnd:i1 (Eq:i1 cs@[0] 104) (Eq:i1 cs@[1] 105)) {return 1} else {}; return 0}
+func stringKeyedHashmapCheck()->i64 {var hm:mutmap<string,i64> = new mutmap<string,i64>(4); hm@["one"] = 1; hm@["two"] = 2; hm@["one"] = 11; return (Add:i64 (Mul:i64 hm@["one"] 100) hm@["two"])}
+func hashSameContentCheck()->i64 {let a:string = "same"; let b:string = "same"; return (Sub:i64 (hash a) (hash b))}
+func streqCheck()->i64 {if (Ne:i1 "match" "match") {return 0} else {}; if (Eq:i1 "match" "nomatch") {return 0} else {}; return 1}
+func fixedArrayLenCheck()->i64 {let hist:i64[4] = new i64[4](); return (len hist)}
+func sumFixedParam(arr:i64[4])->i64 {return (Add:i64 (Add:i64 (Add:i64 arr[0] arr[1]) arr[2]) arr[3])}
+func lenOnFixedParam(arr:i64[4])->i64 {return (len arr)}
+func fixedArrayParamCheck()->i64 {let hist:i64[4] = new i64[4](); hist[0] = 1; hist[1] = 2; hist[2] = 3; hist[3] = 4; return (Add:i64 (Mul:i64 sumFixedParam:i64(hist) 100) lenOnFixedParam:i64(hist))}
+func arrayFillToCapacity()->i64 {let arr:buffer<i64,4> = new buffer<i64,4>(); arr[0] = 10; arr[1] = 20; arr[2] = 30; arr[3] = 40; return (Add:i64 (Add:i64 (Add:i64 arr[0] arr[1]) arr[2]) arr[3])}
+func arrayCapacityCheck()->i64 {let arr:buffer<i64,4> = new buffer<i64,4>(); arr[0] = 1; arr[1] = 2; return (capacity arr)}
+func arrayLetBoundIndexedFill()->i64 {let arr:buffer<i64,3> = new buffer<i64,3>(); arr[0] = 5; arr[1] = 6; arr[2] = 7; return (Add:i64 (Add:i64 arr[0] arr[1]) arr[2])}
+func arrayParamCheck(arr:buffer<i64,3>)->i64 {return (Add:i64 (Add:i64 (Add:i64 arr[0] arr[1]) arr[2]) (capacity arr))}
+func arrayViaParam()->i64 {let arr:buffer<i64,3> = new buffer<i64,3>(); arr[0] = 100; arr[1] = 200; arr[2] = 300; return arrayParamCheck:i64(arr)}
+func stringConcatCheck()->i64 {let combined:string = (concat "ab","cd"); if (Ne:i1 combined "abcd") {return 0} else {}; return 1}
+func darrayConcatCheck()->i64 {var a:mutarray<i64> = new mutarray<i64>(); (push a@,1); (push a@,2); var b:mutarray<i64> = new mutarray<i64>(); (push b@,3); (push b@,4); var combined:mutarray<i64> = (concat a@,b@); if (Ne:i1 (len combined@) 4) {return 0} else {}; return (Add:i64 (Add:i64 (Add:i64 (Mul:i64 combined@[0] 1000) (Mul:i64 combined@[1] 100)) (Mul:i64 combined@[2] 10)) combined@[3])}
+func structLabelParam()->i64 {goto done(Pair{#0=3,#1=4}); label done(p:Pair):; return (Add:i64 p.#0 p.#1)}
+func letPushInsideIf()->i64 {var arr:mutarray<i64> = new mutarray<i64>(); if (Eq:i1 1 1) {(push arr@,5)} else {}; (push arr@,6); return (len arr@)}
+func tensorOneDimensional()->i64 {let t:tensor<i64,4> = new tensor<i64,4>(); t[0] = 10; t[1] = 20; t[2] = 30; t[3] = 40; return (Add:i64 t[1] t[2])}
+func tensorFourDimensional()->i64 {let t:tensor<i64,2,2,2,2> = new tensor<i64,2,2,2,2>(); t[0,0,0,0] = 1; t[1,1,1,1] = 99; t[0,1,0,1] = 5; return (Add:i64 (Mul:i64 t[1,1,1,1] 100) t[0,1,0,1])}
+func mlpRelu(x:f64)->f64 {if (Lt:i1 x 0) {return 0} else {}; return x}
+func mlpXorForward(x1:f64,x2:f64)->f64 {let w1:tensor<f64,2,2> = new tensor<f64,2,2>(); w1[0,0] = 1; w1[0,1] = 1; w1[1,0] = 1; w1[1,1] = 1; let b1:tensor<f64,2> = new tensor<f64,2>(); b1[0] = 0; b1[1] = (Sub:f64 0 1); let hidden:tensor<f64,2> = new tensor<f64,2>(); for (i=0; (Lt:i1 i 2); (Add:i64 i 1)) {var preActivation:f64 = b1[i]; preActivation@ = (Add:f64 preActivation@ (Mul:f64 w1[i,0] x1)); preActivation@ = (Add:f64 preActivation@ (Mul:f64 w1[i,1] x2)); hidden[i] = mlpRelu:f64(preActivation@)}; let w2:tensor<f64,2> = new tensor<f64,2>(); w2[0] = 1; w2[1] = (Sub:f64 0 2); var output:f64 = 0; for (i=0; (Lt:i1 i 2); (Add:i64 i 1)) {output@ = (Add:f64 output@ (Mul:f64 w2[i] hidden[i]))}; return output@}
+struct Circle{r:f64}
+func Circle_dist(this:Circle)->f64 {return (Mul:f64 this.#0 this.#0)}
+func structMethodCheck()->f64 {let p:Point = Point{#0=3,#1=4}; let c:Circle = Circle{#0=5}; return (Add:f64 Point_dist:f64(p) Circle_dist:f64(c))}
+struct Pair{a:i64,b:i64}
+func Pair_sum(this:Pair)->i64 {return (Add:i64 this.#0 this.#1)}
+func Pair_doubledSum(this:Pair)->i64 {return (Mul:i64 Pair_sum:i64(this) 2)}
+func structMethodChainCheck()->i64 {let p:Pair = Pair{#0=3,#1=4}; return Pair_doubledSum:i64(p)}
+func shuffleReverseCheck()->i64 {let v:vec<i64,4> = vec[10,20,30,40]; let r:vec<i64,4> = (shuffle v,3,2,1,0); return (Add:i64 (Add:i64 (Add:i64 (Mul:i64 r[0] 1000) (Mul:i64 r[1] 100)) (Mul:i64 r[2] 10)) r[3])}
+func shuffleDuplicateCheck()->i64 {let v:vec<i64,4> = vec[1,2,3,4]; let r:vec<i64,4> = (shuffle v,0,0,1,1); return (Add:i64 (Add:i64 (Add:i64 (Mul:i64 r[0] 1000) (Mul:i64 r[1] 100)) (Mul:i64 r[2] 10)) r[3])}
+func throwIfNegative(x:i64)->i64 {if (Lt:i1 x 0) {throw 99} else {}; return (Mul:i64 x 2)}
+func tryCatchBasic(x:i64)->i64 {var result:i64 = 0; try {result@ = throwIfNegative:i64(x)} catch (code) {result@ = code}; return result@}
+func closureCounterCheck()->i64 {var count:i64 = 0; let inc:closure()->i64 = <node>; let a:i64 = (*inc):i64(); let b:i64 = (*inc):i64(); return (Add:i64 (Mul:i64 a 100) b)}
+func makeMultiplier(factor:i64)->closure(i64)->i64 {let mul:closure(i64)->i64 = <node>; return mul}
+func closureEscapeCheck()->i64 {let triple:closure(i64)->i64 = makeMultiplier:closure(i64)->i64(3); return (*triple):i64(7)}
+func divideChecked(a:i64,b:i64)->i64 {var r:either<i64,i64> = ok(0); if (Eq:i1 b 0) {r@ = err(99)} else {r@ = ok((Div:i64 a b))}; if (isErr r@) {return (unwrapErr r@)} else {}; return (unwrapOk r@)}
+func eitherCoercionCheck()->i64 {let r:either<f64,i64> = ok(3); return (cast:i64 (unwrapOk r))}
+func variantTagCheck(which:i64)->i64 {var v:variant<i64,f64,i64> = variant#0(0); if (Eq:i1 which 0) {v@ = variant#0(10)} else {}; if (Eq:i1 which 1) {v@ = variant#1(2.5)} else {}; if (Eq:i1 which 2) {v@ = variant#2(30)} else {}; if (Eq:i1 (tag v@) 0) {return (unwrapAt v@,0)} else {}; if (Eq:i1 (tag v@) 1) {return (Mul:i64 (cast:i64 (unwrapAt v@,1)) 100)} else {}; return (Mul:i64 (unwrapAt v@,2) 1000)}
+func isCaseCheck()->i64 {let v:variant<i64,f64> = variant#1(7); if (isCase v,1) {return 1} else {}; return 0}
+func castChainCheck()->i64 {let d:f64 = 9; let asI64:i64 = (cast:i64 d); let backToD:f64 = (cast:f64 asI64); return (Add:i64 (cast:i64 backToD) asI64)}
+struct Triple{a:i64,b:i64,c:i64}
+func makeTriple(ok:i64)->either<Triple,i64> {if (Eq:i1 ok 0) {return err((Sub:i64 0 1))} else {}; return ok(Triple{#0=111,#1=222,#2=333})}
+func tripleCheck(ok:i64)->i64 {let r:either<Triple,i64> = makeTriple:either<Triple,i64>(ok); if (isErr r) {return (unwrapErr r)} else {}; let t:Triple = (unwrapOk r); return (Add:i64 (Add:i64 (Mul:i64 t.#0 1000000) (Mul:i64 t.#1 1000)) t.#2)}
+func boxI64Check()->i64 {let b:Box_i64 = Box_i64{#0=42}; return Box_i64_getValue:i64(b)}
+func boxDoubleCheck()->i64 {let b:Box_double = Box_double{#0=3.5}; return (cast:i64 Box_double_getValue:f64(b))}
+func bothBoxesCheck()->i64 {let bi:Box_i64 = Box_i64{#0=100}; let bd:Box_double = Box_double{#0=2}; return (Add:i64 Box_i64_getValue:i64(bi) (cast:i64 Box_double_getValue:f64(bd)))}
+func pairCheck()->i64 {let p:GenPair_i64_double = GenPair_i64_double{#0=7,#1=8.5}; return GenPair_i64_double_sumAsInt:i64(p)}
+func doublerI64Check()->i64 {let d:Doubler_i64 = Doubler_i64{#0=21}; return Doubler_i64_doubled:i64(d)}
+func doublerDoubleCheck()->i64 {let d:Doubler_double = Doubler_double{#0=10.5}; return (cast:i64 Doubler_double_doubled:f64(d))}
+func eitherContainerOkCheck()->i64 {let c:EitherContainer_i64 = EitherContainer_i64{#0=ok(42)}; return EitherContainer_i64_unwrapOrDefault:i64(c,0)}
+func eitherContainerErrCheck()->i64 {let c:EitherContainer_i64 = EitherContainer_i64{#0=err(99)}; return EitherContainer_i64_unwrapOrDefault:i64(c,7)}
+func makeGPairResult(ok:i64)->either<GPair_i64_i64,i64> {if (Eq:i1 ok 0) {return err((Sub:i64 0 1))} else {}; return ok(GPair_i64_i64{#0=11,#1=22})}
+func gpairResultCheck(ok:i64)->i64 {let r:either<GPair_i64_i64,i64> = makeGPairResult:either<GPair_i64_i64,i64>(ok); if (isErr r) {return (unwrapErr r)} else {}; let p:GPair_i64_i64 = (unwrapOk r); return (Add:i64 (Mul:i64 p.#0 100) p.#1)}
+extern malloc(size:i64)->ptr<i64>
+func atomicIncrement()->i64 {let counter:ptr<i64> = malloc:ptr<i64>(8); counter[0] = 41; let old:i64 = (atomicRmw counter,"add",1,"seq_cst"); let after:i64 = (atomicLoad counter,"seq_cst"); return (Add:i64 (Mul:i64 old 100) after)}
+func cmpxchgSucceeds()->i64 {let slot:ptr<i64> = malloc:ptr<i64>(8); slot[0] = 10; let old:i64 = (cmpxchg slot,10,20,"seq_cst","seq_cst"); return (Add:i64 (Mul:i64 old 1000) (atomicLoad slot,"seq_cst"))}
+func cmpxchgFails()->i64 {let slot:ptr<i64> = malloc:ptr<i64>(8); slot[0] = 10; let old:i64 = (cmpxchg slot,999,20,"seq_cst","seq_cst"); return (Add:i64 (Mul:i64 old 1000) (atomicLoad slot,"seq_cst"))}
+func storeWithFence()->i64 {let slot:ptr<i64> = malloc:ptr<i64>(8); (atomicStore slot,7,"release"); (fence 0,"acquire"); return (atomicLoad slot,"acquire")}
+struct Box_i64{value:i64}
+func Box_i64_getValue(this:Box_i64)->i64 {return this.#0}
+struct Box_double{value:f64}
+func Box_double_getValue(this:Box_double)->f64 {return this.#0}
+struct GenPair_i64_double{a:i64,b:f64}
+func GenPair_i64_double_sumAsInt(this:GenPair_i64_double)->i64 {return (Add:i64 (cast:i64 this.#0) (cast:i64 this.#1))}
+struct Doubler_i64{value:i64}
+func Doubler_i64_doubled(this:Doubler_i64)->i64 {return (Add:i64 this.#0 this.#0)}
+struct Doubler_double{value:f64}
+func Doubler_double_doubled(this:Doubler_double)->f64 {return (Add:f64 this.#0 this.#0)}
+struct EitherContainer_i64{value:either<i64,i64>}
+func EitherContainer_i64_unwrapOrDefault(this:EitherContainer_i64,def:i64)->i64 {if (isErr this.#0) {return def} else {}; return (unwrapOk this.#0)}
+struct GPair_i64_i64{a:i64,b:i64}
+@@@ case c082 areas=core from=Main.nina:316:diagnosticSource
+@@@ source
+func add(a: i64, b: i64) -> i64 {
+    return a + b + oops
+}
+
+func main() -> i64 {
+    let x: i64 = add(1)
+    return x + nothere(2)
+}
+
+@@@ expect check failed
+2:20: unknown name oops
+6:18: add takes 2 arguments but 1 were given
+7:16: unknown function nothere
+@@@ case c083 areas=core from=Main.nina:332:typeMistakeSource
+@@@ source
+struct P {
+    x: i64
+}
+
+func main() -> i64 {
+    var a: i64 = 2.5
+    let p: P = P { x: 1 }
+    let c: i64 = a + 1.5
+    a = 1.5
+    take(2.5)
+    return p
+}
+
+func take(n: i64) -> i64 {
+    return n
+}
+
+@@@ expect check failed
+6:18: expected an integer but found a float
+8:22: expected an integer but found a float
+9:9: expected an integer but found a float
+10:10: expected an integer but found a float
+11:12: expected an integer but found a P
+@@@ case c084 areas=kernel from=Main.nina:364:goodKernelSource
+@@@ source
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k
+}
+
+kernel func twice(a: float) -> float {
+    return scale(a, 2.0)
+}
+
+@@@ expect hir
+func scale(x:f32,k:f32)->f32 {return (Mul:f32 x k)}
+kernel scale compute 0,1
+func twice(a:f32)->f32 {return scale:f32(a,(coerce:f32 2))}
+kernel twice compute 0
+@@@ case c085 areas=kernel from=Main.nina:393:bigLiteralKernelSource
+@@@ source
+kernel func big(index i: i32) -> float {
+    return (i.toI64() * 2654435761 + 7).toFloat()
+}
+
+@@@ expect hir
+func big(i:i32)->f32 {return (cast:f32 (Add:i64 (Mul:i64 (cast:i64 i) 2654435761) 7))}
+kernel big compute 3
+@@@ case c086 areas=kernel from=Main.nina:401:stencilKernelSource
+@@@ source
+kernel func smooth(index i: i32, uniform src: ptr<float>, uniform n: i32) -> float {
+    if (i == 0) { return src[i] }
+    return (src[i - 1] + src[i]) / 2.0
+}
+
+@@@ expect hir
+func smooth(i:i32,src:ptr<f32>,n:i32)->f32 {if (Eq:i1 i 0) {return src[i]} else {}; return (Div:f32 (Add:f32 src[(Sub:i32 i 1)] src[i]) 2)}
+kernel smooth compute 3,2,1
+@@@ case c087 areas=kernel from=Main.nina:422:sharedArraySource
+@@@ source
+kernel func get(uniform tex: ptr<float>, i: i32) -> float {
+    return tex[i]
+}
+
+kernel func use(index i: i32, uniform tex: ptr<float>) -> float {
+    return get(tex, i)
+}
+
+@@@ expect hir
+func get(tex:ptr<f32>,i:i32)->f32 {return tex[i]}
+kernel get compute 2,0
+func use(i:i32,tex:ptr<f32>)->f32 {return get:f32(tex,i)}
+kernel use compute 3,2
+@@@ case c088 areas=kernel from=Main.nina:434:writableSource
+@@@ source
+func atomicAdd(counts: ptr<i32>, slot: i32, amount: i32) -> i32 {
+    let old: i32 = counts[slot]
+    counts[slot] = old + amount
+    return old
+}
+
+kernel func tally(index i: i32, uniform data: ptr<i32>, writable counts: ptr<i32>) -> i32 {
+    counts[i] = data[i]
+    atomicAdd(counts, data[i], 1)
+    return 0
+}
+
+@@@ expect hir
+func atomicAdd(counts:ptr<i32>,slot:i32,amount:i32)->i32 {let old:i32 = counts[slot]; counts[slot] = (Add:i32 old amount); return old}
+func tally(i:i32,data:ptr<i32>,counts:ptr<i32>)->i32 {counts[i] = data[i]; atomicAdd:i32(counts,data[i],(coerce:i32 1)); return 0}
+kernel tally compute 3,2,4
+@@@ case c089 areas=kernel from=Main.nina:440:readOnlyWriteSource
+@@@ source
+kernel func bad(index i: i32, uniform data: ptr<i32>) -> i32 {
+    data[i] = 1
+    return 0
+}
+
+@@@ expect hir
+func bad(i:i32,data:ptr<i32>)->i32 {data[i] = 1; return 0}
+kernel bad compute 3,2
+@@@ case c090 areas=containers from=Main.nina:469:vectorLiteralSource
+@@@ source
+func sky(t: float) -> vec<float, 4> {
+    return vec[0.85 - 0.5 * t, 0.9, 1.0, 1.0]
+}
+
+@@@ expect hir
+func sky(t:f32)->vec<f32,4> {return vec[(Sub:f64 0.85 (Mul:f64 0.5 t)),0.9,1,1]}
+@@@ case c091 areas=core from=Main.nina:498:mixedWidthSource
+@@@ source
+func count(n: i32) -> i32 {
+    var acc: i32 = 0
+    for (i = 0; i < n; i = i + 1) {
+        acc = acc + 1
+    }
+    return acc
+}
+
+func half(x: float) -> float {
+    let h: float = 0.5
+    return x * h + 1.0
+}
+
+@@@ expect hir
+func count(n:i32)->i32 {var acc:i32 = 0; for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {acc@ = (Add:i32 acc@ 1)}; return acc@}
+func half(x:f32)->f32 {let h:f32 = 0.5; return (Add:f32 (Mul:f32 x h) 1)}
+@@@ case c092 areas=kernel from=Main.nina:514:badKernelSource
+@@@ source
+func helper(x: float) -> float {
+    return x
+}
+
+kernel func bad(x: double) -> float {
+    helper(1.0)
+    return 1.0
+}
+
+kernel func worse(x: float) -> float {
+    return helper(x)
+}
+
+@@@ expect hir
+func helper(x:f32)->f32 {return x}
+func bad(x:f64)->f32 {helper:f32((coerce:f32 1)); return 1}
+kernel bad compute 0
+func worse(x:f32)->f32 {return helper:f32(x)}
+kernel worse compute 0
+@@@ case c093 areas=generics,coroutines,sums,containers from=Main.nina:529:hirSampleSource
+@@@ source
+struct Box<T> {
+    value: T
+    func get() -> T {
+        return this.value
+    }
+}
+struct V {
+    p: ptr<double>
+    n: vec<float, 4>
+}
+extern func malloc(size: i64) -> ptr<i64>
+global counter: i64 = 7
+func sum(a: i64[4], g: grid<i64, 2, 3>, c: char) -> i64 {
+    return 0
+}
+func use(b: Box<i64>) -> either<i64, string> {
+    return eitherOk<i64, string>(1)
+}
+coro func gen(n: i64) -> i64 {
+    yield n
+}
+
+@@@ expect hir
+struct V{p:ptr<f64>,n:vec<f32,4>}
+extern malloc(size:i64)->ptr<i64>
+global counter:i64
+func sum(a:i64[4],g:grid<i64,2,3>,c:i8)->i64 {return 0}
+func use(b:Box_i64)->either<i64,string> {return ok(1)}
+func gen(n:i64)->coro<i64> {yield n}
+struct Box_i64{value:i64}
+func Box_i64_get(this:Box_i64)->i64 {return this.#0}
+@@@ case c094 areas=core from=Main.nina:543:hirExpectedDecls
+@@@ source
+struct Box_i64{value:i64}
+@@@ expect hir
+struct Box_i64{value:i64}
+@@@ case c095 areas=generics from=Main.nina:554:bodySampleSource
+@@@ source
+struct Pair {
+    a: i64
+    b: i64
+    func sum() -> i64 {
+        return this.a + this.b
+    }
+}
+struct Box<T> {
+    value: T
+}
+extern func take32(v: i32) -> i32
+global counter: i64 = 0
+func widen(x: i32, y: i64) -> i64 {
+    return y + x.toI64()
+}
+func narrow(v: i64) -> i32 {
+    return take32(v)
+}
+func bump() -> i64 {
+    counter = counter + 1
+    return counter
+}
+func total(n: i64) -> i64 {
+    var t: i64 = 0
+    for (i = 0; i < n; i = i + 1) {
+        t = t + i
+    }
+    if (t < 0) { return 0 } else { return t }
+}
+func mk() -> Pair {
+    return Pair { b: 2, a: 1 }
+}
+func useMk() -> i64 {
+    let p: Pair = mk()
+    return p.sum() + sq(p.a)
+}
+func sq(x: i64) -> i64 {
+    return -x * x
+}
+func boxed() -> i64 {
+    let b: Box<i64> = Box { value: 42 }
+    return b.value
+}
+func later() -> i64 {
+    return missing(1)
+}
+
+@@@ expect check failed
+45:12: unknown function missing
+@@@ case c096 areas=generics from=Main.nina:557:bodySampleHead
+@@@ source
+struct Pair {
+    a: i64
+    b: i64
+    func sum() -> i64 {
+        return this.a + this.b
+    }
+}
+struct Box<T> {
+    value: T
+}
+extern func take32(v: i32) -> i32
+global counter: i64 = 0
+func widen(x: i32, y: i64) -> i64 {
+    return y + x.toI64()
+}
+func narrow(v: i64) -> i32 {
+    return take32(v)
+}
+func bump() -> i64 {
+    counter = counter + 1
+    return counter
+}
+
+@@@ expect hir
+struct Pair{a:i64,b:i64}
+func Pair_sum(this:Pair)->i64 {return (Add:i64 this.#0 this.#1)}
+extern take32(v:i32)->i32
+global counter:i64
+func widen(x:i32,y:i64)->i64 {return (Add:i64 y (cast:i64 x))}
+func narrow(v:i64)->i32 {return take32:i32((coerce:i32 v))}
+func bump()->i64 {@counter = (Add:i64 @counter 1); return @counter}
+@@@ case c097 areas=generics from=Main.nina:564:bodySampleRest
+@@@ source
+func total(n: i64) -> i64 {
+    var t: i64 = 0
+    for (i = 0; i < n; i = i + 1) {
+        t = t + i
+    }
+    if (t < 0) { return 0 } else { return t }
+}
+func mk() -> Pair {
+    return Pair { b: 2, a: 1 }
+}
+func useMk() -> i64 {
+    let p: Pair = mk()
+    return p.sum() + sq(p.a)
+}
+func sq(x: i64) -> i64 {
+    return -x * x
+}
+func boxed() -> i64 {
+    let b: Box<i64> = Box { value: 42 }
+    return b.value
+}
+func later() -> i64 {
+    return missing(1)
+}
+
+@@@ expect check failed
+9:19: Pair has no field b
+13:14: unknown function sum
+13:27: unknown field a
+19:29: Box_i64 has no field value
+20:14: unknown field value
+23:12: unknown function missing
+@@@ case c098 areas=exceptions from=Main.nina:598:flowSampleSource
+@@@ source
+func gcd(a0: i64, b0: i64) -> i64 {
+    goto loop(a0, b0)
+label loop(a: i64, b: i64):
+    branch b == 0 ? done(a) : body(a, b)
+label body(a: i64, b: i64):
+    let r: i64 = a % b
+    goto loop(b, r)
+label done(result: i64):
+    return result
+}
+func pick(x: i64) -> i64 {
+    switch (x) {
+        1 => one(10)
+        2 => one(20)
+        else => none()
+    }
+label one(v: i64):
+    return v
+label none():
+    return 0
+}
+func safe(x: i64) -> i64 {
+    var out: i64 = 0
+    try {
+        throw x
+    } catch (code) {
+        out = code + 1
+    }
+    return out
+}
+
+@@@ expect hir
+func gcd(a0:i64,b0:i64)->i64 {goto loop(a0,b0); label loop(a:i64,b:i64):; branch (Eq:i1 b 0) ? done(a) : body(a,b); label body(a:i64,b:i64):; let r:i64 = (Rem:i64 a b); goto loop(b,r); label done(result:i64):; return result}
+func pick(x:i64)->i64 {switch x {1->one(10), 2->one(20), default->none()}; label one(v:i64):; return v; label none():; return 0}
+func safe(x:i64)->i64 {var out:i64 = 0; try {throw x} catch (code) {out@ = (Add:i64 code 1)}; return out@}
+@@@ case c099 areas=sums,containers from=Main.nina:635:containerSampleSource
+@@@ source
+extern func malloc(size: i64) -> ptr<i64>
+func vecs() -> i64 {
+    let v: vec<i64, 4> = vec[10, 20, 30, 40]
+    let r: vec<i64, 4> = v.shuffle(3, 2, 1, 0)
+    return r[0] + v[1]
+}
+func dyn(a: i64) -> i64 {
+    var arr: mutarray<i64> = mutarray<i64>()
+    arr = push(arr, a)
+    arr.push(2)
+    return len(arr) + arr[0]
+}
+func fixed() -> i64 {
+    let hist: i64[4]
+    hist[1] = 20
+    return hist[1] + hist.len()
+}
+func shapes() -> i64 {
+    let g: grid<i64, 3, 4>
+    g[0, 1] = 5
+    let t: tensor<i64, 2, 3>
+    return g.rows() * 100 + t.dim(1) + g[0, 1]
+}
+func maps() -> i64 {
+    var hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+    hm[1] = 20
+    return hm[1] + len(hm)
+}
+func sums(which: i64) -> i64 {
+    var v: variant<i64, double> = variant<i64, double>(0, 10)
+    let r: either<i64, i64> = eitherOk<i64, i64>(3)
+    if (r.isErr()) { return r.unwrapErr() }
+    return v.tag() + r.unwrapOk()
+}
+func atoms() -> i64 {
+    let slot: ptr<i64> = malloc(8)
+    let old: i64 = slot.atomicRmw("add", 1, "seq_cst")
+    fence("acquire")
+    return old + slot.atomicLoad("seq_cst")
+}
+func hashing() -> i64 {
+    if ("a" == "b") { return 0 }
+    return hash("a")
+}
+
+@@@ expect hir
+extern malloc(size:i64)->ptr<i64>
+func vecs()->i64 {let v:vec<i64,4> = vec[10,20,30,40]; let r:vec<i64,4> = (shuffle v,3,2,1,0); return (Add:i64 r[0] v[1])}
+func dyn(a:i64)->i64 {var arr:mutarray<i64> = new mutarray<i64>(); arr@ = (push arr@,a); (push arr@,2); return (Add:i64 (len arr@) arr@[0])}
+func fixed()->i64 {let hist:i64[4] = new i64[4](); hist[1] = 20; return (Add:i64 hist[1] (len hist))}
+func shapes()->i64 {let g:grid<i64,3,4> = new grid<i64,3,4>(); g[0,1] = 5; let t:tensor<i64,2,3> = new tensor<i64,2,3>(); return (Add:i64 (Add:i64 (Mul:i64 (rows g) 100) (dim t,1)) g[0,1])}
+func maps()->i64 {var hm:mutmap<i64,i64> = new mutmap<i64,i64>(4); hm@[1] = 20; return (Add:i64 hm@[1] (len hm@))}
+func sums(which:i64)->i64 {var v:variant<i64,f64> = variant#0(10); let r:either<i64,i64> = ok(3); if (isErr r) {return (unwrapErr r)} else {}; return (Add:i64 (tag v@) (unwrapOk r))}
+func atoms()->i64 {let slot:ptr<i64> = malloc:ptr<i64>(8); let old:i64 = (atomicRmw slot,"add",1,"seq_cst"); (fence 0,"acquire"); return (Add:i64 old (atomicLoad slot,"seq_cst"))}
+func hashing()->i64 {if (Eq:i1 "a" "b") {return 0} else {}; return (hash "a")}
+@@@ case c100 areas=containers from=Main.nina:638:containerSampleHead
+@@@ source
+extern func malloc(size: i64) -> ptr<i64>
+func vecs() -> i64 {
+    let v: vec<i64, 4> = vec[10, 20, 30, 40]
+    let r: vec<i64, 4> = v.shuffle(3, 2, 1, 0)
+    return r[0] + v[1]
+}
+func dyn(a: i64) -> i64 {
+    var arr: mutarray<i64> = mutarray<i64>()
+    arr = push(arr, a)
+    arr.push(2)
+    return len(arr) + arr[0]
+}
+func fixed() -> i64 {
+    let hist: i64[4]
+    hist[1] = 20
+    return hist[1] + hist.len()
+}
+func shapes() -> i64 {
+    let g: grid<i64, 3, 4>
+    g[0, 1] = 5
+    let t: tensor<i64, 2, 3>
+    return g.rows() * 100 + t.dim(1) + g[0, 1]
+}
+func maps() -> i64 {
+    var hm: mutmap<i64, i64> = mutmap<i64, i64>(4)
+    hm[1] = 20
+    return hm[1] + len(hm)
+}
+
+@@@ expect hir
+extern malloc(size:i64)->ptr<i64>
+func vecs()->i64 {let v:vec<i64,4> = vec[10,20,30,40]; let r:vec<i64,4> = (shuffle v,3,2,1,0); return (Add:i64 r[0] v[1])}
+func dyn(a:i64)->i64 {var arr:mutarray<i64> = new mutarray<i64>(); arr@ = (push arr@,a); (push arr@,2); return (Add:i64 (len arr@) arr@[0])}
+func fixed()->i64 {let hist:i64[4] = new i64[4](); hist[1] = 20; return (Add:i64 hist[1] (len hist))}
+func shapes()->i64 {let g:grid<i64,3,4> = new grid<i64,3,4>(); g[0,1] = 5; let t:tensor<i64,2,3> = new tensor<i64,2,3>(); return (Add:i64 (Add:i64 (Mul:i64 (rows g) 100) (dim t,1)) g[0,1])}
+func maps()->i64 {var hm:mutmap<i64,i64> = new mutmap<i64,i64>(4); hm@[1] = 20; return (Add:i64 hm@[1] (len hm@))}
+@@@ case c101 areas=sums,containers from=Main.nina:649:containerSampleRest
+@@@ source
+func sums(which: i64) -> i64 {
+    var v: variant<i64, double> = variant<i64, double>(0, 10)
+    let r: either<i64, i64> = eitherOk<i64, i64>(3)
+    if (r.isErr()) { return r.unwrapErr() }
+    return v.tag() + r.unwrapOk()
+}
+func atoms() -> i64 {
+    let slot: ptr<i64> = malloc(8)
+    let old: i64 = slot.atomicRmw("add", 1, "seq_cst")
+    fence("acquire")
+    return old + slot.atomicLoad("seq_cst")
+}
+func hashing() -> i64 {
+    if ("a" == "b") { return 0 }
+    return hash("a")
+}
+
+@@@ expect check failed
+8:26: unknown function malloc
+@@@ case c102 areas=containers,prelude from=PreludeChecks.nina:29:ownDefinitionBlocksIt
+@@@ source
+func split(s: string) -> string {
+    return s
+}
+
+func use(s: string) -> mutarray<string> {
+    return lines(s)
+}
+
+@@@ expect check failed
+6:12: unknown function lines
+@@@ case c103 areas=prelude from=PreludeChecks.nina:40:ownUnrelatedNameIsFine
+@@@ source
+func clamp(x: i64) -> i64 {
+    return x
+}
+
+func use(t: float) -> float {
+    return fract(t) + clamp(1).toFloat()
+}
+
+@@@ expect hir
+extern floorf(x:f32)->f32
+func fract(x:f32)->f32 {return (Sub:f32 x floorf:f32(x))}
+kernel fract compute 0
+func clamp(x:i64)->i64 {return x}
+func use(t:f32)->f32 {return (Add:f32 fract:f32(t) (cast:f32 clamp:i64(1)))}
+@@@ case c104 areas=prelude from=PreludeChecks.nina:51:genuineErrorsAreStillReported
+@@@ source
+func use(t: float) -> float {
+    return fract(t) + nothing(t)
+}
+
+@@@ expect check failed
+2:23: unknown function nothing
+@@@ case c105 areas=kernel,prelude from=PreludeChecks.nina:60:onlyNeededKernelsAreEmitted
+@@@ source
+kernel func tone(t: float) -> float {
+    return fract(t * 440.0)
+}
+
+@@@ expect hir
+extern floorf(x:f32)->f32
+func fract(x:f32)->f32 {return (Sub:f32 x floorf:f32(x))}
+kernel fract compute 0
+func tone(t:f32)->f32 {return fract:f32((Mul:f32 t 440))}
+kernel tone compute 0
+@@@ case c106 areas=core from=PyChecks.nina:86:keywordsSource
+@@@ source
+struct Pair(from: i64, to: i64);
+func span(p: Pair) -> i64 { return p.to - p.from }
+func main() -> i64 { return span(Pair { from: 1, to: 4 }) }
+
+@@@ expect hir
+struct Pair{from:i64,to:i64}
+func span(p:Pair)->i64 {return (Sub:i64 p.#1 p.#0)}
+func main()->i64 {return span:i64(Pair{#0=1,#1=4})}
+@@@ case c107 areas=containers from=ReleaseChecks.nina:47:aListThatIsOnlyUsedInPlace
+@@@ source
+func probe() -> i64 {
+  let d: mutarray<i64> = mutarray<i64>()
+  push(d, 1)
+  return len(d)
+}
+
+@@@ expect hir
+func probe()->i64 {var d:mutarray<i64> = new mutarray<i64>(); (push d@,1); return (len d@)}
+@@@ case c108 areas=containers from=ReleaseChecks.nina:52:aListThatIsReturned
+@@@ source
+func probe() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+
+@@@ expect hir
+func probe()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+@@@ case c109 areas=containers from=ReleaseChecks.nina:57:aListThatIsStored
+@@@ source
+func probe(store: mutarray<mutarray<i64> >) -> i64 {
+  let d: mutarray<i64> = mutarray<i64>()
+  push(store, d)
+  return 0
+}
+
+@@@ expect hir
+func probe(store:mutarray<mutarray<i64>>)->i64 {var d:mutarray<i64> = new mutarray<i64>(); (push store,d@); return 0}
+@@@ case c110 areas=containers from=ReleaseChecks.nina:61:pocket
+@@@ source
+struct Pocket {
+  var items: mutarray<i64>
+}
+
+@@@ expect hir
+struct Pocket{var items:mutarray<i64>}
+@@@ case c111 areas=containers from=ReleaseChecks.nina:70:aStructWhoseListIsOnlyUsedInPlace
+@@@ source
+struct Pocket {
+  var items: mutarray<i64>
+}
+func probe() -> i64 {
+  let p: Pocket = Pocket { items: mutarray<i64>() }
+  push(p.items, 1)
+  return len(p.items)
+}
+
+@@@ expect hir
+struct Pocket{var items:mutarray<i64>}
+func probe()->i64 {let p:Pocket = Pocket{#0=new mutarray<i64>()}; (push p.#0,1); return (len p.#0)}
+@@@ case c112 areas=containers from=ReleaseChecks.nina:77:aStructWhoseListIsReadOut
+@@@ source
+struct Pocket {
+  var items: mutarray<i64>
+}
+func probe() -> mutarray<i64> {
+  let p: Pocket = Pocket { items: mutarray<i64>() }
+  return p.items
+}
+
+@@@ expect hir
+struct Pocket{var items:mutarray<i64>}
+func probe()->mutarray<i64> {let p:Pocket = Pocket{#0=new mutarray<i64>()}; return p.#0}
+@@@ case c113 areas=containers from=ReleaseChecks.nina:84:aStructThatIsCopied
+@@@ source
+struct Pocket {
+  var items: mutarray<i64>
+}
+func probe() -> i64 {
+  let p: Pocket = Pocket { items: mutarray<i64>() }
+  val q: Pocket = p
+  return len(q.items)
+}
+
+@@@ expect hir
+struct Pocket{var items:mutarray<i64>}
+func probe()->i64 {let p:Pocket = Pocket{#0=new mutarray<i64>()}; let q:Pocket = (copy p); return (len q.#0)}
+@@@ case c114 areas=containers from=ReleaseChecks.nina:91:aListOfListsUsedInPlace
+@@@ source
+func probe() -> i64 {
+  let o: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  push(o, mutarray<i64>())
+  push(o[0], 1)
+  return len(o[0])
+}
+
+@@@ expect hir
+func probe()->i64 {var o:mutarray<mutarray<i64>> = new mutarray<mutarray<i64>>(); (push o@,new mutarray<i64>()); (push o@[0],1); return (len o@[0])}
+@@@ case c115 areas=containers from=ReleaseChecks.nina:97:aListOfListsWhoseElementIsReadOut
+@@@ source
+func probe() -> mutarray<i64> {
+  let o: mutarray<mutarray<i64> > = mutarray<mutarray<i64> >()
+  push(o, mutarray<i64>())
+  let first: mutarray<i64> = o[0]
+  return first
+}
+
+@@@ expect hir
+func probe()->mutarray<i64> {var o:mutarray<mutarray<i64>> = new mutarray<mutarray<i64>>(); (push o@,new mutarray<i64>()); var first:mutarray<i64> = o@[0]; return first@}
+@@@ case c116 areas=containers from=ReleaseChecks.nina:108:theResultOfACallThatMakesItsList
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+func probe() -> i64 {
+  let a: mutarray<i64> = made()
+  return len(a)
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+func probe()->i64 {var a:mutarray<i64> = made:mutarray<i64>(); return (len a@)}
+@@@ case c117 areas=containers from=ReleaseChecks.nina:113:theResultOfACallThatReturnsItsArgument
+@@@ source
+func same(d: mutarray<i64>) -> mutarray<i64> {
+  return d
+}
+func probe() -> i64 {
+  let src: mutarray<i64> = mutarray<i64>()
+  let a: mutarray<i64> = same(src)
+  return len(a)
+}
+
+@@@ expect hir
+func same(d:mutarray<i64>)->mutarray<i64> {return d}
+func probe()->i64 {var src:mutarray<i64> = new mutarray<i64>(); var a:mutarray<i64> = same:mutarray<i64>(src@); return (len a@)}
+@@@ case c118 areas=containers from=ReleaseChecks.nina:119:aCallWhoseResultIsThrownAway
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+func probe() -> i64 {
+  made()
+  return 0
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+func probe()->i64 {made:mutarray<i64>(); return 0}
+@@@ case c119 areas=containers from=ReleaseChecks.nina:130:aFreshListMeasuredOnTheSpot
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+func probe() -> i64 {
+  return len(made())
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+func probe()->i64 {return (len made:mutarray<i64>())}
+@@@ case c120 areas=containers from=ReleaseChecks.nina:135:aFreshListLentToACalleeOnTheSpot
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+func lend(a: i64, d: mutarray<i64>) -> i64 {
+  return a + len(d)
+}
+func probe() -> i64 {
+  return lend(1, made())
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+func lend(a:i64,d:mutarray<i64>)->i64 {return (Add:i64 a (len d))}
+func probe()->i64 {return lend:i64(1,made:mutarray<i64>())}
+@@@ case c121 areas=containers from=ReleaseChecks.nina:141:aFreshListIndexedOnTheSpot
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  push(d, 1)
+  return d
+}
+func probe() -> i64 {
+  return made()[0]
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); (push d@,1); return d@}
+func probe()->i64 {return made:mutarray<i64>()[0]}
+@@@ case c122 areas=containers from=ReleaseChecks.nina:147:aFreshListAfterACallWithEffectsIsLeftWhereItIs
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+func lend(a: i64, d: mutarray<i64>) -> i64 {
+  return a + len(d)
+}
+global ticks: i64 = 0
+func noisy() -> i64 {
+  ticks = ticks + 1
+  return ticks
+}
+func probe() -> i64 {
+  return lend(noisy(), made())
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+func lend(a:i64,d:mutarray<i64>)->i64 {return (Add:i64 a (len d))}
+global ticks:i64
+func noisy()->i64 {@ticks = (Add:i64 @ticks 1); return @ticks}
+func probe()->i64 {return lend:i64(noisy:i64(),made:mutarray<i64>())}
+@@@ case c123 areas=coroutines,sums from=ReleaseChecks.nina:173:aCoroutineOnlyResumed
+@@@ source
+coro func gen(n: i64) -> i64 {
+  yield n
+}
+func probe() -> i64 {
+  let c: coro<i64> = gen(3)
+  let r: variant<i64, i64> = c.resume()
+  return r.tag()
+}
+
+@@@ expect hir
+func gen(n:i64)->coro<i64> {yield n}
+func probe()->i64 {let c:coro<i64> = gen:coro<i64>(3); let r:variant<i64,i64> = (resume c); return (tag r)}
+@@@ case c124 areas=coroutines from=ReleaseChecks.nina:181:aCoroutineThatIsReturned
+@@@ source
+coro func gen(n: i64) -> i64 {
+  yield n
+}
+func probe() -> coro<i64> {
+  let c: coro<i64> = gen(3)
+  return c
+}
+
+@@@ expect hir
+func gen(n:i64)->coro<i64> {yield n}
+func probe()->coro<i64> {let c:coro<i64> = gen:coro<i64>(3); return c}
+@@@ case c125 areas=containers from=ReleaseChecks.nina:187:aMutmapOfLists
+@@@ source
+func probe() -> i64 {
+  let m: mutmap<i64, mutarray<i64> > = mutmap<i64, mutarray<i64> >(4)
+  m[1] = mutarray<i64>()
+  return len(m)
+}
+
+@@@ expect hir
+func probe()->i64 {var m:mutmap<i64,mutarray<i64>> = new mutmap<i64,mutarray<i64>>(4); m@[1] = new mutarray<i64>(); return (len m@)}
+@@@ case c126 areas=containers from=ReleaseChecks.nina:193:anImmutableArrayReassignedWithAChangedCopy
+@@@ source
+func probe() -> i64 {
+  var a: array<i64> = array<i64>()
+  a = a.with(1)
+  return len(a)
+}
+
+@@@ expect hir
+func probe()->i64 {var a:array<i64> = new array<i64>(); a@ = (with a@,1); return (len a@)}
+@@@ case c127 areas=containers from=ReleaseChecks.nina:198:aSparseOfLists
+@@@ source
+func probe() -> i64 {
+  let s: sparse<mutarray<i64> > = sparse<mutarray<i64> >()
+  s[1, 1] = mutarray<i64>()
+  return len(s)
+}
+
+@@@ expect hir
+func probe()->i64 {var s:sparse<mutarray<i64>> = new sparse<mutarray<i64>>(); s@[1,1] = new mutarray<i64>(); return (len s@)}
+@@@ case c128 areas=containers from=ReleaseChecks.nina:202:made
+@@@ source
+func made() -> mutarray<i64> {
+  let d: mutarray<i64> = mutarray<i64>()
+  return d
+}
+
+@@@ expect hir
+func made()->mutarray<i64> {var d:mutarray<i64> = new mutarray<i64>(); return d@}
+@@@ case c129 areas=containers from=ReleaseChecks.nina:205:lend
+@@@ source
+func lend(a: i64, d: mutarray<i64>) -> i64 {
+  return a + len(d)
+}
+
+@@@ expect hir
+func lend(a:i64,d:mutarray<i64>)->i64 {return (Add:i64 a (len d))}
+@@@ case c130 areas=core from=ReleaseChecks.nina:207:noisy
+@@@ source
+global ticks: i64 = 0
+func noisy() -> i64 {
+  ticks = ticks + 1
+  return ticks
+}
+
+@@@ expect hir
+global ticks:i64
+func noisy()->i64 {@ticks = (Add:i64 @ticks 1); return @ticks}
+@@@ case c131 areas=coroutines from=ReleaseChecks.nina:209:gen
+@@@ source
+coro func gen(n: i64) -> i64 {
+  yield n
+}
+
+@@@ expect hir
+func gen(n:i64)->coro<i64> {yield n}
+@@@ case c132 areas=core from=RustChecks.nina:103:refusals
+@@@ source
+global name: i64 = 1
+func main() -> i64 { return name }
+
+@@@ expect hir
+global name:i64
+func main()->i64 {return @name}
+@@@ case c133 areas=containers from=SafetyChecks.nina:13:source
+@@@ source
+func pick(xs: mutarray<i64>, i: i64) -> i64 {
+  return xs[i]
+}
+func half(a: i64, b: i64) -> i64 {
+  return a / b
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func pick(xs:mutarray<i64>,i:i64)->i64 {return xs[i]}
+func half(a:i64,b:i64)->i64 {return (Div:i64 a b)}
+func main()->i64 {return 0}
+@@@ case c134 areas=interfaces from=Samples.nina:4:structs
+@@@ source
+struct Pt(x: i64, y: i64);
+struct Counter(var n: i64, name: string);
+interface Shape {
+  func area() -> i64
+}
+struct Sq(side: i64) : Shape {
+  func area() -> i64 { return this.side * this.side }
+}
+func main() -> i64 {
+  let c: Counter = Counter { n: 1, name: "a" }
+  c.n = c.n + 1
+  let p: Pt = Pt { x: 1, y: 2 }
+  if (c === c && p == p) { return c.n + p.x }
+  return 0
+}
+
+@@@ expect hir
+struct Pt{x:i64,y:i64}
+struct Counter{var n:i64,name:string}
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{area}:Sq
+struct Sq{side:i64}
+func Sq_area(this:Sq)->i64 {return (Mul:i64 this.#0 this.#0)}
+func main()->i64 {let c:Counter = Counter{#0=1,#1="a"}; c.#0 = (Add:i64 c.#0 1); let p:Pt = Pt{#0=1,#1=2}; if (LogAnd:i1 (Identical:i1 c c) (Eq:i1 p p)) {return (Add:i64 c.#0 p.#0)} else {}; return 0}
+@@@ case c135 areas=containers from=Samples.nina:12:collections
+@@@ source
+func main() -> i64 {
+  let xs: mutarray<i64> = mutarray<i64>()
+  push(xs, 5)
+  let m: mutmap<string, i64> = mutmap<string, i64>(4)
+  m["a"] = 1
+  return xs[0] + m["a"] + len(xs)
+}
+
+@@@ expect hir
+func main()->i64 {var xs:mutarray<i64> = new mutarray<i64>(); (push xs@,5); var m:mutmap<string,i64> = new mutmap<string,i64>(4); m@["a"] = 1; return (Add:i64 (Add:i64 xs@[0] m@["a"]) (len xs@))}
+@@@ case c136 areas=containers,prelude from=Samples.nina:18:collectionsWithSet
+@@@ source
+func main() -> i64 {
+  let xs: mutarray<i64> = mutarray<i64>()
+  push(xs, 5)
+  let m: mutmap<string, i64> = mutmap<string, i64>(4)
+  m["a"] = 1
+  let s: mutset<i64> = mutset<i64>(4)
+  s.add(2)
+  return xs[0] + m["a"] + len(xs) + len(s)
+}
+
+@@@ expect hir
+func main()->i64 {var xs:mutarray<i64> = new mutarray<i64>(); (push xs@,5); var m:mutmap<string,i64> = new mutmap<string,i64>(4); m@["a"] = 1; let s:mutset<i64> = new mutset<i64>(4); (add s,2); return (Add:i64 (Add:i64 (Add:i64 xs@[0] m@["a"]) (len xs@)) (len s))}
+@@@ case c137 areas=sums from=Samples.nina:24:optionals
+@@@ source
+func f(ok: i64) -> optional<i64> {
+  if (ok == 1) { return Some<i64>(4) }
+  return None<i64>()
+}
+func main() -> i64 {
+  let o: optional<i64> = f(1)
+  if (o.isSome()) { return o.unwrap() }
+  return 0
+}
+
+@@@ expect hir
+func f(ok:i64)->optional<i64> {if (Eq:i1 ok 1) {return ok(4)} else {}; return err(false)}
+func main()->i64 {let o:optional<i64> = f:optional<i64>(1); if (isSome o) {return (unwrap o)} else {}; return 0}
+@@@ case c138 areas=core from=Samples.nina:30:numbers
+@@@ source
+func f(a: u32, b: u32) -> i64 {
+  let q: u32 = a / b
+  let s: u8 = 200
+  let w: u8 = s + s
+  if (a > b && a >> 3 == 1) { return q.toI64() + w.toI64() }
+  return 0
+}
+func main() -> i64 { return f(10, 3) }
+
+@@@ expect hir
+func f(a:u32,b:u32)->i64 {let q:u32 = (Div:u32 a b); let s:u8 = 200; let w:u8 = (Add:u8 s s); if (LogAnd:i1 (Gt:i1 a b) (Eq:i1 (Shr:u32 a 3) 1)) {return (Add:i64 (cast:i64 q) (cast:i64 w))} else {}; return 0}
+func main()->i64 {return f:i64((coerce:u32 10),(coerce:u32 3))}
+@@@ case c139 areas=core from=Samples.nina:36:labels
+@@@ source
+func count(n: i64) -> i64 {
+  goto loop(0)
+label loop(i: i64):
+  branch i == n ? done(i) : step(i)
+label step(i: i64):
+  goto loop(i + 1)
+label done(r: i64):
+  return r
+}
+func main() -> i64 { return count(3) }
+
+@@@ expect hir
+func count(n:i64)->i64 {goto loop(0); label loop(i:i64):; branch (Eq:i1 i n) ? done(i) : step(i); label step(i:i64):; goto loop((Add:i64 i 1)); label done(r:i64):; return r}
+func main()->i64 {return count:i64(3)}
+@@@ case c140 areas=core from=Samples.nina:42:jumpIn
+@@@ source
+func f(a: i64) -> i64 {
+  branch a == 0 ? x(a) : y(a)
+label x(p: i64):
+  branch p > 5 ? done(p) : y(p + 1)
+label y(q: i64):
+  branch q > 5 ? done(q) : x(q + 1)
+label done(r: i64):
+  return r
+}
+func main() -> i64 { return f(1) }
+
+@@@ expect hir
+func f(a:i64)->i64 {branch (Eq:i1 a 0) ? x(a) : y(a); label x(p:i64):; branch (Gt:i1 p 5) ? done(p) : y((Add:i64 p 1)); label y(q:i64):; branch (Gt:i1 q 5) ? done(q) : x((Add:i64 q 1)); label done(r:i64):; return r}
+func main()->i64 {return f:i64(1)}
+@@@ case c141 areas=coroutines,sums from=Samples.nina:48:coroutines
+@@@ source
+coro func ones(n: i64) -> i64 {
+  for (i = 0; i < n; i = i + 1) {
+    yield 1
+  }
+}
+func main() -> i64 {
+  let g: coro<i64> = ones(2)
+  let step: variant<i64> = g.resume()
+  if (step.isCase(0)) { return step.unwrapAt(0) }
+  return 0
+}
+
+@@@ expect hir
+func ones(n:i64)->coro<i64> {for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {yield 1}}
+func main()->i64 {let g:coro<i64> = ones:coro<i64>(2); let step:variant<i64> = (resume g); if (isCase step,0) {return (unwrapAt step,0)} else {}; return 0}
+@@@ case c142 areas=exceptions from=Samples.nina:54:exceptions
+@@@ source
+func risky(x: i64) -> i64 {
+  if (x < 0) { throw 7 }
+  return x
+}
+func guarded(x: i64) -> i64 {
+  try {
+    return risky(x)
+  } catch (code) {
+    return code * 10
+  }
+}
+func main() -> i64 { return guarded(0 - 1) }
+
+@@@ expect hir
+func risky(x:i64)->i64 {if (Lt:i1 x 0) {throw 7} else {}; return x}
+func guarded(x:i64)->i64 {try {return risky:i64(x)} catch (code) {return (Mul:i64 code 10)}}
+func main()->i64 {return guarded:i64((Sub:i64 0 1))}
+@@@ case c143 areas=exceptions from=Samples.nina:60:exceptionsBothWays
+@@@ source
+func risky(x: i64) -> i64 {
+  if (x < 0) { throw 7 }
+  return x
+}
+func guarded(x: i64) -> i64 {
+  try {
+    return risky(x)
+  } catch (code) {
+    return code * 10
+  }
+}
+func plain(x: i64) -> i64 {
+  var out: i64 = 0
+  try {
+    out = risky(x)
+  } catch (code) {
+    out = code
+  }
+  return out
+}
+func main() -> i64 { return guarded(0 - 1) + plain(2) }
+
+@@@ expect hir
+func risky(x:i64)->i64 {if (Lt:i1 x 0) {throw 7} else {}; return x}
+func guarded(x:i64)->i64 {try {return risky:i64(x)} catch (code) {return (Mul:i64 code 10)}}
+func plain(x:i64)->i64 {var out:i64 = 0; try {out@ = risky:i64(x)} catch (code) {out@ = code}; return out@}
+func main()->i64 {return (Add:i64 guarded:i64((Sub:i64 0 1)) plain:i64(2))}
+@@@ case c144 areas=closures from=Samples.nina:67:closures
+@@@ source
+func main() -> i64 {
+  var calls: i64 = 0
+  let f: closure(i64) -> i64 = closure(x: i64) -> i64 {
+    calls = calls + x
+    return calls
+  }
+  let g: closure(i64) -> i64 = closure(x: i64) -> i64 { return x + 1 }
+  return f(2) + g(3) + calls
+}
+
+@@@ expect hir
+func main()->i64 {var calls:i64 = 0; let f:closure(i64)->i64 = <node>; let g:closure(i64)->i64 = <node>; return (Add:i64 (Add:i64 (*f):i64(2) (*g):i64(3)) calls@)}
+@@@ case c145 areas=host,generics from=Samples.nina:73:javaHost
+@@@ source
+extern type Bag<T> = java "java.util.ArrayList" {
+  static func new() -> Bag<T>
+  func size() -> i32 = java "length"
+}
+func main() -> i64 {
+  let b: Bag<i64> = Bag.new()
+  return b.size().toI64()
+}
+
+@@@ expect hir
+func main()->i64 {let b:Bag_i64 = Bag_i64_new:Bag_i64(); return (cast:i64 Bag_i64_size:i32(b))}
+host Bag_i64 = java=java.util.ArrayList
+extern Bag_i64_new()->Bag_i64
+host member Bag_i64_new = 
+extern Bag_i64_size(self:Bag_i64)->i32
+host member Bag_i64_size = java=length
+@@@ case c146 areas=containers from=Samples.nina:79:sparse
+@@@ source
+func main() -> i64 {
+  let sp: sparse<i64> = sparse<i64>()
+  sp[0, 0] = 10
+  return sp[0, 0]
+}
+
+@@@ expect hir
+func main()->i64 {var sp:sparse<i64> = new sparse<i64>(); sp@[0,0] = 10; return sp@[0,0]}
+@@@ case c147 areas=kernel from=SpirvChecks.nina:66:scaleSource
+@@@ source
+kernel func scale(x: float, uniform k: float) -> float {
+    return x * k + 1.0
+}
+
+@@@ expect hir
+func scale(x:f32,k:f32)->f32 {return (Add:f32 (Mul:f32 x k) 1)}
+kernel scale compute 0,1
+@@@ case c148 areas=kernel,containers from=SpirvChecks.nina:99:refusals
+@@@ source
+kernel func k(x: float, uniform w: vec<float, 4>) -> float {
+    return x
+}
+
+@@@ expect hir
+func k(x:f32,w:vec<f32,4>)->f32 {return x}
+kernel k compute 0,1
+@@@ case c149 areas=core from=polyir/Check.poly
+@@@ source
+// Helpers for the tests written in polyir (the *Tests.poly files next to this one).
+//
+// A test is a function named `checkSomething() -> double`. It measures something and returns HOW FAR
+// OFF the measurement was from what it should be: 0 means the check passed, and anything more than
+// 0.001 away from 0 is a failure that is reported with that number. The test driver (src/FileTests.nina)
+// finds every such function by its name, so adding a test is writing a function.
+
+// How far `got` is from `expected` (both numbers, so they can be floats or whole numbers).
+func off(got: float, expected: float) -> double {
+    return (got - expected).toDouble()
+}
+
+// The same for whole numbers.
+func offInt(got: i64, expected: i64) -> double {
+    return (got - expected).toDouble()
+}
+
+// A fraction of how far off `got` is relative to `expected` (for large numbers).
+func offRelative(got: float, expected: float) -> double {
+    return ((got - expected) / expected).toDouble()
+}
+
+extern func sin(x: double) -> double
+extern func cos(x: double) -> double
+extern func sqrt(x: double) -> double
+
+// The height of the sine wave of frequency `hz` hidden in `count` samples that start at `start`:
+// the samples are multiplied by a sine and by a cosine of that frequency and added up (a
+// one-frequency Fourier transform). Exact when the stretch holds a whole number of cycles and
+// nothing else is playing.
+func amplitudeAt(data: ptr<float>, start: i64, count: i64, rate: i64, hz: float) -> float {
+    var re: double = 0.0
+    var im: double = 0.0
+    for (k = 0; k < count; k = k + 1) {
+        let angle: double = 6.283185307179586 * hz.toDouble() * (start + k).toDouble() / rate.toDouble()
+        re = re + data[start + k].toDouble() * cos(angle)
+        im = im + data[start + k].toDouble() * sin(angle)
+    }
+    return (2.0 * sqrt(re * re + im * im) / count.toDouble()).toFloat()
+}
+
+@@@ expect hir
+func off(got:f32,expected:f32)->f64 {return (cast:f64 (Sub:f32 got expected))}
+func offInt(got:i64,expected:i64)->f64 {return (cast:f64 (Sub:i64 got expected))}
+func offRelative(got:f32,expected:f32)->f64 {return (cast:f64 (Div:f32 (Sub:f32 got expected) expected))}
+extern sin(x:f64)->f64
+extern cos(x:f64)->f64
+extern sqrt(x:f64)->f64
+func amplitudeAt(data:ptr<f32>,start:i64,count:i64,rate:i64,hz:f32)->f32 {var re:f64 = 0; var im:f64 = 0; for (k=0; (Lt:i1 k count); (Add:i64 k 1)) {let angle:f64 = (Div:f64 (Mul:f64 (Mul:f64 6.283185307179586 (cast:f64 hz)) (cast:f64 (Add:i64 start k))) (cast:f64 rate)); re@ = (Add:f64 re@ (Mul:f64 (cast:f64 data[(Add:i64 start k)]) cos:f64(angle))); im@ = (Add:f64 im@ (Mul:f64 (cast:f64 data[(Add:i64 start k)]) sin:f64(angle)))}; return (cast:f32 (Div:f64 (Mul:f64 2 sqrt:f64((Add:f64 (Mul:f64 re@ re@) (Mul:f64 im@ im@)))) (cast:f64 count)))}
+@@@ case c150 areas=containers,prelude from=polyir/StringTests.poly
+@@@ source
+// Strings: escapes, text blocks, `${…}`, list literals, `for (x in list)`, the four string built-ins and the Text
+// library (split, trim, join, StringBuilder, fill, ...), which is built in: nothing here imports it. Self-contained (no
+// externs), so StringMain.poly runs every check on every target: `polyir StringMain.poly --run --all`.
+
+// 0 when `got` is `want`, 1 when not.
+func offText(got: string, want: string) -> double {
+    if (got == want) {
+        return 0.0
+    }
+    return 1.0
+}
+
+// How far `got` is from `want`.
+func offInt(got: i64, want: i64) -> double {
+    return (got - want).toDouble()
+}
+
+func checkEscapes() -> double {
+    let s: string = "a\tb\n\"c\" \\ \$"
+    return offInt(len(s), 11)
+}
+
+func checkCharEscapes() -> double {
+    return offInt('\n'.toI64() + '\''.toI64() + '\\'.toI64(), 10 + 39 + 92)
+}
+
+func checkInterpolation() -> double {
+    let name: string = "zlib"
+    let n: i64 = 42
+    return offText("lib ${name} v${n + 1} ok=${n > 1}", "lib zlib v43 ok=true")
+}
+
+func checkInterpolatedMethodCalls() -> double {
+    let words: mutarray<string> = ["a", "b", "c"]
+    return offText("[${words.join(", ")}]", "[a, b, c]")
+}
+
+func checkTextBlock() -> double {
+    let name: string = "demo"
+    let text: string = """
+        project(${name})
+          add("x")
+
+        done
+        """
+    return offText(text, "project(demo)\n  add(\"x\")\n\ndone\n")
+}
+
+func checkTextBlockWithoutFinalNewline() -> double {
+    let text: string = """
+        one
+        two"""
+    return offText(text, "one\ntwo")
+}
+
+func checkTextBlockKeepsIndentOfMultiLineValue() -> double {
+    let inner: string = "a\nb"
+    let text: string = """
+        list:
+          ${inner}
+        end
+        """
+    return offText(text, "list:\n  a\n  b\nend\n")
+}
+
+func checkStrOfValues() -> double {
+    let c: char = 'x'
+    return offText(str(0 - 7) + str(true) + str(false) + str(c) + str("s") + (12).str(), "-7truefalsexs12")
+}
+
+func checkCharAt() -> double {
+    let s: string = "hello"
+    return offInt(s[1].toI64(), 101)
+}
+
+func checkSliceAndFind() -> double {
+    let s: string = "key=value"
+    let at: i64 = s.find("=")
+    return offText(s.slice(0, at) + "|" + s.slice(at + 1, len(s)), "key|value") + offInt(s.find("z"), 0 - 1)
+}
+
+func checkSliceClamps() -> double {
+    let s: string = "abc"
+    return offText(s.slice(0 - 5, 99) + s.slice(2, 1), "abc")
+}
+
+func checkFindFrom() -> double {
+    let s: string = "a.b.c"
+    return offInt(s.find(".", 2), 3)
+}
+
+func checkListLiteralAndForIn() -> double {
+    var total: i64 = 0
+    for (w in ["cmake", "-S", "src"]) {
+        total = total + len(w)
+    }
+    return offInt(total, 10)
+}
+
+func checkSplitAndJoin() -> double {
+    let parts: mutarray<string> = "a,b,,c".split(",")
+    return offInt(len(parts), 4) + offText(parts.join("+"), "a+b++c")
+}
+
+func checkTrimAndContains() -> double {
+    let s: string = "  \tpadded \n"
+    return offText(s.trim(), "padded") + offInt(s.contains("dd").toI64(), 1) + offInt(s.contains("x").toI64(), 0)
+}
+
+func checkStartsAndEnds() -> double {
+    let s: string = "CMakeLists.txt"
+    let both: bool = s.startsWith("CMake") && s.endsWith(".txt") && !s.endsWith("CMake")
+    return offInt(both.toI64(), 1)
+}
+
+func checkReplaceRepeatIndent() -> double {
+    let s: string = "a-b-c".replace("-", "::")
+    return offText(s + "|" + "ab".repeat(3) + "|" + "x\n\ny".indent(2), "a::b::c|ababab|  x\n\n  y")
+}
+
+func checkLines() -> double {
+    return offInt(len("one\ntwo\nthree".lines()), 3)
+}
+
+func checkFill() -> double {
+    let values: mutmap<string, string> = mutmap<string, string>()
+    values["name"] = "gcd"
+    values["lang"] = "C"
+    return offText(fill("project(\${name} LANGUAGES \${lang}) \${missing}", values), "project(gcd LANGUAGES C) \${missing}")
+}
+
+func writeDeps(out: StringBuilder, deps: mutarray<string>) -> void {
+    out.indent(4)
+    for (d in deps) {
+        out.line("implementation(\"${d}\")")
+    }
+    out.dedent()
+}
+
+func checkStringBuilder() -> double {
+    let out = StringBuilder()
+    out.line("dependencies {")
+    writeDeps(out, ["a:b:1", "c:d:2"])
+    out.line("}")
+    let want: string = """
+        dependencies {
+            implementation("a:b:1")
+            implementation("c:d:2")
+        }
+        """
+    return offText(out.text(), want) + offInt(out.isEmpty().toI64(), 0)
+}
+
+@@@ expect hir
+func contains(s:string,part:string)->i1 {return (Ge:i1 (find s,part,0) 0)}
+func startsWith(s:string,prefix:string)->i1 {if (Gt:i1 (len prefix) (len s)) {return false} else {}; return (Eq:i1 (slice s,0,(len prefix)) prefix)}
+func endsWith(s:string,suffix:string)->i1 {if (Gt:i1 (len suffix) (len s)) {return false} else {}; return (Eq:i1 (slice s,(Sub:i64 (len s) (len suffix)),(len s)) suffix)}
+func split(s:string,sep:string)->mutarray<string> {var parts:mutarray<string> = new mutarray<string>(); if (Eq:i1 (len sep) 0) {(push parts@,s); return parts@} else {}; var from:i64 = 0; for (at=(find s,sep,0); (Ge:i1 at 0); (find s,sep,from@)) {(push parts@,(slice s,from@,at)); from@ = (Add:i64 at (len sep))}; (push parts@,(slice s,from@,(len s))); return parts@}
+func lines(s:string)->mutarray<string> {return split:mutarray<string>(s,"\n")}
+func join(parts:mutarray<string>,sep:string)->string {var out:string = ""; for (i=0; (Lt:i1 i (len parts)); (Add:i64 i 1)) {if (Gt:i1 i 0) {out@ = (concat out@,sep)} else {}; out@ = (concat out@,parts[i])}; return out@}
+func isSpaceChar(c:i8)->i1 {return (LogOr:i1 (LogOr:i1 (LogOr:i1 (Eq:i1 c 32) (Eq:i1 c 9)) (Eq:i1 c 10)) (Eq:i1 c 13))}
+func trim(s:string)->string {var from:i64 = 0; for (; (LogAnd:i1 (Lt:i1 from@ (len s)) isSpaceChar:i1((charAt s,from@))); ) {from@ = (Add:i64 from@ 1)}; var to:i64 = (len s); for (; (LogAnd:i1 (Gt:i1 to@ from@) isSpaceChar:i1((charAt s,(Sub:i64 to@ 1)))); ) {to@ = (Sub:i64 to@ 1)}; return (slice s,from@,to@)}
+func replace(s:string,old:string,by:string)->string {return join:string(split:mutarray<string>(s,old),by)}
+func repeat(s:string,n:i64)->string {var out:string = ""; for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {out@ = (concat out@,s)}; return out@}
+func indent(s:string,n:i64)->string {var all:mutarray<string> = lines:mutarray<string>(s); let pad:string = repeat:string(" ",n); for (i=0; (Lt:i1 i (len all@)); (Add:i64 i 1)) {if (Gt:i1 (len all@[i]) 0) {all@[i] = (concat pad,all@[i])} else {}}; return join:string(all@,"\n")}
+func indentRest(s:string,n:i64)->string {let first:i64 = (find s,"\n",0); if (Lt:i1 first 0) {return s} else {}; return (concat (slice s,0,(Add:i64 first 1)),indent:string((slice s,(Add:i64 first 1),(len s)),n))}
+func fill(template:string,values:mutmap<string,string>)->string {var out:string = ""; var from:i64 = 0; for (at=(find template,"\${",0); (Ge:i1 at 0); (find template,"\${",from@)) {let close:i64 = (find template,"}",at); if (Lt:i1 close 0) {return (concat out@,(slice template,from@,(len template)))} else {}; out@ = (concat (concat out@,(slice template,from@,at)),filledName:string((slice template,at,(Add:i64 close 1)),values)); from@ = (Add:i64 close 1)}; return (concat out@,(slice template,from@,(len template)))}
+func filledName(placeholder:string,values:mutmap<string,string>)->string {let name:string = trim:string((slice placeholder,2,(Sub:i64 (len placeholder) 1))); if (has values,name) {return values[name]} else {}; return placeholder}
+struct StringBuilder{pieces:mutarray<string>,indents:mutarray<i64>}
+func StringBuilder_add(this:StringBuilder,s:string)->StringBuilder {(push this.#0,s); return this}
+func StringBuilder_line(this:StringBuilder,s:string)->StringBuilder {if (Gt:i1 (len s) 0) {(push this.#0,repeat:string(" ",StringBuilder_indentNow:i64(this)))} else {}; (push this.#0,s); (push this.#0,"\n"); return this}
+func StringBuilder_blank(this:StringBuilder)->StringBuilder {(push this.#0,"\n"); return this}
+func StringBuilder_lines(this:StringBuilder,all:mutarray<string>)->StringBuilder {for (i=0; (Lt:i1 i (len all)); (Add:i64 i 1)) {StringBuilder_line:StringBuilder(this,all[i])}; return this}
+func StringBuilder_indent(this:StringBuilder,n:i64)->StringBuilder {(push this.#1,(Add:i64 StringBuilder_indentNow:i64(this) n)); return this}
+func StringBuilder_dedent(this:StringBuilder)->StringBuilder {if (Gt:i1 (len this.#1) 0) {(truncate this.#1,(Sub:i64 (len this.#1) 1))} else {}; return this}
+func StringBuilder_indentNow(this:StringBuilder)->i64 {if (Eq:i1 (len this.#1) 0) {return 0} else {}; return this.#1[(Sub:i64 (len this.#1) 1)]}
+func StringBuilder_length(this:StringBuilder)->i64 {return (len StringBuilder_text:string(this))}
+func StringBuilder_isEmpty(this:StringBuilder)->i1 {return (Eq:i1 StringBuilder_length:i64(this) 0)}
+func StringBuilder_text(this:StringBuilder)->string {return join:string(this.#0,"")}
+func offText(got:string,want:string)->f64 {if (Eq:i1 got want) {return 0} else {}; return 1}
+func offInt(got:i64,want:i64)->f64 {return (cast:f64 (Sub:i64 got want))}
+func checkEscapes()->f64 {let s:string = "a\tb\n\"c\" \\ \$"; return offInt:f64((len s),11)}
+func checkCharEscapes()->f64 {return offInt:f64((Add:i64 (Add:i64 (cast:i64 10) (cast:i64 39)) (cast:i64 92)),(Add:i64 (Add:i64 10 39) 92))}
+func checkInterpolation()->f64 {let name:string = "zlib"; let n:i64 = 42; return offText:f64((concat (concat (concat (concat (concat "lib ",(str name))," v"),(str (Add:i64 n 1)))," ok="),(str (Gt:i1 n 1))),"lib zlib v43 ok=true")}
+func checkInterpolatedMethodCalls()->f64 {var words:mutarray<string> = (push (push (push new mutarray<string>(),"a"),"b"),"c"); return offText:f64((concat (concat "[",(str join:string(words@,", "))),"]"),"[a, b, c]")}
+func checkTextBlock()->f64 {let name:string = "demo"; let text:string = (concat (concat (concat (concat (concat (concat (concat (concat "project(",(str name)),")"),"\n"),"  add(\"x\")"),"\n"),"\n"),"done"),"\n"); return offText:f64(text,"project(demo)\n  add(\"x\")\n\ndone\n")}
+func checkTextBlockWithoutFinalNewline()->f64 {let text:string = (concat (concat "one","\n"),"two"); return offText:f64(text,"one\ntwo")}
+func checkTextBlockKeepsIndentOfMultiLineValue()->f64 {let inner:string = "a\nb"; let text:string = (concat (concat (concat (concat (concat (concat "list:","\n"),"  "),(str indentRest:string((str inner),2))),"\n"),"end"),"\n"); return offText:f64(text,"list:\n  a\n  b\nend\n")}
+func checkStrOfValues()->f64 {let c:i8 = 120; return offText:f64((concat (concat (concat (concat (concat (str (Sub:i64 0 7)),(str true)),(str false)),(str c)),(str "s")),(str 12)),"-7truefalsexs12")}
+func checkCharAt()->f64 {let s:string = "hello"; return offInt:f64((cast:i64 (charAt s,1)),101)}
+func checkSliceAndFind()->f64 {let s:string = "key=value"; let at:i64 = (find s,"=",0); return (Add:f64 offText:f64((concat (concat (slice s,0,at),"|"),(slice s,(Add:i64 at 1),(len s))),"key|value") offInt:f64((find s,"z",0),(Sub:i64 0 1)))}
+func checkSliceClamps()->f64 {let s:string = "abc"; return offText:f64((concat (slice s,(Sub:i64 0 5),99),(slice s,2,1)),"abc")}
+func checkFindFrom()->f64 {let s:string = "a.b.c"; return offInt:f64((find s,".",2),3)}
+func checkListLiteralAndForIn()->f64 {var total:i64 = 0; let forList_94_10:mutarray<string> = (push (push (push new mutarray<string>(),"cmake"),"-S"),"src"); var forIndex_94_10:i64 = 0; for (; (Lt:i1 forIndex_94_10@ (len forList_94_10)); ) {let w:string = forList_94_10[forIndex_94_10@]; total@ = (Add:i64 total@ (len w)); forIndex_94_10@ = (Add:i64 forIndex_94_10@ 1)}; return offInt:f64(total@,10)}
+func checkSplitAndJoin()->f64 {var parts:mutarray<string> = split:mutarray<string>("a,b,,c",","); return (Add:f64 offInt:f64((len parts@),4) offText:f64(join:string(parts@,"+"),"a+b++c"))}
+func checkTrimAndContains()->f64 {let s:string = "  \tpadded \n"; return (Add:f64 (Add:f64 offText:f64(trim:string(s),"padded") offInt:f64((cast:i64 contains:i1(s,"dd")),1)) offInt:f64((cast:i64 contains:i1(s,"x")),0))}
+func checkStartsAndEnds()->f64 {let s:string = "CMakeLists.txt"; let both:i1 = (LogAnd:i1 (LogAnd:i1 startsWith:i1(s,"CMake") endsWith:i1(s,".txt")) (LogNot:i1 endsWith:i1(s,"CMake"))); return offInt:f64((cast:i64 both),1)}
+func checkReplaceRepeatIndent()->f64 {let s:string = replace:string("a-b-c","-","::"); return offText:f64((concat (concat (concat (concat s,"|"),repeat:string("ab",3)),"|"),indent:string("x\n\ny",2)),"a::b::c|ababab|  x\n\n  y")}
+func checkLines()->f64 {return offInt:f64((len lines:mutarray<string>("one\ntwo\nthree")),3)}
+func checkFill()->f64 {var values:mutmap<string,string> = new mutmap<string,string>(16); values@["name"] = "gcd"; values@["lang"] = "C"; return offText:f64(fill:string("project(\${name} LANGUAGES \${lang}) \${missing}",values@),"project(gcd LANGUAGES C) \${missing}")}
+func writeDeps(out:StringBuilder,deps:mutarray<string>)->void {StringBuilder_indent:StringBuilder(out,4); let forList_134_10:mutarray<string> = deps; var forIndex_134_10:i64 = 0; for (; (Lt:i1 forIndex_134_10@ (len forList_134_10)); ) {let d:string = forList_134_10[forIndex_134_10@]; StringBuilder_line:StringBuilder(out,(concat (concat "implementation(\"",(str d)),"\")")); forIndex_134_10@ = (Add:i64 forIndex_134_10@ 1)}; StringBuilder_dedent:StringBuilder(out)}
+func checkStringBuilder()->f64 {let out:StringBuilder = StringBuilder{#0=new mutarray<string>(),#1=new mutarray<i64>()}; StringBuilder_line:StringBuilder(out,"dependencies {"); writeDeps:void(out,(push (push new mutarray<string>(),"a:b:1"),"c:d:2")); StringBuilder_line:StringBuilder(out,"}"); let want:string = (concat (concat (concat (concat (concat (concat (concat "dependencies {","\n"),"    implementation(\"a:b:1\")"),"\n"),"    implementation(\"c:d:2\")"),"\n"),"}"),"\n"); return (Add:f64 offText:f64(StringBuilder_text:string(out),want) offInt:f64((cast:i64 StringBuilder_isEmpty:i1(out)),0))}
+@@@ case c151 areas=core from=handwritten:widths-let-and-binary
+@@@ source
+func main() -> i64 {
+  let a: i32 = 5
+  let b: i8 = 3
+  let c: u8 = 200
+  let d: i64 = a.toI64() + b.toI64()
+  let e: i32 = a + 1
+  let f: i16 = 2
+  let g: u16 = 3
+  let h: u32 = 4
+  let i: u64 = 5
+  return d + c.toI64() + f.toI64() + g.toI64() + h.toI64() + i.toI64() + e.toI64()
+}
+
+@@@ expect hir
+func main()->i64 {let a:i32 = 5; let b:i8 = 3; let c:u8 = 200; let d:i64 = (Add:i64 (cast:i64 a) (cast:i64 b)); let e:i32 = (Add:i32 a 1); let f:i16 = 2; let g:u16 = 3; let h:u32 = 4; let i:u64 = 5; return (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 d (cast:i64 c)) (cast:i64 f)) (cast:i64 g)) (cast:i64 h)) (cast:i64 i)) (cast:i64 e))}
+@@@ case c152 areas=core from=handwritten:coerce-call-arguments
+@@@ source
+extern func take8(v: i8) -> i8
+extern func take32(v: i32) -> i32
+extern func takeU(v: u16) -> u16
+extern func takeF(v: float) -> float
+extern func takeD(v: double) -> double
+func main() -> i64 {
+  let a: i64 = 7
+  let b: i32 = take32(a)
+  let c: i8 = take8(3)
+  let d: u16 = takeU(a)
+  let x: float = takeF(1.5)
+  let y: double = takeD(x)
+  let z: float = takeF(y)
+  return b.toI64() + c.toI64() + d.toI64()
+}
+
+@@@ expect hir
+extern take8(v:i8)->i8
+extern take32(v:i32)->i32
+extern takeU(v:u16)->u16
+extern takeF(v:f32)->f32
+extern takeD(v:f64)->f64
+func main()->i64 {let a:i64 = 7; let b:i32 = take32:i32((coerce:i32 a)); let c:i8 = take8:i8((coerce:i8 3)); let d:u16 = takeU:u16((coerce:u16 a)); let x:f32 = takeF:f32((coerce:f32 1.5)); let y:f64 = takeD:f64((coerce:f64 x)); let z:f32 = takeF:f32((coerce:f32 y)); return (Add:i64 (Add:i64 (cast:i64 b) (cast:i64 c)) (cast:i64 d))}
+@@@ case c153 areas=core from=handwritten:coerce-user-function-arguments
+@@@ source
+func narrow(a: i32, b: i8, c: u8) -> i32 {
+  return a + b.toI32() + c.toI32()
+}
+func main() -> i64 {
+  let big: i64 = 100
+  return narrow(big, big, big).toI64()
+}
+
+@@@ expect hir
+func narrow(a:i32,b:i8,c:u8)->i32 {return (Add:i32 (Add:i32 a (cast:i32 b)) (cast:i32 c))}
+func main()->i64 {let big:i64 = 100; return (cast:i64 narrow:i32((coerce:i32 big),(coerce:i8 big),(coerce:u8 big)))}
+@@@ case c154 areas=core from=handwritten:casts-all
+@@@ source
+func main() -> i64 {
+  let a: i64 = 300
+  let b: i8 = a.toI8()
+  let c: i16 = a.toI16()
+  let d: i32 = a.toI32()
+  let e: u8 = a.toU8()
+  let f: u16 = a.toU16()
+  let g: u32 = a.toU32()
+  let h: u64 = a.toU64()
+  let i: float = a.toFloat()
+  let j: double = a.toDouble()
+  let k: ptr<i8> = a.toPtr()
+  return b.toI64() + c.toI64()
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 300; let b:i8 = (cast:i8 a); let c:i16 = (cast:i16 a); let d:i32 = (cast:i32 a); let e:u8 = (cast:u8 a); let f:u16 = (cast:u16 a); let g:u32 = (cast:u32 a); let h:u64 = (cast:u64 a); let i:f32 = (cast:f32 a); let j:f64 = (cast:f64 a); let k:ptr<i8> = (cast:ptr<i8> a); return (Add:i64 (cast:i64 b) (cast:i64 c))}
+@@@ case c155 areas=core from=handwritten:comparisons-and-logic
+@@@ source
+func main() -> i64 {
+  let a: i64 = 3
+  let b: i64 = 4
+  let r1: i1 = a < b
+  let r2: i1 = a <= b && b >= a
+  let r3: i1 = a == b || a != b
+  let r4: i64 = a && b
+  let r5: i1 = !r1
+  let r6: i64 = ~a
+  let r7: i64 = -a
+  let s: string = "x"
+  let r8: i1 = s == "y"
+  if (r1) { return 1 }
+  return r4 + r6 + r7
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 3; let b:i64 = 4; let r1:i1 = (Lt:i1 a b); let r2:i1 = (LogAnd:i1 (Le:i1 a b) (Ge:i1 b a)); let r3:i1 = (LogOr:i1 (Eq:i1 a b) (Ne:i1 a b)); let r4:i64 = (LogAnd:i64 a b); let r5:i1 = (LogNot:i1 r1); let r6:i64 = (BitNot:i64 a); let r7:i64 = (Neg:i64 a); let s:string = "x"; let r8:i1 = (Eq:i1 s "y"); if r1 {return 1} else {}; return (Add:i64 (Add:i64 r4 r6) r7)}
+@@@ case c156 areas=core from=handwritten:operators-all-binary
+@@@ source
+func main() -> i64 {
+  let a: i64 = 12
+  let b: i64 = 5
+  return a + b - a * b / b % b + (a & b) + (a | b) + (a ^ b) + (a << 2) + (b >> 1)
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 12; let b:i64 = 5; return (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Sub:i64 (Add:i64 a b) (Rem:i64 (Div:i64 (Mul:i64 a b) b) b)) (And:i64 a b)) (Or:i64 a b)) (Xor:i64 a b)) (Shl:i64 a 2)) (Shr:i64 b 1))}
+@@@ case c157 areas=core from=handwritten:float-operators
+@@@ source
+func main() -> double {
+  let a: double = 1.5
+  let b: double = 2.5
+  let c: float = 0.5
+  let d: i1 = a < b
+  return a * b - a / b + a % b + -a + c.toDouble()
+}
+
+@@@ expect hir
+func main()->f64 {let a:f64 = 1.5; let b:f64 = 2.5; let c:f32 = 0.5; let d:i1 = (Lt:i1 a b); return (Add:f64 (Add:f64 (Add:f64 (Sub:f64 (Mul:f64 a b) (Div:f64 a b)) (Rem:f64 a b)) (Neg:f64 a)) (cast:f64 c))}
+@@@ case c158 areas=core from=handwritten:literals-edge
+@@@ source
+func main() -> i64 {
+  let a: i64 = 9223372036854775807
+  let b: i64 = 9223372036854775808
+  let c: i64 = 18446744073709551615
+  let d: i64 = 99999999999999999999
+  let e: double = 0.1
+  let f: double = 123456789.123456789
+  let g: char = 'A'
+  let h: char = ' '
+  let i: string = ""
+  let j: string = "hello world"
+  let k: i1 = true
+  let l: i1 = false
+  return a + b + c + d
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 9223372036854775807; let b:i64 = -9223372036854775808; let c:i64 = -1; let d:i64 = 7766279631452241919; let e:f64 = 0.1; let f:f64 = 1.2345678912345679E8; let g:i8 = 65; let h:i8 = 32; let i:string = ""; let j:string = "hello world"; let k:i1 = true; let l:i1 = false; return (Add:i64 (Add:i64 (Add:i64 a b) c) d)}
+@@@ case c159 areas=core from=handwritten:assign-to-let
+@@@ source
+func main() -> i64 {
+  let x: i64 = 1
+  x = 2
+  return x
+}
+
+@@@ expect check failed
+3:3: cannot assign to x: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+@@@ case c160 areas=core from=handwritten:assign-to-param
+@@@ source
+func f(n: i64) -> i64 {
+  n = n + 1
+  return n
+}
+
+@@@ expect check failed
+2:3: cannot assign to n: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+@@@ case c161 areas=core from=handwritten:assign-var-and-global
+@@@ source
+global counter: i64 = 0
+global ratio: double = 1.5
+global flag: i1 = true
+func bump() -> i64 {
+  counter = counter + 1
+  var local: i64 = counter
+  local = local * 2
+  return local
+}
+
+@@@ expect hir
+global counter:i64
+global ratio:f64
+global flag:i1
+func bump()->i64 {@counter = (Add:i64 @counter 1); var local:i64 = @counter; local@ = (Mul:i64 local@ 2); return local@}
+@@@ case c162 areas=core from=handwritten:assign-unknown-name
+@@@ source
+func main() -> i64 {
+  missing = 3
+  return 0
+}
+
+@@@ expect check failed
+2:3: unknown name missing
+@@@ case c163 areas=core from=handwritten:unknown-name-and-function
+@@@ source
+func main() -> i64 {
+  let a: i64 = nothere
+  let b: i64 = nofunc(1, 2)
+  return a + b + other.thing
+}
+
+@@@ expect check failed
+2:16: unknown name nothere
+3:16: unknown function nofunc
+4:24: field thing on a non-struct
+@@@ case c164 areas=core from=handwritten:wrong-argument-count
+@@@ source
+func add(a: i64, b: i64) -> i64 { return a + b }
+func main() -> i64 {
+  let a: i64 = add(1)
+  let b: i64 = add(1, 2, 3)
+  let c: i64 = add()
+  return a + b + c
+}
+
+@@@ expect check failed
+3:16: add takes 2 arguments but 1 were given
+4:16: add takes 2 arguments but 3 were given
+5:16: add takes 2 arguments but 0 were given
+@@@ case c165 areas=core from=handwritten:type-mismatches
+@@@ source
+struct P { x: i64 }
+func take(n: i64) -> i64 { return n }
+func main() -> i64 {
+  var a: i64 = 2.5
+  let p: P = P { x: 1 }
+  let c: i64 = a + 1.5
+  a = 1.5
+  take(2.5)
+  let s: string = 4
+  let d: double = "x"
+  let q: P = 3
+  return p
+}
+
+@@@ expect check failed
+4:16: expected an integer but found a float
+6:20: expected an integer but found a float
+7:7: expected an integer but found a float
+8:8: expected an integer but found a float
+9:19: expected a string but found an integer
+10:19: expected a float but found a string
+11:14: expected a P but found an integer
+12:10: expected an integer but found a P
+@@@ case c166 areas=core from=handwritten:return-mismatch-nested
+@@@ source
+struct P { x: i64 }
+func f(p: P, n: i64) -> i64 {
+  if (n < 0) {
+    return 1.5
+  } else {
+    for (i = 0; i < n; i = i + 1) {
+      return p
+    }
+  }
+  return "s"
+}
+func g() -> double {
+  return 1
+}
+func h() -> string {
+  return 'c'
+}
+
+@@@ expect check failed
+4:12: expected an integer but found a float
+7:14: expected an integer but found a P
+10:10: expected an integer but found a string
+13:10: expected a float but found an integer
+16:10: expected a string but found an integer
+@@@ case c167 areas=core from=handwritten:errors-order-across-functions
+@@@ source
+func a() -> i64 { return missing1 }
+func b() -> i64 {
+  let x: i64 = missing2
+  return 2.5
+}
+global g: i64 = 0
+func c() -> i64 { return missing3(1) }
+
+@@@ expect check failed
+1:26: unknown name missing1
+3:16: unknown name missing2
+4:10: expected an integer but found a float
+7:26: unknown function missing3
+@@@ case c168 areas=core from=handwritten:forward-and-mutual-recursion
+@@@ source
+func isEven(n: i64) -> i64 {
+  if (n == 0) { return 1 }
+  return isOdd(n - 1)
+}
+func isOdd(n: i64) -> i64 {
+  if (n == 0) { return 0 }
+  return isEven(n - 1)
+}
+func main() -> i64 { return isEven(10) + later() }
+func later() -> i64 { return 7 }
+
+@@@ expect hir
+func isEven(n:i64)->i64 {if (Eq:i1 n 0) {return 1} else {}; return isOdd:i64((Sub:i64 n 1))}
+func isOdd(n:i64)->i64 {if (Eq:i1 n 0) {return 0} else {}; return isEven:i64((Sub:i64 n 1))}
+func main()->i64 {return (Add:i64 isEven:i64(10) later:i64())}
+func later()->i64 {return 7}
+@@@ case c169 areas=core from=handwritten:function-pointers
+@@@ source
+func inc(x: i64) -> i64 { return x + 1 }
+func dec(x: i64) -> i64 { return x - 1 }
+func apply(f: ptr<func(i64) -> i64>, x: i64) -> i64 { return f(f(x)) }
+func main() -> i64 {
+  var fn: ptr<func(i64) -> i64> = inc
+  fn = dec
+  let g: ptr<func(i64) -> i64> = inc
+  return apply(fn, 1) + g(2) + apply(inc, 3)
+}
+
+@@@ expect hir
+func inc(x:i64)->i64 {return (Add:i64 x 1)}
+func dec(x:i64)->i64 {return (Sub:i64 x 1)}
+func apply(f:ptr<func(i64)->i64>,x:i64)->i64 {return (*f):i64((*f):i64(x))}
+func main()->i64 {var fn:ptr<func(i64)->i64> = &inc; fn@ = &dec; let g:ptr<func(i64)->i64> = &inc; return (Add:i64 (Add:i64 apply:i64(fn@,1) (*g):i64(2)) apply:i64(&inc,3))}
+@@@ case c170 areas=core from=handwritten:call-through-non-function
+@@@ source
+func main() -> i64 {
+  let n: i64 = 3
+  return n(4)
+}
+
+@@@ expect hir
+func main()->i64 {let n:i64 = 3; return (*n):i64(4)}
+@@@ case c171 areas=core from=handwritten:struct-basics
+@@@ source
+struct Point {
+  x: double
+  y: double
+}
+struct Rect(w: i64, h: i64)
+struct Counter(var n: i64, name: string)
+struct Mixed(a: i64) {
+  var b: i64
+  c: double
+}
+func main() -> i64 {
+  let p: Point = Point { y: 2.0, x: 1.0 }
+  let r: Rect = Rect { w: 3, h: 4 }
+  let c: Counter = Counter { n: 0, name: "k" }
+  c.n = c.n + 1
+  let m: Mixed = Mixed { a: 1, b: 2, c: 3.0 }
+  m.b = 5
+  return r.w * r.h + c.n + m.a + m.b
+}
+
+@@@ expect hir
+struct Point{x:f64,y:f64}
+struct Rect{w:i64,h:i64}
+struct Counter{var n:i64,name:string}
+struct Mixed{a:i64,var b:i64,c:f64}
+func main()->i64 {let p:Point = Point{#1=2,#0=1}; let r:Rect = Rect{#0=3,#1=4}; let c:Counter = Counter{#0=0,#1="k"}; c.#0 = (Add:i64 c.#0 1); let m:Mixed = Mixed{#0=1,#1=2,#2=3}; m.#1 = 5; return (Add:i64 (Add:i64 (Add:i64 (Mul:i64 r.#0 r.#1) c.#0) m.#0) m.#1)}
+@@@ case c172 areas=core from=handwritten:struct-methods
+@@@ source
+struct Pair {
+  a: i64
+  b: i64
+  func sum() -> i64 { return this.a + this.b }
+  func scaled(k: i64) -> i64 { return this.sum() * k }
+  func other(p: Pair) -> i64 { return p.a - this.b }
+}
+struct Box {
+  v: i64
+  func sum() -> i64 { return this.v }
+}
+func twice(x: i64) -> i64 { return x * 2 }
+func main() -> i64 {
+  let p: Pair = Pair { a: 1, b: 2 }
+  let q: Box = Box { v: 3 }
+  return p.sum() + p.scaled(3) + q.sum() + p.other(p) + p.sum().twice()
+}
+
+@@@ expect hir
+struct Pair{a:i64,b:i64}
+func Pair_sum(this:Pair)->i64 {return (Add:i64 this.#0 this.#1)}
+func Pair_scaled(this:Pair,k:i64)->i64 {return (Mul:i64 Pair_sum:i64(this) k)}
+func Pair_other(this:Pair,p:Pair)->i64 {return (Sub:i64 p.#0 this.#1)}
+struct Box{v:i64}
+func Box_sum(this:Box)->i64 {return this.#0}
+func twice(x:i64)->i64 {return (Mul:i64 x 2)}
+func main()->i64 {let p:Pair = Pair{#0=1,#1=2}; let q:Box = Box{#0=3}; return (Add:i64 (Add:i64 (Add:i64 (Add:i64 Pair_sum:i64(p) Pair_scaled:i64(p,3)) Box_sum:i64(q)) Pair_other:i64(p,p)) twice:i64(Pair_sum:i64(p)))}
+@@@ case c173 areas=core from=handwritten:method-not-found
+@@@ source
+struct S { x: i64 }
+func main() -> i64 {
+  let s: S = S { x: 1 }
+  let n: i64 = 4
+  return s.nothing() + n.nothing2(3)
+}
+
+@@@ expect check failed
+5:12: unknown function nothing
+5:26: unknown function nothing2
+@@@ case c174 areas=containers from=handwritten:method-wrong-arity-ufcs
+@@@ source
+func add(a: i64, b: i64) -> i64 { return a + b }
+func main() -> i64 {
+  let n: i64 = 1
+  return n.add(2) + n.add() 
+}
+
+@@@ expect hir
+func add(a:i64,b:i64)->i64 {return (Add:i64 a b)}
+func main()->i64 {let n:i64 = 1; return (Add:i64 add:i64(n,2) add:i64(n))}
+@@@ case c175 areas=core from=handwritten:ufcs-on-scalars-and-strings
+@@@ source
+func shout(s: string) -> string { return s + "!" }
+func twice(x: i64) -> i64 { return x + x }
+func main() -> i64 {
+  let s: string = "hi".shout()
+  return 3.twice()
+}
+
+@@@ expect hir
+func shout(s:string)->string {return (concat s,"!")}
+func twice(x:i64)->i64 {return (Add:i64 x x)}
+func main()->i64 {let s:string = shout:string("hi"); return twice:i64(3)}
+@@@ case c176 areas=core from=handwritten:strings-concat-compare
+@@@ source
+func main() -> i64 {
+  let a: string = "ab"
+  let b: string = "cd"
+  let c: string = a + b + "ef"
+  if (c == "abcdef") { return 1 }
+  if (a != b) { return 2 }
+  if (a < b) { return 3 }
+  return 0
+}
+
+@@@ expect hir
+func main()->i64 {let a:string = "ab"; let b:string = "cd"; let c:string = (concat (concat a,b),"ef"); if (Eq:i1 c "abcdef") {return 1} else {}; if (Ne:i1 a b) {return 2} else {}; if (Lt:i1 a b) {return 3} else {}; return 0}
+@@@ case c177 areas=core from=handwritten:chars
+@@@ source
+func main() -> i64 {
+  let c: char = 'z'
+  if (c == 'z') { return 1 }
+  let d: i64 = 'a'
+  return c.toI64() + d
+}
+
+@@@ expect hir
+func main()->i64 {let c:i8 = 122; if (Eq:i1 c 122) {return 1} else {}; let d:i64 = 97; return (Add:i64 (cast:i64 c) d)}
+@@@ case c178 areas=core from=handwritten:if-else-chains
+@@@ source
+func classify(x: i64) -> i64 {
+  if (x < 0) {
+    return 0 - 1
+  } else {
+    if (x == 0) {
+      return 0
+    } else {
+      return 1
+    }
+  }
+}
+func main() -> i64 {
+  if (1 == 1) { }
+  if (2 == 2) { } else { }
+  return classify(3)
+}
+
+@@@ expect hir
+func classify(x:i64)->i64 {if (Lt:i1 x 0) {return (Sub:i64 0 1)} else {if (Eq:i1 x 0) {return 0} else {return 1}}}
+func main()->i64 {if (Eq:i1 1 1) {} else {}; if (Eq:i1 2 2) {} else {}; return classify:i64(3)}
+@@@ case c179 areas=core from=handwritten:for-loops
+@@@ source
+func main() -> i64 {
+  var total: i64 = 0
+  for (i = 0; i < 10; i = i + 1) {
+    total = total + i
+  }
+  for (a = 0, b = 10; a < b; a = a + 1, b = b - 1) {
+    total = total + a * b
+  }
+  for (x = 0.5; x < 3.0; x = x + 1.0) { }
+  return total + i
+}
+
+@@@ expect hir
+func main()->i64 {var total:i64 = 0; for (i=0; (Lt:i1 i 10); (Add:i64 i 1)) {total@ = (Add:i64 total@ i)}; for (a=0,b=10; (Lt:i1 a b); (Add:i64 a 1),(Sub:i64 b 1)) {total@ = (Add:i64 total@ (Mul:i64 a b))}; for (x=0.5; (Lt:i1 x 3); (Add:f64 x 1)) {}; return (Add:i64 total@ i)}
+@@@ case c180 areas=core from=handwritten:for-loop-variable-visible-after
+@@@ source
+func main() -> i64 {
+  for (k = 0; k < 3; k = k + 1) { }
+  let z: i64 = k
+  k = 5
+  return z
+}
+
+@@@ expect check failed
+4:3: cannot assign to k: a name from let, val or a parameter always means the same object (declare it with var to point it at something else)
+@@@ case c181 areas=core from=handwritten:scope-block-locals-do-not-escape
+@@@ source
+func main() -> i64 {
+  if (1 == 1) {
+    let inner: i64 = 1
+    var slot: i64 = 2
+  }
+  return inner + slot
+}
+
+@@@ expect check failed
+6:10: unknown name inner
+6:18: unknown name slot
+@@@ case c182 areas=core from=handwritten:scope-shadowing
+@@@ source
+global g: i64 = 1
+func f(g: i64) -> i64 {
+  let a: i64 = g
+  let a: i64 = a + 1
+  var b: i64 = a
+  let c: i64 = b
+  return a + c
+}
+func h() -> i64 { return g }
+
+@@@ expect hir
+global g:i64
+func f(g:i64)->i64 {let a:i64 = g; let a:i64 = (Add:i64 a 1); var b:i64 = a; let c:i64 = b@; return (Add:i64 a c)}
+func h()->i64 {return @g}
+@@@ case c183 areas=core from=handwritten:labels-goto-branch
+@@@ source
+func gcd(a0: i64, b0: i64) -> i64 {
+  goto loop(a0, b0)
+label loop(a: i64, b: i64):
+  branch b == 0 ? done(a) : body(a, b)
+label body(a: i64, b: i64):
+  let r: i64 = a % b
+  goto loop(b, r)
+label done(result: i64):
+  return result
+}
+func count(n: i64) -> i64 {
+  goto top(0)
+label top(i: i64):
+  branch i < n ? top(i + 1) : out(i)
+label out(r: i64):
+  return r + i
+}
+
+@@@ expect hir
+func gcd(a0:i64,b0:i64)->i64 {goto loop(a0,b0); label loop(a:i64,b:i64):; branch (Eq:i1 b 0) ? done(a) : body(a,b); label body(a:i64,b:i64):; let r:i64 = (Rem:i64 a b); goto loop(b,r); label done(result:i64):; return result}
+func count(n:i64)->i64 {goto top(0); label top(i:i64):; branch (Lt:i1 i n) ? top((Add:i64 i 1)) : out(i); label out(r:i64):; return (Add:i64 r i)}
+@@@ case c184 areas=core from=handwritten:switch-statement
+@@@ source
+func kind(day: i64) -> i64 {
+  switch (day) {
+    0 => weekend()
+    6 => weekend()
+    1 => weekday(day)
+    else => invalid(day + 1, 2)
+  }
+label weekend():
+  return 0
+label weekday(d: i64):
+  return d
+label invalid(a: i64, b: i64):
+  return 0 - 1
+}
+
+@@@ expect hir
+func kind(day:i64)->i64 {switch day {0->weekend(), 6->weekend(), 1->weekday(day), default->invalid((Add:i64 day 1),2)}; label weekend():; return 0; label weekday(d:i64):; return d; label invalid(a:i64,b:i64):; return (Sub:i64 0 1)}
+@@@ case c185 areas=exceptions from=handwritten:try-throw
+@@@ source
+func risky(x: i64) -> i64 {
+  if (x < 0) { throw 99 }
+  return x * 2
+}
+func safe(x: i64) -> i64 {
+  var out: i64 = 0
+  try {
+    out = risky(x)
+  } catch (code) {
+    out = code + 1
+  }
+  return out + code
+}
+
+@@@ expect check failed
+12:16: unknown name code
+@@@ case c186 areas=coroutines from=handwritten:yield-and-coro-returns
+@@@ source
+coro func count(n: i64) -> i64 {
+  for (i = 0; i < n; i = i + 1) {
+    yield i
+  }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func count(n:i64)->coro<i64> {for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {yield i}}
+func main()->i64 {return 0}
+@@@ case c187 areas=core from=handwritten:globals-types
+@@@ source
+global a: i64 = 1
+global b: i8 = 2
+global c: double = 3.5
+global d: float = 4
+global e: i1 = false
+global f: u32 = 7
+func main() -> double {
+  return c + d.toDouble() + a.toDouble()
+}
+
+@@@ expect hir
+global a:i64
+global b:i8
+global c:f64
+global d:f32
+global e:i1
+global f:u32
+func main()->f64 {return (Add:f64 (Add:f64 @c (cast:f64 @d)) (cast:f64 @a))}
+@@@ case c188 areas=core from=handwritten:extern-calls
+@@@ source
+extern func puts(text: string) -> i32
+extern func abs(v: i32) -> i32
+extern func sqrt(x: double) -> double
+extern func noargs() -> i64
+func main() -> i64 {
+  puts("hi")
+  let a: i32 = abs(0 - 5)
+  let r: double = sqrt(2.0)
+  return noargs() + a.toI64() + puts(1)
+}
+
+@@@ expect check failed
+9:38: expected a string but found an integer
+@@@ case c189 areas=core from=handwritten:val-copy
+@@@ source
+struct P { a: i64 }
+func f(p: val P, n: val i64) -> i64 {
+  let q: P = val p
+  let m: i64 = val n
+  return q.a + m
+}
+func main() -> i64 {
+  let p: P = P { a: 1 }
+  let c: P = val p
+  val d: P = p
+  return f(p, 2)
+}
+
+@@@ expect hir
+struct P{a:i64}
+func f(p:P,n:i64)->i64 {let p:P = (copy p); let n:i64 = n; let q:P = (copy p); let m:i64 = n; return (Add:i64 q.#0 m)}
+func main()->i64 {let p:P = P{#0=1}; let c:P = (copy p); let d:P = (copy p); return f:i64(p,2)}
+@@@ case c190 areas=containers from=handwritten:pointers
+@@@ source
+func fill(buf: ptr<i64>, n: i64) -> i64 {
+  var total: i64 = 0
+  for (i = 0; i < n; i = i + 1) {
+    buf[i] = i
+    total = total + buf[i]
+  }
+  return total
+}
+extern func malloc(size: i64) -> ptr<i64>
+func main() -> i64 {
+  let p: ptr<i64> = malloc(80)
+  p[0] = 5
+  return fill(p, 10) + p[0]
+}
+
+@@@ expect hir
+func fill(buf:ptr<i64>,n:i64)->i64 {var total:i64 = 0; for (i=0; (Lt:i1 i n); (Add:i64 i 1)) {buf[i] = i; total@ = (Add:i64 total@ buf[i])}; return total@}
+extern malloc(size:i64)->ptr<i64>
+func main()->i64 {let p:ptr<i64> = malloc:ptr<i64>(80); p[0] = 5; return (Add:i64 fill:i64(p,10) p[0])}
+@@@ case c191 areas=interfaces from=handwritten:interface-value-pass
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct Sq : Shape {
+  s: double
+  func area() -> double { return this.s * this.s }
+}
+func total(sh: Shape) -> double { return sh.area() }
+func main() -> double {
+  let q: Sq = Sq { s: 2.0 }
+  let sh: Shape = q
+  return total(q) + total(sh) + q.area()
+}
+
+@@@ expect hir
+struct Shape{data:ptr<i8>,vtable:ptr<i8>}
+interface Shape{area}:Sq
+struct Sq{s:f64}
+func Sq_area(this:Sq)->f64 {return (Mul:f64 this.#0 this.#0)}
+func total(sh:Shape)->f64 {return (ifaceCall sh,0)}
+func main()->f64 {let q:Sq = Sq{#0=2}; let sh:Shape = (ifaceBox q); return (Add:f64 (Add:f64 total:f64((ifaceBox q)) total:f64(sh)) Sq_area:f64(q))}
+@@@ case c192 areas=interfaces from=handwritten:interface-errors
+@@@ source
+interface Shape {
+  func area() -> double
+}
+struct Other { x: i64 }
+func total(sh: Shape) -> double { return sh.area() }
+func main() -> double {
+  let o: Other = Other { x: 1 }
+  let s: Shape = o
+  let t: double = s.nothing()
+  let u: double = s.area(1)
+  let v: i64 = s.data
+  return total(o)
+}
+
+@@@ expect check failed
+8:18: Other does not implement Shape (declare it: struct Other : Shape)
+9:21: Shape has no method nothing
+10:21: Shape.area takes 0 arguments but 1 were given
+11:18: Shape is an interface: it has methods, not fields (call a method instead of reading data)
+12:16: Other does not implement Shape (declare it: struct Other : Shape)
+@@@ case c193 areas=core from=handwritten:equality-problems
+@@@ source
+struct P { x: i64 }
+func f(a: ptr<i64>, b: ptr<i64>, c: func(i64) -> i64) -> i64 {
+  let p: P = P { x: 1 }
+  let q: P = P { x: 1 }
+  let r1: i1 = p == q
+  let r2: i1 = p === q
+  let r3: i1 = a == b
+  let r4: i1 = a === b
+  let n: i64 = 1
+  let r5: i1 = n === n
+  let r6: i1 = 1.5 !== 2.5
+  let r7: i1 = c == c
+  return 0
+}
+
+@@@ expect check failed
+7:18: a ptr<i64> cannot be compared with ==: use === to ask whether it is the same one
+10:18: === asks whether two objects are the same one, and a i64 is a plain value: use ==
+11:20: === asks whether two objects are the same one, and a f64 is a plain value: use ==
+12:18: a func(i64)->i64 cannot be compared with ==: use === to ask whether it is the same one
+@@@ case c194 areas=core from=handwritten:empty-and-trivial
+@@@ source
+func main() -> i64 {
+  return 0
+}
+
+@@@ expect hir
+func main()->i64 {return 0}
+@@@ case c195 areas=core from=handwritten:empty-program
+@@@ source
+
+@@@ expect hir
+
+@@@ case c196 areas=core from=handwritten:only-declarations
+@@@ source
+struct A { x: i64 }
+global g: i64 = 1
+extern func e() -> i64
+
+@@@ expect hir
+struct A{x:i64}
+global g:i64
+extern e()->i64
+@@@ case c197 areas=core from=handwritten:unusual-function-names
+@@@ source
+func Pair_sum(p: i64) -> i64 { return p }
+struct Pair {
+  a: i64
+  func sum() -> i64 { return this.a }
+}
+func main() -> i64 {
+  let p: Pair = Pair { a: 1 }
+  return p.sum() + 3.Pair_sum()
+}
+
+@@@ expect check failed
+8:10: expected an integer but found a Pair
+@@@ case c198 areas=core from=handwritten:duplicates
+@@@ source
+struct A { x: i64 }
+struct A { y: i64 }
+func f() -> i64 { return 1 }
+func f() -> i64 { return 2 }
+extern func f() -> i64
+
+@@@ expect check failed
+duplicate struct 'A'
+@@@ case c199 areas=core from=handwritten:duplicates-funcs
+@@@ source
+func f() -> i64 { return 1 }
+func f() -> i64 { return 2 }
+extern func g() -> i64
+func g() -> i64 { return 3 }
+
+@@@ expect check failed
+duplicate func 'f'
+'g' is both a func and an extern func
+@@@ case c200 areas=core from=handwritten:duplicate-externs
+@@@ source
+extern func h(a: i64) -> i64
+extern func h(a: i64) -> i64
+func main() -> i64 { return h(1) }
+
+@@@ expect hir
+extern h(a:i64)->i64
+func main()->i64 {return h:i64(1)}
+@@@ case c201 areas=core from=handwritten:conflicting-externs
+@@@ source
+extern func h(a: i64) -> i64
+extern func h(a: i32) -> i64
+
+@@@ expect check failed
+conflicting 'extern func h' declarations (different signatures)
+@@@ case c202 areas=core from=handwritten:param-shadows-function
+@@@ source
+func g(x: i64) -> i64 { return x }
+func f(g: i64) -> i64 {
+  return g(1)
+}
+
+@@@ expect hir
+func g(x:i64)->i64 {return x}
+func f(g:i64)->i64 {return (*g):i64(1)}
+@@@ case c203 areas=core from=handwritten:name-used-as-value
+@@@ source
+func g(x: i64) -> i64 { return x }
+func main() -> i64 {
+  let f: ptr<func(i64) -> i64> = g
+  let n: i64 = g
+  return f(1) + n
+}
+
+@@@ expect hir
+func g(x:i64)->i64 {return x}
+func main()->i64 {let f:ptr<func(i64)->i64> = &g; let n:i64 = &g; return (Add:i64 (*f):i64(1) n)}
+@@@ case c204 areas=core from=handwritten:nested-calls-and-args
+@@@ source
+func add(a: i64, b: i64) -> i64 { return a + b }
+func mul(a: i64, b: i64) -> i64 { return a * b }
+func main() -> i64 {
+  return add(mul(2, 3), add(4, mul(5, 6))) + add(unknown1(), unknown2(3))
+}
+
+@@@ expect check failed
+4:50: unknown function unknown1
+4:62: unknown function unknown2
+@@@ case c205 areas=core from=handwritten:paren-and-precedence
+@@@ source
+func main() -> i64 {
+  let a: i64 = 1
+  return (a + 2) * (3 - (4 / 2)) - -(a) + ((a))
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 1; return (Add:i64 (Sub:i64 (Mul:i64 (Add:i64 a 2) (Sub:i64 3 (Div:i64 4 2))) (Neg:i64 a)) a)}
+@@@ case c206 areas=core from=handwritten:val-copy-expression
+@@@ source
+struct P { a: i64 }
+func main() -> i64 {
+  let p: P = P { a: 1 }
+  let n: i64 = 3
+  let q: i64 = val n
+  return val p.a
+}
+
+@@@ expect hir
+struct P{a:i64}
+func main()->i64 {let p:P = P{#0=1}; let n:i64 = 3; let q:i64 = n; return p.#0}
+@@@ case c207 areas=core from=handwritten:struct-literal-expected-type
+@@@ source
+struct P { a: i64 }
+struct Q { a: i64 }
+func main() -> i64 {
+  let p: P = Q { a: 1 }
+  let q: Q = P { a: 1 }
+  let n: i64 = P { a: 1 }
+  return 0
+}
+
+@@@ expect check failed
+6:16: expected an integer but found a P
+@@@ case c208 areas=core from=handwritten:assign-field-through-call
+@@@ source
+struct P { var a: i64 }
+func make() -> P { return P { a: 1 } }
+func main() -> i64 {
+  make().a = 3
+  let p: P = make()
+  p.a = p.a + make().a
+  return p.a
+}
+
+@@@ expect hir
+struct P{var a:i64}
+func make()->P {return P{#0=1}}
+func main()->i64 {make:P().#0 = 3; let p:P = make:P(); p.#0 = (Add:i64 p.#0 make:P().#0); return p.#0}
+@@@ case c209 areas=core from=handwritten:unknown-struct-field-access
+@@@ source
+func main() -> i64 {
+  let n: i64 = 1
+  return n.x.y
+}
+
+@@@ expect check failed
+3:14: field y on a non-struct
+@@@ case c210 areas=core from=handwritten:return-struct-and-calls
+@@@ source
+struct P { x: i64 }
+func make(n: i64) -> P { return P { x: n } }
+func main() -> i64 {
+  return make(3).x
+}
+
+@@@ expect hir
+struct P{x:i64}
+func make(n:i64)->P {return P{#0=n}}
+func main()->i64 {return make:P(3).#0}
+@@@ case c211 areas=exceptions from=handwritten:errors-in-every-statement-position
+@@@ source
+struct P { var a: i64 }
+func take(a: i64) -> i64 { return a }
+func f(n: i64) -> i64 {
+  let a: i64 = e1
+  var b: i64 = e2
+  var c: i64
+  let d: i64
+  b = e3
+  c = take(e4)
+  if (e5 < 1) {
+    let x: i64 = e6
+  } else {
+    let y: i64 = e7
+  }
+  for (i = e8, j = e9; i < e10; i = e11) {
+    let z: i64 = e12
+  }
+  goto lab(e13, e14)
+label lab(p: i64, q: i64):
+  branch e15 ? lab(e16, 1) : lab2(e17)
+label lab2(r: i64):
+  switch (e18) {
+    1 => lab(e19, 2)
+    else => lab2(e20)
+  }
+  try {
+    throw e21
+  } catch (code) {
+    take(e22)
+  }
+  return e23
+}
+
+@@@ expect check failed
+4:16: unknown name e1
+5:16: unknown name e2
+7:7: let without a value
+8:7: unknown name e3
+9:12: unknown name e4
+10:7: unknown name e5
+11:18: unknown name e6
+13:18: unknown name e7
+15:12: unknown name e8
+15:20: unknown name e9
+15:28: unknown name e10
+15:37: unknown name e11
+16:18: unknown name e12
+18:12: unknown name e13
+18:17: unknown name e14
+20:10: unknown name e15
+20:20: unknown name e16
+20:35: unknown name e17
+22:11: unknown name e18
+24:18: unknown name e20
+27:11: unknown name e21
+29:10: unknown name e22
+31:10: unknown name e23
+@@@ case c212 areas=exceptions from=handwritten:errors-in-nested-blocks
+@@@ source
+func f(n: i64) -> i64 {
+  if (n > 0) {
+    if (n > 1) {
+      for (i = 0; i < n; i = i + 1) {
+        try {
+          let a: i64 = bad1
+        } catch (c) {
+          let b: i64 = bad2
+        }
+      }
+    }
+  }
+  return bad3
+}
+
+@@@ expect check failed
+6:24: unknown name bad1
+8:24: unknown name bad2
+13:10: unknown name bad3
+@@@ case c213 areas=core from=handwritten:returns-after-errors
+@@@ source
+struct P { a: i64 }
+func f(p: P) -> i64 {
+  let a: i64 = unknown
+  if (a > 0) {
+    return p
+  }
+  let b: i64 = unknown2
+  return 1.5
+}
+
+@@@ expect check failed
+3:16: unknown name unknown
+7:16: unknown name unknown2
+5:12: expected an integer but found a P
+8:10: expected an integer but found a float
+@@@ case c214 areas=core from=handwritten:mismatched-binary-kinds
+@@@ source
+struct P { a: i64 }
+func f(p: P, q: P, s: string) -> i64 {
+  let a: i64 = 1 + 1.5
+  let b: double = 1.5 * 2
+  let c: i64 = p + 1
+  let d: i1 = s == 1
+  let e: i1 = p == q
+  let f: i1 = 1 < "x"
+  let g: i64 = s + 1
+  let h: string = 1 + s
+  return 0
+}
+
+@@@ expect check failed
+3:20: expected an integer but found a float
+4:25: expected a float but found an integer
+5:20: expected a P but found an integer
+6:20: expected a string but found an integer
+8:19: expected an integer but found a string
+9:18: expected an integer but found a string
+10:23: expected an integer but found a string
+@@@ case c215 areas=core from=handwritten:call-with-wrong-kinds
+@@@ source
+struct P { a: i64 }
+func f(n: i64, x: double, s: string, p: P) -> i64 { return n }
+func main() -> i64 {
+  let p: P = P { a: 1 }
+  return f(1.5, 2, 3, 4) + f(p, "s", 2.0, p) + f("a", 1.0, "b", p)
+}
+
+@@@ expect check failed
+5:12: expected an integer but found a float
+5:17: expected a float but found an integer
+5:20: expected a string but found an integer
+5:23: expected a P but found an integer
+5:30: expected an integer but found a P
+5:33: expected a float but found a string
+5:38: expected a string but found a float
+5:50: expected an integer but found a string
+@@@ case c216 areas=core from=handwritten:function-values
+@@@ source
+func g(x: i64) -> i64 { return x }
+func h() -> i64 { return 0 }
+func main() -> i64 {
+  let a: ptr<func(i64) -> i64> = g
+  let b: ptr<func() -> i64> = h
+  let c: i64 = a(1) + b()
+  var d: ptr<func(i64) -> i64> = g
+  d = h
+  return c
+}
+
+@@@ expect hir
+func g(x:i64)->i64 {return x}
+func h()->i64 {return 0}
+func main()->i64 {let a:ptr<func(i64)->i64> = &g; let b:ptr<func()->i64> = &h; let c:i64 = (Add:i64 (*a):i64(1) (*b):i64()); var d:ptr<func(i64)->i64> = &g; d@ = &h; return c}
+@@@ case c217 areas=core from=handwritten:global-shadow-and-call
+@@@ source
+global n: i64 = 3
+func n2() -> i64 { return n }
+func g() -> i64 {
+  return n(1)
+}
+func h(n2: i64) -> i64 {
+  return n2()
+}
+
+@@@ expect hir
+global n:i64
+func n2()->i64 {return @n}
+func g()->i64 {return (*@n):i64(1)}
+func h(n2:i64)->i64 {return (*n2):i64()}
+@@@ case c218 areas=core from=handwritten:method-call-through-field
+@@@ source
+struct Inner { v: i64
+  func get() -> i64 { return this.v }
+}
+struct Outer { i: Inner
+  func get() -> i64 { return this.i.get() }
+}
+func main() -> i64 {
+  let o: Outer = Outer { i: Inner { v: 2 } }
+  return o.get() + o.i.get() + o.i.v.get()
+}
+
+@@@ expect check failed
+9:38: unknown function get
+@@@ case c219 areas=core from=handwritten:struct-method-names-and-this
+@@@ source
+struct A {
+  x: i64
+  func f() -> i64 { return x }
+  func g() -> i64 { return this.x + this.nothing }
+  func h(this2: A) -> i64 { return this2.x }
+  func k() -> A { return this }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+3:28: unknown name x
+4:42: unknown field nothing
+@@@ case c220 areas=core from=handwritten:struct-named-like-scalars
+@@@ source
+struct i64x { v: i64 }
+struct string2 { v: string }
+func main() -> i64 {
+  let a: i64x = i64x { v: 1 }
+  return a.v
+}
+
+@@@ expect hir
+struct i64x{v:i64}
+struct string2{v:string}
+func main()->i64 {let a:i64x = i64x{#0=1}; return a.#0}
+@@@ case c221 areas=core from=handwritten:unsigned-types
+@@@ source
+func f(a: u8, b: u16, c: u32, d: u64) -> u64 {
+  let e: u8 = a + a
+  let g: u64 = d >> 3
+  let h: i1 = c < c
+  return d + c.toU64() + b.toU64() + a.toU64()
+}
+func main() -> i64 { return f(1, 2, 3, 4).toI64() }
+
+@@@ expect hir
+func f(a:u8,b:u16,c:u32,d:u64)->u64 {let e:u8 = (Add:u8 a a); let g:u64 = (Shr:u64 d 3); let h:i1 = (Lt:i1 c c); return (Add:u64 (Add:u64 (Add:u64 d (cast:u64 c)) (cast:u64 b)) (cast:u64 a))}
+func main()->i64 {return (cast:i64 f:u64((coerce:u8 1),(coerce:u16 2),(coerce:u32 3),(coerce:u64 4)))}
+@@@ case c222 areas=core from=handwritten:mixed-families-in-calls
+@@@ source
+extern func takeU(v: u32) -> u32
+extern func takeI(v: i32) -> i32
+extern func takeF(v: float) -> float
+func main() -> i64 {
+  let a: i64 = 5
+  let d: double = 2.5
+  let x: u32 = takeU(a)
+  let y: i32 = takeI(x)
+  let z: float = takeF(d)
+  let w: float = takeF(a)
+  return 0
+}
+
+@@@ expect check failed
+10:24: expected a float but found an integer
+@@@ case c223 areas=core from=handwritten:assign-coercions
+@@@ source
+func main() -> i64 {
+  var a: i32 = 1
+  var b: i64 = 2
+  a = b
+  b = a
+  var c: float = 1.0
+  var d: double = 2.0
+  c = d
+  d = c
+  return b
+}
+
+@@@ expect hir
+func main()->i64 {var a:i32 = 1; var b:i64 = 2; a@ = b@; b@ = a@; var c:f32 = 1; var d:f64 = 2; c@ = d@; d@ = c@; return b@}
+@@@ case c224 areas=core from=handwritten:if-condition-kinds
+@@@ source
+struct P { a: i64 }
+func main() -> i64 {
+  let p: P = P { a: 1 }
+  if (p) { return 1 }
+  if (1.5) { return 2 }
+  if ("s") { return 3 }
+  return 0
+}
+
+@@@ expect hir
+struct P{a:i64}
+func main()->i64 {let p:P = P{#0=1}; if p {return 1} else {}; if 1.5 {return 2} else {}; if "s" {return 3} else {}; return 0}
+@@@ case c225 areas=core from=handwritten:labels-everywhere
+@@@ source
+func f(n: i64) -> i64 {
+label a():
+  goto b(n)
+label b(x: i64):
+  if (x > 0) {
+    goto c(x - 1, 2.5)
+  }
+  return x
+label c(y: i64, z: double):
+  goto b(y)
+}
+
+@@@ expect hir
+func f(n:i64)->i64 {label a():; goto b(n); label b(x:i64):; if (Gt:i1 x 0) {goto c((Sub:i64 x 1),2.5)} else {}; return x; label c(y:i64,z:f64):; goto b(y)}
+@@@ case c226 areas=core from=handwritten:multiple-returns-and-void-like
+@@@ source
+func f(n: i64) -> i64 {
+  if (n == 0) { return 1 }
+  if (n == 1) { return 2 }
+  return f(n - 1) + f(n - 2)
+}
+
+@@@ expect hir
+func f(n:i64)->i64 {if (Eq:i1 n 0) {return 1} else {}; if (Eq:i1 n 1) {return 2} else {}; return (Add:i64 f:i64((Sub:i64 n 1)) f:i64((Sub:i64 n 2)))}
+@@@ case c227 areas=core from=handwritten:switch-negative-and-large
+@@@ source
+func f(n: i64) -> i64 {
+  switch (n) {
+    0 => a()
+    18446744073709551615 => b()
+    else => c()
+  }
+label a():
+  return 1
+label b():
+  return 2
+label c():
+  return 3
+}
+
+@@@ expect hir
+func f(n:i64)->i64 {switch n {0->a(), -1->b(), default->c()}; label a():; return 1; label b():; return 2; label c():; return 3}
+@@@ case c228 areas=core from=handwritten:var-without-init
+@@@ source
+func main() -> i64 {
+  var a: i64
+  var b: double
+  var c: string
+  a = 5
+  return a
+}
+
+@@@ expect hir
+func main()->i64 {var a:i64; var b:f64; var c:string; a@ = 5; return a@}
+@@@ case c229 areas=core from=handwritten:let-without-value-core-types
+@@@ source
+func main() -> i64 {
+  let a: i64
+  let b: string
+  return 0
+}
+
+@@@ expect check failed
+2:7: let without a value
+3:7: let without a value
+@@@ case c230 areas=core from=handwritten:extern-and-global-and-func-names
+@@@ source
+extern func ext() -> i64
+global glob: i64 = 0
+func fn() -> i64 { return ext() + glob + fn() }
+func main() -> i64 {
+  let a: i64 = ext
+  let b: i64 = glob()
+  return fn
+}
+
+@@@ expect hir
+extern ext()->i64
+global glob:i64
+func fn()->i64 {return (Add:i64 (Add:i64 ext:i64() @glob) fn:i64())}
+func main()->i64 {let a:i64 = &ext; let b:i64 = (*@glob):i64(); return &fn}
+@@@ case c231 areas=core from=handwritten:comments-and-whitespace
+@@@ source
+// leading comment
+func   f ( a : i64 ,
+           b : i64 )   ->   i64 {
+  // inside
+  return a   +   b   // trailing
+}
+
+@@@ expect hir
+func f(a:i64,b:i64)->i64 {return (Add:i64 a b)}
+@@@ case c232 areas=core from=handwritten:semicolon-after-struct
+@@@ source
+struct A { x: i64 };
+struct B(y: i64);
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+struct A{x:i64}
+struct B{y:i64}
+func main()->i64 {return 0}
+@@@ case c233 areas=core from=handwritten:long-expression-chains
+@@@ source
+func main() -> i64 {
+  let a: i64 = 1
+  return a + a + a + a + a + a + a + a + a + a + a * a * a - a - a - a / a / a % a % a | a & a ^ a << a >> a
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 1; return (Or:i64 (Sub:i64 (Sub:i64 (Sub:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 (Add:i64 a a) a) a) a) a) a) a) a) a) (Mul:i64 (Mul:i64 a a) a)) a) a) (Rem:i64 (Rem:i64 (Div:i64 (Div:i64 a a) a) a) a)) (Xor:i64 (And:i64 a a) (Shr:i64 (Shl:i64 a a) a)))}
+@@@ case c234 areas=core from=handwritten:unary-chains
+@@@ source
+func main() -> i64 {
+  let a: i64 = 1
+  return - - a + ~ ~ a + (!(!(a == 1))).toI64() - -(-(a))
+}
+
+@@@ expect hir
+func main()->i64 {let a:i64 = 1; return (Sub:i64 (Add:i64 (Add:i64 (Neg:i64 (Neg:i64 a)) (BitNot:i64 (BitNot:i64 a))) (cast:i64 (LogNot:i1 (LogNot:i1 (Eq:i1 a 1))))) (Neg:i64 (Neg:i64 a)))}
+@@@ case c235 areas=core from=handwritten:method-on-literals
+@@@ source
+func twice(x: i64) -> i64 { return x * 2 }
+func main() -> i64 {
+  let a: i64 = 3.twice().twice()
+  let b: double = 2.5.toI64().toDouble()
+  return a + 1.toI8().toI64() + 'a'.toI64()
+}
+
+@@@ expect hir
+func twice(x:i64)->i64 {return (Mul:i64 x 2)}
+func main()->i64 {let a:i64 = twice:i64(twice:i64(3)); let b:f64 = (cast:f64 (cast:i64 2.5)); return (Add:i64 (Add:i64 a (cast:i64 (cast:i8 1))) (cast:i64 97))}
+@@@ case c236 areas=containers from=handwritten:builtins-common-on-any-receiver
+@@@ source
+struct P { a: i64 }
+func f(s: string, p: P) -> i64 {
+  let a: i64 = s.len()
+  let b: i64 = len(s)
+  let c: i64 = s.count()
+  let d: i64 = s.hash() + hash(s)
+  let e: P = p.copy()
+  let g: P = copy(p)
+  let h: string = s.push(1)
+  let i: i64 = 5.len()
+  let k: i1 = s.has(1)
+  let l: i64 = copy(5)
+  return a + b + c + d + i + l
+}
+
+@@@ expect check failed
+11:17: unknown function has
+12:16: builtin copy
+@@@ case c237 areas=containers from=handwritten:builtins-function-form-mistakes
+@@@ source
+func main() -> i64 {
+  let a: i64 = len()
+  let b: i64 = push()
+  let c: i64 = hash(1, 2)
+  let d: i64 = len(nothere)
+  return a + b + c + d
+}
+
+@@@ expect check failed
+2:16: builtin len
+3:16: builtin push
+5:20: unknown name nothere
+@@@ case c238 areas=containers from=handwritten:builtins-shadowed-by-locals
+@@@ source
+func main() -> i64 {
+  let len: i64 = 3
+  let hash: ptr<func(i64) -> i64> = main2
+  return len(1) + hash(2)
+}
+func main2(x: i64) -> i64 { return x }
+
+@@@ expect hir
+func main()->i64 {let len:i64 = 3; let hash:ptr<func(i64)->i64> = &main2; return (Add:i64 (len 1) (hash 2))}
+func main2(x:i64)->i64 {return x}
+@@@ case c239 areas=core from=handwritten:container-against-a-kind
+@@@ source
+func words() -> mutarray<string> {
+  return ["up"]
+}
+func f(s: string) -> i64 {
+  return len(s)
+}
+func main() -> i64 {
+  if (words().contains("u")) {
+    return f([1, 2])
+  }
+  return 0
+}
+
+@@@ expect check failed
+8:7: expected a string but found a mutarray<string>
+9:14: expected a string but found a mutarray<i64>
+@@@ case c240 areas=core from=handwritten:print
+@@@ source
+func main() -> i64 {
+  let n: i64 = 41
+  print("n is ${str(n)}")
+  print(n)
+  let c: i8 = 'z'
+  c.print()
+  print(n > 3)
+  return 0
+}
+
+@@@ expect hir
+func main()->i64 {let n:i64 = 41; (print (concat "n is ",(str (str n)))); (print (str n)); let c:i8 = 122; (print (str c)); (print (str (Gt:i1 n 3))); return 0}
+@@@ case c241 areas=core from=handwritten:print-mistakes
+@@@ source
+func main() -> i64 {
+  print(1.5)
+  print()
+  print("a", "b")
+  let xs: mutarray<i64> = [1]
+  print(xs)
+  return 0
+}
+
+@@@ expect check failed
+2:3: print(x) takes a whole number, bool, char or string; a float has no text form yet
+3:3: builtin print
+4:3: print(x) takes one value
+6:3: builtin print
+@@@ case c242 areas=core from=handwritten:host-imports
+@@@ source
+import c "zlib.h"
+import cpp "zlib.h"
+import js "crc-32" as crc
+import python "zlib"
+import rust "std::fmt::Write"
+import swift "Foundation"
+import objc "Foundation/Foundation.h"
+import kotlin "kotlin.math.abs"
+import c "zlib.h"
+
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+import c "zlib.h"
+import cpp "zlib.h"
+import js "crc-32" as crc
+import python "zlib"
+import rust "std::fmt::Write"
+import swift "Foundation"
+import objc "Foundation/Foundation.h"
+import kotlin "kotlin.math.abs"
+import c "zlib.h"
+func main()->i64 {return 0}
+@@@ case c243 areas=core from=handwritten:host-import-mistakes
+@@@ source
+import go "fmt"
+import c "zlib.h" as z
+import js "x" like y
+import python "os" as os
+
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+1:8: import go: an import is for native (a library), c, cpp, objc, swift, js, python, kotlin or rust
+2:19: import c takes no `as` name: only js and python name a module
+3:15: expected `as` before the import's name
+@@@ case c244 areas=core from=handwritten:as-is-not-a-keyword
+@@@ source
+func as(x: i64) -> i64 { return x }
+func main() -> i64 { return as(2) }
+
+@@@ expect hir
+func as(x:i64)->i64 {return x}
+func main()->i64 {return as:i64(2)}
+@@@ case c245 areas=core from=handwritten:match-numbers
+@@@ source
+func sizeOf(n: i64) -> string {
+  return match (n) {
+    0 => "none"
+    1 | 2 | 3 => "a few"
+    else => "many"
+  }
+}
+func main() -> i64 { print(sizeOf(2)) return 0 }
+
+@@@ expect hir
+func sizeOf(n:i64)->string {var matchValue_2_10:string; select n {0 => {matchValue_2_10@ = "none"}, 1|2|3 => {matchValue_2_10@ = "a few"}, else => {matchValue_2_10@ = "many"}}; return matchValue_2_10@}
+func main()->i64 {(print sizeOf:string(2)); return 0}
+@@@ case c246 areas=core from=handwritten:match-conditions
+@@@ source
+func signOf(n: i64) -> string {
+  let sign = match {
+    n < 0 => "negative"
+    n == 0 => "zero"
+    else => "positive"
+  }
+  return sign
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func signOf(n:i64)->string {var matchValue_2_14:string; if (Lt:i1 n 0) {matchValue_2_14@ = "negative"} else {if (Eq:i1 n 0) {matchValue_2_14@ = "zero"} else {matchValue_2_14@ = "positive"}}; let sign:string = matchValue_2_14@; return sign}
+func main()->i64 {return 0}
+@@@ case c247 areas=core from=handwritten:match-guards-on-the-subject
+@@@ source
+func gradeOf(score: i64) -> string {
+  return match (score) {
+    100 => "perfect"
+    s if s >= 90 => "A ${s}"
+    s if s >= 80 => "B"
+    else => "C"
+  }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func gradeOf(score:i64)->string {var matchValue_2_10:string; if (Eq:i1 score 100) {matchValue_2_10@ = "perfect"} else {if (Ge:i1 score 90) {let s:i64 = score; matchValue_2_10@ = (concat "A ",(str s))} else {if (Ge:i1 score 80) {matchValue_2_10@ = "B"} else {matchValue_2_10@ = "C"}}}; return matchValue_2_10@}
+func main()->i64 {return 0}
+@@@ case c248 areas=core from=handwritten:match-strings-and-booleans
+@@@ source
+func yes(reply: string) -> bool {
+  return match (reply) {
+    "y" | "yes" => true
+    else => false
+  }
+}
+func word(ready: bool) -> string {
+  return match (ready) {
+    true => "go"
+    false => "wait"
+  }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func yes(reply:string)->i1 {var matchValue_2_10:i1; select reply {"y"|"yes" => {matchValue_2_10@ = true}, else => {matchValue_2_10@ = false}}; return matchValue_2_10@}
+func word(ready:i1)->string {var matchValue_8_10:string; select ready {true => {matchValue_8_10@ = "go"}, false => {matchValue_8_10@ = "wait"}, else => {}}; return matchValue_8_10@}
+func main()->i64 {return 0}
+@@@ case c249 areas=core,sums from=handwritten:match-optional-guard
+@@@ source
+func shown(found: optional<i64>) -> string {
+  return match (found) {
+    Some(n) if n > 100 => "big ${n}"
+    Some(n) => "found ${n}"
+    None => "nothing"
+  }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func shown(found:optional<i64>)->string {var matchValue_2_10:string; if (LogAnd:i1 (isSome found) (Gt:i1 (unwrap found) 100)) {let n:i64 = (unwrap found); matchValue_2_10@ = (concat "big ",(str n))} else {if (isSome found) {let n:i64 = (unwrap found); matchValue_2_10@ = (concat "found ",(str n))} else {matchValue_2_10@ = "nothing"}}; return matchValue_2_10@}
+func main()->i64 {return 0}
+@@@ case c250 areas=core,sums from=handwritten:match-either-call-and-variant
+@@@ source
+func divide(a: i64, b: i64) -> either<i64, i64> {
+  return eitherOk<i64, i64>(a)
+}
+func message(a: i64, b: i64) -> i64 {
+  return match (divide(a, b)) {
+    Ok(q) => q
+    Err(code) => 0 - code
+  }
+}
+func pick(v: variant<i64, string>) -> i64 {
+  return match (v) {
+    variant(0, n) => n
+    variant(1, _) => 0
+  }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func divide(a:i64,b:i64)->either<i64,i64> {return ok(a)}
+func message(a:i64,b:i64)->i64 {let match_5_10:either<i64,i64> = divide:either<i64,i64>(a,b); var matchValue_5_10:i64; select match_5_10 {0(q) => {let q:i64 = (unwrapOk match_5_10); matchValue_5_10@ = q}, 1(code) => {let code:i64 = (unwrapErr match_5_10); matchValue_5_10@ = (Sub:i64 0 code)}, else => {}}; return matchValue_5_10@}
+func pick(v:variant<i64,string>)->i64 {var matchValue_11_10:i64; select v {0(n) => {let n:i64 = (unwrapAt v,0); matchValue_11_10@ = n}, 1 => {matchValue_11_10@ = 0}, else => {}}; return matchValue_11_10@}
+func main()->i64 {return 0}
+@@@ case c251 areas=core,containers,prelude,generics from=handwritten:match-lists
+@@@ source
+func said(xs: array<i64>) -> i64 {
+  return match (xs) {
+    [] => 0
+    [x] => x
+    [0, ...] => 1
+    [first, ...rest] => first + len(rest)
+  }
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func said(xs:array<i64>)->i64 {var matchValue_2_10:i64; if (Eq:i1 (len xs) 0) {matchValue_2_10@ = 0} else {if (Eq:i1 (len xs) 1) {let x:i64 = xs[0]; matchValue_2_10@ = x} else {if (Eq:i1 xs[0] 0) {matchValue_2_10@ = 1} else {let first:i64 = xs[0]; var rest:mutarray<i64> = drop_i64:mutarray<i64>(xs,1); matchValue_2_10@ = (Add:i64 first (len rest@))}}}; return matchValue_2_10@}
+func main()->i64 {return 0}
+func drop_i64(xs:array<i64>,n:i64)->mutarray<i64> {var out:mutarray<i64> = new mutarray<i64>(); for (i=n; (Lt:i1 i (len xs)); (Add:i64 i 1)) {(push out@,xs[i])}; return out@}
+@@@ case c252 areas=core from=handwritten:switch-blocks-and-statements
+@@@ source
+func status(code: i64) -> i64 {
+  var said: i64 = 0
+  switch (code) {
+    200 | 204 => { said = 1 }
+    code >= 500 => { said = 2 }
+    else => { said = 3 }
+  }
+  match (code) {
+    0 => { said = 0 }
+  }
+  switch { code < 0 => { said = 9 } }
+  return said
+}
+func main() -> i64 { return 0 }
+
+@@@ expect hir
+func status(code:i64)->i64 {var said:i64 = 0; if (LogOr:i1 (Eq:i1 code 200) (Eq:i1 code 204)) {said@ = 1} else {if (Ge:i1 code 500) {said@ = 2} else {said@ = 3}}; select code {0 => {said@ = 0}, else => {}}; if (Lt:i1 code 0) {said@ = 9} else {}; return said@}
+func main()->i64 {return 0}
+@@@ case c253 areas=core,sums from=handwritten:match-mistakes
+@@@ source
+func f(n: i64, s: string, o: optional<i64>, flag: bool) -> i64 {
+  let a = match (s) { 1 => 1 else => 2 }
+  let b = match (n) { Some(x) => x else => 0 }
+  let c = match { n + 1 => 1 else => 2 }
+  let d = match (o) { Some(x) => x }
+  let e = match (n) { 0 => 1 else => "two" }
+  let g = match (n) { else => 1  0 => 2 }
+  let h = match (n) { 1 | x => 1 else => 0 }
+  let i = match (n) { flag => 1 else => 0 }
+  return 0
+}
+func main() -> i64 { return 0 }
+
+@@@ expect check failed
+2:23: the pattern does not fit the string it is matched against
+3:23: `Some` and `None` match an optional, not an i64
+4:21: a condition arm is a bool, not an i64
+5:11: a `match` value needs an `else` arm: its arms do not cover every case
+6:38: every arm of a `match` value has one type: i64 and string
+7:34: this arm is never reached: an `else` or a pattern that matches anything is before it
+8:27: an alternative (`|`) binds no names: each one matches without them
+9:23: `flag =>` binds the subject anew, it does not test `flag`: write a condition (`flag == …`, `_ if flag`) or another name
+@@@ end
